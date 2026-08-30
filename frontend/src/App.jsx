@@ -36,9 +36,23 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Shared View Mode
-  const isViewRoute = currentHash.startsWith('#/view/');
-  const sharedReportId = isViewRoute ? currentHash.replace('#/view/', '').split('?')[0] : null;
+  // Shared View Mode Detection
+  const hash = currentHash || window.location.hash || '';
+  const search = window.location.search || '';
+  const isViewRoute = hash.includes('/view') || hash.includes('view') || search.includes('view');
+
+  let sharedReportId = null;
+  if (isViewRoute) {
+    if (hash.includes('/view/')) {
+      sharedReportId = hash.split('/view/')[1].split('?')[0];
+    } else if (hash.includes('/view')) {
+      sharedReportId = 'shared';
+    } else if (search.includes('view=')) {
+      sharedReportId = new URLSearchParams(search).get('view');
+    } else {
+      sharedReportId = 'shared';
+    }
+  }
 
   const [reports, setReports] = useState([]);
   const [activeReportId, setActiveReportId] = useState(null);
@@ -641,7 +655,7 @@ export default function App() {
       <ShareModal
         isOpen={shareModalState.isOpen}
         shareUrl={shareModalState.shareUrl}
-        reportTitle={shareModalState.reportTitle}
+        report={currentReport}
         onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
       />
 
