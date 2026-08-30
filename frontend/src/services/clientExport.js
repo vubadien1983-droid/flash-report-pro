@@ -6,35 +6,61 @@ function sanitizeFilename(name) {
   return (name || 'Flash_Report').replace(/[\\/*?:"<>|]/g, '_').trim();
 }
 
+/**
+ * Robustly converts any image URL or Data URL (PNG, JPEG, WEBP, BMP, AVIF, Zalo clipboard)
+ * into a clean JPEG/PNG base64 string compatible with ExcelJS and jsPDF.
+ */
 async function getImageBase64(url) {
   if (!url) return null;
-  if (url.startsWith('data:image')) {
-    const parts = url.split(',');
-    const extension = url.includes('png') ? 'png' : 'jpeg';
-    return { base64: parts[1], extension };
-  }
 
-  try {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const extension = blob.type.includes('png') ? 'png' : 'jpeg';
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64data = reader.result.split(',')[1];
-        resolve({ base64: base64data, extension });
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch (e) {
-    console.error('Error fetching image for export:', e);
-    return null;
-  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width || 800;
+        canvas.height = img.naturalHeight || img.height || 600;
+        const ctx = canvas.getContext('2d');
+        // Fill white background for transparent PNGs before converting to JPEG
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const base64 = dataUrl.split(',')[1];
+        resolve({ base64, extension: 'jpeg', dataUrl });
+      } catch (err) {
+        console.warn('Canvas conversion fallback:', err);
+        if (url.startsWith('data:image')) {
+          const parts = url.split(',');
+          resolve({ base64: parts[1], extension: 'png', dataUrl: url });
+        } else {
+          resolve(null);
+        }
+      }
+    };
+    img.onerror = () => {
+      console.warn('Image load error during export:', url.substring(0, 40));
+      if (url.startsWith('data:image')) {
+        const parts = url.split(',');
+        resolve({ base64: parts[1], extension: 'png', dataUrl: url });
+      } else {
+        resolve(null);
+      }
+    };
+    img.src = url;
+  });
 }
 
 export async function exportExcelClient(report) {
+  if (!report) throw new Error('No report data provided');
+
   const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Flash Report Pro';
+  workbook.lastModifiedBy = 'Flash Report Pro';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
   const worksheet = workbook.addWorksheet('Flash Report', {
     views: [{ showGridLines: true }]
   });
@@ -42,13 +68,13 @@ export async function exportExcelClient(report) {
   // Set column widths
   worksheet.columns = [
     { key: 'no', width: 8 },
-    { key: 'tag', width: 15 },
-    { key: 'desc', width: 28 },
+    { key: 'tag', width: 16 },
+    { key: 'desc', width: 30 },
     { key: 'note', width: 22 },
-    { key: 'photo1', width: 17 },
-    { key: 'photo2', width: 17 },
-    { key: 'photo3', width: 17 },
-    { key: 'photo4', width: 17 }
+    { key: 'photo1', width: 18 },
+    { key: 'photo2', width: 18 },
+    { key: 'photo3', width: 18 },
+    { key: 'photo4', width: 18 }
   ];
 
   const thinBorder = {
@@ -131,7 +157,7 @@ export async function exportExcelClient(report) {
     };
   });
 
-  // Row 4: Detail of inspection section
+  // Row 4: Detail of inspection section bar
   const row4 = worksheet.getRow(4);
   row4.height = 22;
   worksheet.getCell('A4').value = 'Detail of inspection';
@@ -185,7 +211,7 @@ export async function exportExcelClient(report) {
     const itemNo = hasContent ? seqNo++ : '';
 
     const row = worksheet.getRow(currentRow);
-    row.height = 70;
+    row.height = 72;
 
     // No
     const cellA = worksheet.getCell(`A${currentRow}`);
@@ -221,17 +247,21 @@ export async function exportExcelClient(report) {
       const photoObj = photos[p];
       if (photoObj && photoObj.url) {
         const imgData = await getImageBase64(photoObj.url);
-        if (imgData) {
-          const imageId = workbook.addImage({
-            base64: imgData.base64,
-            extension: imgData.extension
-          });
+        if (imgData && imgData.base64) {
+          try {
+            const imageId = workbook.addImage({
+              base64: imgData.base64,
+              extension: imgData.extension || 'jpeg'
+            });
 
-          worksheet.addImage(imageId, {
-            tl: { col: 4 + p + 0.1, row: currentRow - 1 + 0.1 },
-            br: { col: 4 + p + 0.9, row: currentRow - 1 + 0.9 },
-            editAs: 'oneCell'
-          });
+            worksheet.addImage(imageId, {
+              tl: { col: 4 + p + 0.05, row: currentRow - 1 + 0.05 },
+              br: { col: 4 + p + 0.95, row: currentRow - 1 + 0.95 },
+              editAs: 'oneCell'
+            });
+          } catch (imgErr) {
+            console.error('Error attaching image to worksheet:', imgErr);
+          }
         }
       }
     }
@@ -239,7 +269,7 @@ export async function exportExcelClient(report) {
     currentRow++;
   }
 
-  // Write and download
+  // Write Excel binary buffer
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -254,12 +284,16 @@ export async function exportExcelClient(report) {
   link.download = fileName;
   document.body.appendChild(link);
   link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }, 100);
 }
 
 export async function exportPdfClient(report) {
-  // A4 Landscape: 297mm x 210mm
+  if (!report) throw new Error('No report data provided');
+
+  // A4 Landscape: 297mm x 210mm (841.89pt x 595.28pt)
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'pt',
@@ -312,7 +346,7 @@ export async function exportPdfClient(report) {
   doc.setTextColor(31, 41, 55);
   doc.text('Detail of inspection', pageWidth / 2, 102, { align: 'center' });
 
-  // Prepare table data and images
+  // Prepare table data and normalized images
   const items = report.items || [];
   let seqNo = 1;
   const tableRows = [];
@@ -327,7 +361,7 @@ export async function exportPdfClient(report) {
       const pObj = item.photos?.[p];
       if (pObj && pObj.url) {
         const img = await getImageBase64(pObj.url);
-        rowPhotos.push(img ? `data:image/${img.extension};base64,${img.base64}` : null);
+        rowPhotos.push(img?.dataUrl || null);
       } else {
         rowPhotos.push(null);
       }
@@ -382,17 +416,16 @@ export async function exportPdfClient(report) {
       7: { cellWidth: 85 }
     },
     didDrawCell: function (data) {
-      // Draw image inside photo cells
       if (data.section === 'body' && data.column.index >= 4 && data.column.index <= 7) {
         const photoIdx = data.column.index - 4;
-        const imgData = photoMatrix[data.row.index]?.[photoIdx];
-        if (imgData) {
-          const padding = 3;
+        const imgDataUrl = photoMatrix[data.row.index]?.[photoIdx];
+        if (imgDataUrl) {
+          const padding = 2;
           const maxW = data.cell.width - padding * 2;
           const maxH = data.cell.height - padding * 2;
           try {
             doc.addImage(
-              imgData,
+              imgDataUrl,
               'JPEG',
               data.cell.x + padding,
               data.cell.y + padding,
@@ -408,7 +441,6 @@ export async function exportPdfClient(report) {
       }
     },
     didDrawPage: function (data) {
-      // Footer page numbering
       const str = `Page ${doc.internal.getNumberOfPages()}`;
       doc.setFontSize(8);
       doc.setFont('Helvetica', 'normal');

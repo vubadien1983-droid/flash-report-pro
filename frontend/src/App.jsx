@@ -14,7 +14,7 @@ import ReportViewer from './components/ReportViewer';
 import Toast from './components/Toast';
 import {
   fetchReports, fetchReport, createReport, saveReport,
-  deleteReport, duplicateReport, getExcelExportUrl, getPdfExportUrl
+  deleteReport, duplicateReport
 } from './services/api';
 import {
   getLocalReports, getLocalReport, saveLocalReport, deleteLocalReport
@@ -357,27 +357,14 @@ export default function App() {
     }
   };
 
+  // 100% Reliable Client-Side Excel Export
   const handleExportExcel = async () => {
     if (!currentReport) return;
     setIsExporting(true);
     await executeSave(currentReport, false);
     try {
-      try {
-        const url = getExcelExportUrl(currentReport.id);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Backend export failed');
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        const fileName = `${(currentReport.title || 'Report').replace(/[\\/*?:"<>|]/g, '_')}_${(currentReport.inspection_date || '').replace(/-/g, '')}.xlsx`;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch (bErr) {
-        await exportExcelClient(currentReport);
-      }
-      showToast('Excel report downloaded successfully', 'success');
+      await exportExcelClient(currentReport);
+      showToast('Excel report (.xlsx) downloaded successfully', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
       showToast('Failed to generate Excel report', 'error');
@@ -386,27 +373,14 @@ export default function App() {
     }
   };
 
+  // 100% Reliable Client-Side PDF Export
   const handleExportPdf = async () => {
     if (!currentReport) return;
     setIsExporting(true);
     await executeSave(currentReport, false);
     try {
-      try {
-        const url = getPdfExportUrl(currentReport.id);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Backend export failed');
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        const fileName = `${(currentReport.title || 'Report').replace(/[\\/*?:"<>|]/g, '_')}_${(currentReport.inspection_date || '').replace(/-/g, '')}.pdf`;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch (bErr) {
-        await exportPdfClient(currentReport);
-      }
-      showToast('PDF report downloaded successfully', 'success');
+      await exportPdfClient(currentReport);
+      showToast('PDF report (.pdf) downloaded successfully', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
       showToast('Failed to generate PDF report', 'error');
@@ -530,7 +504,7 @@ export default function App() {
             disabled={isExporting}
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-lg shadow-2xs transition-colors"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
             Export Excel
           </button>
 
@@ -540,7 +514,7 @@ export default function App() {
             disabled={isExporting}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-2xs transition-all"
           >
-            <FileText className="w-3.5 h-3.5" />
+            {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Export PDF</span>
             <span className="sm:hidden">PDF</span>
           </button>

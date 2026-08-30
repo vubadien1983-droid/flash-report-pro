@@ -1,10 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X } from 'lucide-react';
-import { uploadPhotoFile, uploadPhotoBase64 } from '../services/api';
+import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen } from 'lucide-react';
+import { uploadPhotoFile } from '../services/api';
 
 export default function PhotoSlot({
   photo,
   slotIndex,
+  isSelected = false,
+  onSelectSlot,
   onPhotoChange,
   onPhotoDelete,
   onPhotoClick,
@@ -12,6 +14,7 @@ export default function PhotoSlot({
 }) {
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
+  const slotRef = useRef(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [slotUploading, setSlotUploading] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
@@ -20,76 +23,132 @@ export default function PhotoSlot({
 
   const handleFile = async (file) => {
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (JPG, PNG, WEBP)');
-      return;
-    }
     setSlotUploading(true);
     setShowOptionsModal(false);
 
     try {
-      try {
-        const res = await uploadPhotoFile(file);
+      // Normalize image to data URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
         onPhotoChange({
-          id: res.id,
-          filename: res.filename,
-          url: res.url,
+          id: `local_${Date.now()}_${slotIndex}`,
+          filename: file.name || `photo_${slotIndex + 1}.jpg`,
+          url: dataUrl,
           slot_index: slotIndex
         });
-        return;
-      } catch (backendErr) {
-        console.warn('Backend unavailable, saving locally as base64 URL');
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          onPhotoChange({
-            id: `local_${Date.now()}_${slotIndex}`,
-            filename: file.name || `photo_${slotIndex + 1}.jpg`,
-            url: reader.result,
-            slot_index: slotIndex
-          });
-        };
-        reader.readAsDataURL(file);
-      }
+        setSlotUploading(false);
+      };
+      reader.onerror = () => {
+        alert('Failed to read image file');
+        setSlotUploading(false);
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
       console.error('Failed to process image:', err);
-      alert('Failed to load image. Please try again.');
-    } finally {
       setSlotUploading(false);
+    } finally {
       if (cameraInputRef.current) cameraInputRef.current.value = '';
       if (galleryInputRef.current) galleryInputRef.current.value = '';
     }
   };
 
-  const handlePasteEvent = (e) => {
-    e.stopPropagation();
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const blob = items[i].getAsFile();
-        if (blob) {
-          handleFile(blob);
+  /**
+   * Comprehensive clipboard extractor supporting Zalo Desktop, web browsers,
+   * print-screen, and file copies.
+   */
+  const handlePasteEvent = async (e) => {
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
+
+    // 1. Check direct image items (Standard & Zalo Desktop PNG/JPEG copy)
+    const items = clipboardData.items;
+    if (items && items.length > 0) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          e.preventDefault();
+          e.stopPropagation();
+          const blob = item.getAsFile();
+          if (blob) {
+            handleFile(blob);
+            return;
+          }
+        }
+      }
+    }
+
+    // 2. Check files list (Copied files from file explorer or Zalo drag/drop)
+    const files = clipboardData.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/') || file.name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleFile(file);
           return;
         }
       }
     }
-  };
 
-  const handleSlotClick = () => {
-    if (isMobileView) {
-      // Phone Mode: show option to pick Camera or Gallery
-      setShowOptionsModal(true);
-    } else {
-      // Laptop Mode: directly open file explorer
-      galleryInputRef.current?.click();
+    // 3. Check HTML content (Zalo rich text / HTML <img> tag with data:image or local src)
+    const html = clipboardData.getData('text/html');
+    if (html) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const img = doc.querySelector('img');
+        if (img && img.src) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (img.src.startsWith('data:image')) {
+            onPhotoChange({
+              id: `local_${Date.now()}_${slotIndex}`,
+              filename: `zalo_paste_${Date.now()}.png`,
+              url: img.src,
+              slot_index: slotIndex
+            });
+            return;
+          } else if (img.src.startsWith('http') || img.src.startsWith('blob:')) {
+            // Fetch remote / blob image
+            try {
+              const res = await fetch(img.src);
+              const blob = await res.blob();
+              handleFile(blob);
+              return;
+            } catch (fetchErr) {
+              console.warn('Could not fetch HTML img src:', fetchErr);
+            }
+          }
+        }
+      } catch (htmlErr) {
+        console.warn('Error parsing clipboard HTML:', htmlErr);
+      }
     }
   };
 
-  const handleReplaceClick = (e) => {
-    e.stopPropagation();
+  const handleContainerClick = (e) => {
+    if (isMobileView) {
+      // On phone, tap opens the Camera / Gallery sheet
+      setShowOptionsModal(true);
+    } else {
+      // On Laptop, clicking the slot SELECTS it for paste (does NOT open file explorer)
+      if (onSelectSlot) {
+        onSelectSlot();
+      }
+      if (slotRef.current) {
+        slotRef.current.focus();
+      }
+    }
+  };
+
+  const handleBrowseButtonClick = (e) => {
+    e.stopPropagation(); // Do not trigger container click
     if (isMobileView) {
       setShowOptionsModal(true);
     } else {
+      // ONLY clicking this button opens the system file picker
       galleryInputRef.current?.click();
     }
   };
@@ -97,7 +156,9 @@ export default function PhotoSlot({
   return (
     <>
       <div
+        ref={slotRef}
         tabIndex={0}
+        onClick={handleContainerClick}
         onPaste={handlePasteEvent}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
@@ -106,9 +167,11 @@ export default function PhotoSlot({
           setIsDragOver(false);
           if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
         }}
-        className={`relative group w-full ${isMobileView ? 'h-24' : 'h-24 lg:h-28'} rounded-lg border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none ${
+        className={`relative group w-full ${isMobileView ? 'h-24' : 'h-24 lg:h-28'} rounded-lg border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none cursor-pointer ${
           isDragOver
-            ? 'border-brand-500 bg-brand-50/80 ring-2 ring-brand-500/20'
+            ? 'border-brand-500 bg-brand-50/80 ring-2 ring-brand-500/30'
+            : isSelected && !isMobileView
+            ? 'border-brand-500 bg-brand-50/50 ring-2 ring-brand-500/40 shadow-xs'
             : photo?.url
             ? 'border-slate-200 bg-slate-50'
             : 'border-dashed border-slate-300 hover:border-brand-400 bg-white hover:bg-slate-50'
@@ -147,7 +210,10 @@ export default function PhotoSlot({
               src={photo.url}
               alt={photo.filename || `Photo ${slotIndex + 1}`}
               className="w-full h-full object-contain p-1 cursor-pointer"
-              onClick={() => onPhotoClick(photo.url)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPhotoClick(photo.url);
+              }}
             />
 
             {/* Hover / Action Overlay */}
@@ -165,8 +231,8 @@ export default function PhotoSlot({
               </button>
               <button
                 type="button"
-                onClick={handleReplaceClick}
-                title={isMobileView ? "Replace photo (Camera or Gallery)" : "Replace photo (Browse files)"}
+                onClick={handleBrowseButtonClick}
+                title={isMobileView ? "Replace photo" : "Replace file"}
                 className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow hover:scale-105 transition-all"
               >
                 <Upload className="w-3.5 h-3.5" />
@@ -186,32 +252,47 @@ export default function PhotoSlot({
           </>
         ) : (
           /* Empty Slot */
-          <div
-            onClick={handleSlotClick}
-            className="w-full h-full flex flex-col items-center justify-center p-1.5 cursor-pointer text-slate-400 hover:text-brand-600 transition-colors"
-          >
+          <div className="w-full h-full flex flex-col items-center justify-between p-1.5 py-2 text-slate-400">
             {isMobileView ? (
-              /* Phone View: Camera Icon + Camera/Files */
-              <>
-                <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-1 text-slate-500 group-hover:text-brand-600">
+              /* Phone View */
+              <div className="flex flex-col items-center justify-center flex-1">
+                <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center mb-1 text-slate-500">
                   <Camera className="w-3.5 h-3.5" />
                 </div>
-                <span className="text-[11px] font-semibold text-slate-600 group-hover:text-brand-600 leading-tight">
+                <span className="text-[11px] font-semibold text-slate-600 leading-tight">
                   {slotLabels[slotIndex]}
                 </span>
                 <span className="text-[10px] text-slate-400">Camera / Files</span>
-              </>
+              </div>
             ) : (
-              /* Laptop View: Plus/Image Icon + Paste/Drop/Browse */
-              <>
-                <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-1 text-slate-500 group-hover:text-brand-600">
-                  <Plus className="w-4 h-4" />
+              /* Laptop View: Click slot = Select to Paste; Click '+' = Browse Folder */
+              <div className="w-full h-full flex flex-col items-center justify-between">
+                <div className="text-center">
+                  <span className="text-[10px] font-bold text-slate-600 block leading-tight">
+                    {slotLabels[slotIndex]}
+                  </span>
+                  {isSelected ? (
+                    <span className="text-[10px] font-bold text-brand-600 bg-brand-100/80 px-1.5 py-0.2 rounded mt-0.5 inline-block animate-pulse">
+                      Ctrl + V to Paste
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400 block mt-0.5">
+                      Click to Select
+                    </span>
+                  )}
                 </div>
-                <span className="text-[11px] font-semibold text-slate-600 group-hover:text-brand-600 leading-tight">
-                  {slotLabels[slotIndex]}
-                </span>
-                <span className="text-[10px] text-slate-400">Browse / Ctrl+V</span>
-              </>
+
+                {/* Explicit Browse Button (ONLY this button opens file picker) */}
+                <button
+                  type="button"
+                  onClick={handleBrowseButtonClick}
+                  title="Open folder to choose file"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-brand-500 hover:text-white border border-slate-200 hover:border-brand-500 rounded-md transition-all shadow-2xs"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Browse</span>
+                </button>
+              </div>
             )}
           </div>
         )}

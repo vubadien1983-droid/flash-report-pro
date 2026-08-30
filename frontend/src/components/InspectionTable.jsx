@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus } from 'lucide-react';
 import PhotoSlot from './PhotoSlot';
 
@@ -8,6 +8,9 @@ export default function InspectionTable({
   onPhotoClick,
   isMobileMode = false
 }) {
+  // Selected slot for keyboard paste: { itemIndex, slotIndex } | null
+  const [selectedSlot, setSelectedSlot] = useState(null);
+
   const handleItemChange = (index, field, value) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
@@ -26,6 +29,13 @@ export default function InspectionTable({
     item.photos = photos;
     newItems[itemIndex] = item;
     onItemsChange(newItems);
+
+    // Auto select next slot
+    if (slotIndex < 3) {
+      setSelectedSlot({ itemIndex, slotIndex: slotIndex + 1 });
+    } else if (itemIndex < items.length - 1) {
+      setSelectedSlot({ itemIndex: itemIndex + 1, slotIndex: 0 });
+    }
   };
 
   const handlePhotoDelete = (itemIndex, slotIndex) => {
@@ -39,6 +49,89 @@ export default function InspectionTable({
     newItems[itemIndex] = item;
     onItemsChange(newItems);
   };
+
+  // Global window paste listener when a slot is selected
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      // Don't intercept if user is typing in input or textarea
+      const targetTag = e.target.tagName?.toLowerCase();
+      if (targetTag === 'input' || targetTag === 'textarea') return;
+
+      if (!selectedSlot) return;
+      const { itemIndex, slotIndex } = selectedSlot;
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      // 1. Direct image items
+      const items = clipboardData.items;
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.indexOf('image') !== -1) {
+            const blob = item.getAsFile();
+            if (blob) {
+              e.preventDefault();
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                handlePhotoChange(itemIndex, slotIndex, {
+                  id: `local_${Date.now()}_${slotIndex}`,
+                  filename: `paste_${Date.now()}.png`,
+                  url: reader.result,
+                  slot_index: slotIndex
+                });
+              };
+              reader.readAsDataURL(blob);
+              return;
+            }
+          }
+        }
+      }
+
+      // 2. Files
+      const files = clipboardData.files;
+      if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (file.type.startsWith('image/') || file.name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
+            e.preventDefault();
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              handlePhotoChange(itemIndex, slotIndex, {
+                id: `local_${Date.now()}_${slotIndex}`,
+                filename: file.name,
+                url: reader.result,
+                slot_index: slotIndex
+              });
+            };
+            reader.readAsDataURL(file);
+            return;
+          }
+        }
+      }
+
+      // 3. HTML <img> tags (Zalo Desktop copy)
+      const html = clipboardData.getData('text/html');
+      if (html) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const img = doc.querySelector('img');
+          if (img && img.src && img.src.startsWith('data:image')) {
+            e.preventDefault();
+            handlePhotoChange(itemIndex, slotIndex, {
+              id: `local_${Date.now()}_${slotIndex}`,
+              filename: `zalo_paste_${Date.now()}.png`,
+              url: img.src,
+              slot_index: slotIndex
+            });
+          }
+        } catch (err) {}
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [selectedSlot, items]);
 
   const addRow = () => {
     const newItem = {
@@ -196,6 +289,8 @@ export default function InspectionTable({
                         key={slotIdx}
                         photo={photos[slotIdx]}
                         slotIndex={slotIdx}
+                        isSelected={selectedSlot?.itemIndex === idx && selectedSlot?.slotIndex === slotIdx}
+                        onSelectSlot={() => setSelectedSlot({ itemIndex: idx, slotIndex: slotIdx })}
                         onPhotoChange={(photoData) => handlePhotoChange(idx, slotIdx, photoData)}
                         onPhotoDelete={() => handlePhotoDelete(idx, slotIdx)}
                         onPhotoClick={onPhotoClick}
@@ -219,7 +314,7 @@ export default function InspectionTable({
                 <th className="px-3 py-2.5 min-w-[200px]">Inspection Description</th>
                 <th className="w-48 lg:w-64 px-3 py-2.5">Note</th>
                 <th className="px-3 py-2.5 text-center" colSpan={4}>
-                  Photos (Columns E, F, G, H - Paste Ctrl+V, Camera or Drop)
+                  Photos (Columns E, F, G, H - Select & Paste Ctrl+V, or Browse)
                 </th>
                 <th className="w-14 px-2 py-2.5 text-center">Action</th>
               </tr>
@@ -275,12 +370,14 @@ export default function InspectionTable({
                       />
                     </td>
 
-                    {/* 4 Photo Columns (Equal widths, stretch to fill) */}
+                    {/* 4 Photo Columns (Equal widths) */}
                     {[0, 1, 2, 3].map((slotIdx) => (
                       <td key={slotIdx} className="px-1.5 py-2 align-middle w-28 md:w-32 lg:w-36 xl:w-44">
                         <PhotoSlot
                           photo={photos[slotIdx]}
                           slotIndex={slotIdx}
+                          isSelected={selectedSlot?.itemIndex === idx && selectedSlot?.slotIndex === slotIdx}
+                          onSelectSlot={() => setSelectedSlot({ itemIndex: idx, slotIndex: slotIdx })}
                           onPhotoChange={(photoData) => handlePhotoChange(idx, slotIdx, photoData)}
                           onPhotoDelete={() => handlePhotoDelete(idx, slotIdx)}
                           onPhotoClick={onPhotoClick}
