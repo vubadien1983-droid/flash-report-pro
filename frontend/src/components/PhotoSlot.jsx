@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X } from 'lucide-react';
 import { uploadPhotoFile, uploadPhotoBase64 } from '../services/api';
 
@@ -28,7 +28,6 @@ export default function PhotoSlot({
     setShowOptionsModal(false);
 
     try {
-      // Try backend upload first
       try {
         const res = await uploadPhotoFile(file);
         onPhotoChange({
@@ -39,7 +38,6 @@ export default function PhotoSlot({
         });
         return;
       } catch (backendErr) {
-        // Fallback to client-side base64 data URL for offline / Vercel
         console.warn('Backend unavailable, saving locally as base64 URL');
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -60,28 +58,6 @@ export default function PhotoSlot({
       if (cameraInputRef.current) cameraInputRef.current.value = '';
       if (galleryInputRef.current) galleryInputRef.current.value = '';
     }
-  };
-
-  const handleClipboardPaste = async () => {
-    try {
-      if (navigator.clipboard?.read) {
-        const clipboardItems = await navigator.clipboard.read();
-        for (const item of clipboardItems) {
-          for (const type of item.types) {
-            if (type.startsWith('image/')) {
-              const blob = await item.getType(type);
-              handleFile(blob);
-              return;
-            }
-          }
-        }
-      }
-      alert('No image found on clipboard.');
-    } catch (err) {
-      console.warn('Clipboard read error:', err);
-      alert('Clipboard access denied or unavailable. Use Ctrl+V or upload file.');
-    }
-    setShowOptionsModal(false);
   };
 
   const handlePasteEvent = (e) => {
@@ -115,7 +91,7 @@ export default function PhotoSlot({
           setIsDragOver(false);
           if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
         }}
-        className={`relative group h-20 w-full min-w-[85px] rounded-lg border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none ${
+        className={`relative group w-full ${isMobileView ? 'h-24' : 'h-24 lg:h-28'} rounded-lg border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none ${
           isDragOver
             ? 'border-brand-500 bg-brand-50/80 ring-2 ring-brand-500/20'
             : photo?.url
@@ -153,12 +129,12 @@ export default function PhotoSlot({
             <img
               src={photo.url}
               alt={photo.filename || `Photo ${slotIndex + 1}`}
-              className="w-full h-full object-contain p-0.5 cursor-pointer"
+              className="w-full h-full object-contain p-1 cursor-pointer"
               onClick={() => onPhotoClick(photo.url)}
             />
 
-            {/* Desktop Hover / Mobile Action Overlay */}
-            <div className="absolute inset-0 bg-slate-950/65 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 backdrop-blur-[1px]">
+            {/* Hover / Action Overlay */}
+            <div className="absolute inset-0 bg-slate-950/65 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 backdrop-blur-[1px]">
               <button
                 type="button"
                 onClick={(e) => {
@@ -198,20 +174,20 @@ export default function PhotoSlot({
           /* Empty Slot */
           <div
             onClick={openSlotAction}
-            className="w-full h-full flex flex-col items-center justify-center p-1 cursor-pointer text-slate-400 hover:text-brand-600 transition-colors"
+            className="w-full h-full flex flex-col items-center justify-center p-1.5 cursor-pointer text-slate-400 hover:text-brand-600 transition-colors"
           >
-            <div className="w-6 h-6 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-0.5">
+            <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-1">
               <Camera className="w-3.5 h-3.5" />
             </div>
-            <span className="text-[10px] font-semibold text-slate-500 group-hover:text-brand-600 leading-tight">
+            <span className="text-[11px] font-semibold text-slate-600 group-hover:text-brand-600 leading-tight">
               {slotLabels[slotIndex]}
             </span>
-            <span className="text-[9px] text-slate-400">Camera / Files</span>
+            <span className="text-[10px] text-slate-400">Camera / Files</span>
           </div>
         )}
       </div>
 
-      {/* Photo Picker Bottom Sheet / Action Modal */}
+      {/* Photo Picker Modal */}
       {showOptionsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-xs w-full p-5 border border-slate-200">
@@ -229,7 +205,6 @@ export default function PhotoSlot({
             </div>
 
             <div className="space-y-2">
-              {/* Option 1: Direct Camera */}
               <button
                 type="button"
                 onClick={() => {
@@ -247,7 +222,6 @@ export default function PhotoSlot({
                 </div>
               </button>
 
-              {/* Option 2: Gallery / Files */}
               <button
                 type="button"
                 onClick={() => {

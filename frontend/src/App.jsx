@@ -159,10 +159,8 @@ export default function App() {
     if (!reportToSave || !reportToSave.id) return;
     setIsSaving(true);
     try {
-      // Save locally to IndexedDB
       await saveLocalReport(reportToSave);
 
-      // Save to backend if available
       try {
         await saveReport(reportToSave.id, reportToSave);
       } catch (e) {
@@ -171,7 +169,6 @@ export default function App() {
 
       setHasUnsavedChanges(false);
 
-      // Refresh list
       try {
         const updatedList = await fetchReports();
         setReports(updatedList);
@@ -317,14 +314,12 @@ export default function App() {
     }
   };
 
-  // Export handlers with dual backend / client fallback
   const handleExportExcel = async () => {
     if (!currentReport) return;
     setIsExporting(true);
     await executeSave(currentReport, false);
     try {
       try {
-        // Try backend streaming
         const url = getExcelExportUrl(currentReport.id);
         const res = await fetch(url);
         if (!res.ok) throw new Error('Backend export failed');
@@ -337,8 +332,6 @@ export default function App() {
         a.click();
         document.body.removeChild(a);
       } catch (bErr) {
-        // Client-side ExcelJS fallback
-        console.log('Using client-side ExcelJS export');
         await exportExcelClient(currentReport);
       }
       showToast('Excel report downloaded successfully', 'success');
@@ -356,7 +349,6 @@ export default function App() {
     await executeSave(currentReport, false);
     try {
       try {
-        // Try backend streaming
         const url = getPdfExportUrl(currentReport.id);
         const res = await fetch(url);
         if (!res.ok) throw new Error('Backend export failed');
@@ -369,8 +361,6 @@ export default function App() {
         a.click();
         document.body.removeChild(a);
       } catch (bErr) {
-        // Client-side jsPDF fallback
-        console.log('Using client-side jsPDF export');
         await exportPdfClient(currentReport);
       }
       showToast('PDF report downloaded successfully', 'success');
@@ -394,20 +384,19 @@ export default function App() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-100 font-sans">
       {/* Top Navbar */}
-      <header className="h-14 px-4 md:px-6 bg-white border-b border-slate-200/90 flex items-center justify-between flex-shrink-0 z-20 shadow-xs">
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Mobile hamburger menu toggle */}
+      <header className="h-14 px-3 md:px-5 bg-white border-b border-slate-200/90 flex items-center justify-between flex-shrink-0 z-20 shadow-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
           {isPhoneView && (
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
+              className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
               title="Open reports menu"
             >
               <Menu className="w-5 h-5" />
             </button>
           )}
 
-          <h2 className="text-xs md:text-sm font-bold text-slate-800 truncate max-w-[180px] md:max-w-md">
+          <h2 className="text-xs md:text-sm font-bold text-slate-800 truncate max-w-[200px] md:max-w-md lg:max-w-xl">
             {currentReport?.title || 'Untitled Flash Report'}
           </h2>
 
@@ -464,7 +453,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Desktop action buttons */}
           <button
             type="button"
             onClick={() => executeSave(currentReport, true)}
@@ -530,12 +518,10 @@ export default function App() {
         {/* 2. Mobile Drawer Sidebar (Slide-out) */}
         {isPhoneView && mobileDrawerOpen && (
           <div className="fixed inset-0 z-50 flex">
-            {/* Backdrop */}
             <div
               onClick={() => setMobileDrawerOpen(false)}
               className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
             />
-            {/* Drawer */}
             <div className="relative w-80 max-w-[85vw] h-full bg-slate-900 shadow-2xl z-10 animate-fade-in">
               <Sidebar
                 reports={reports}
@@ -552,9 +538,9 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. Main Report Editor Area */}
-        <main className="flex-1 h-full overflow-y-auto p-3 md:p-6 pb-24 sm:pb-6">
-          <div className="max-w-7xl mx-auto">
+        {/* 3. Main Report Editor Area (Full Width Edge-to-Edge) */}
+        <main className="flex-1 h-full overflow-y-auto p-3 md:p-4 lg:p-5 pb-24 sm:pb-6 w-full">
+          <div className="w-full">
             {currentReport && (
               <>
                 <HeaderForm

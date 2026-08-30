@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus, Tag, FileText, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus } from 'lucide-react';
 import PhotoSlot from './PhotoSlot';
 
 export default function InspectionTable({
@@ -83,7 +83,7 @@ export default function InspectionTable({
   });
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200/80 overflow-hidden mb-8">
+    <div className="w-full bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-8">
       {/* Section Header */}
       <div className="px-4 md:px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -112,7 +112,7 @@ export default function InspectionTable({
             return (
               <div
                 key={item.id || idx}
-                className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-sm hover:border-brand-300 transition-all"
+                className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-xs hover:border-brand-300 transition-all"
               >
                 {/* Card Top: No + Tag + Move & Delete */}
                 <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
@@ -209,19 +209,19 @@ export default function InspectionTable({
           })}
         </div>
       ) : (
-        /* 2. Desktop Laptop 8-Column Table View */
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[960px]">
+        /* 2. Desktop Laptop Full-Width 8-Column Table View */
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-700 text-xs font-bold">
                 <th className="w-12 px-3 py-2.5 text-center">No</th>
-                <th className="w-36 px-3 py-2.5">Tag</th>
-                <th className="w-72 px-3 py-2.5">Inspection Description</th>
-                <th className="w-48 px-3 py-2.5">Note</th>
+                <th className="w-32 lg:w-44 px-3 py-2.5">Tag</th>
+                <th className="px-3 py-2.5 min-w-[200px]">Inspection Description</th>
+                <th className="w-48 lg:w-64 px-3 py-2.5">Note</th>
                 <th className="px-3 py-2.5 text-center" colSpan={4}>
                   Photos (Columns E, F, G, H - Paste Ctrl+V, Camera or Drop)
                 </th>
-                <th className="w-16 px-2 py-2.5 text-center">Action</th>
+                <th className="w-14 px-2 py-2.5 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
@@ -260,7 +260,7 @@ export default function InspectionTable({
                         value={item.description || ''}
                         onChange={(e) => handleItemChange(idx, 'description', e.target.value)}
                         placeholder="Enter description of inspection findings..."
-                        className="w-full text-xs text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none resize-y min-h-[64px]"
+                        className="w-full text-xs text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2.5 py-1.5 transition-all outline-none resize-y min-h-[72px]"
                       />
                     </td>
 
@@ -271,13 +271,13 @@ export default function InspectionTable({
                         value={item.note || ''}
                         onChange={(e) => handleItemChange(idx, 'note', e.target.value)}
                         placeholder="e.g. Needs immediate repair"
-                        className="w-full text-xs text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none resize-y min-h-[64px]"
+                        className="w-full text-xs text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2.5 py-1.5 transition-all outline-none resize-y min-h-[72px]"
                       />
                     </td>
 
-                    {/* Photo Slots (Columns E, F, G, H) */}
+                    {/* 4 Photo Columns (Equal widths, stretch to fill) */}
                     {[0, 1, 2, 3].map((slotIdx) => (
-                      <td key={slotIdx} className="px-1.5 py-2 align-middle w-28">
+                      <td key={slotIdx} className="px-1.5 py-2 align-middle w-28 md:w-32 lg:w-36 xl:w-44">
                         <PhotoSlot
                           photo={photos[slotIdx]}
                           slotIndex={slotIdx}
@@ -335,7 +335,7 @@ export default function InspectionTable({
         <button
           type="button"
           onClick={addRow}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl shadow-sm transition-all"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl shadow-xs transition-all"
         >
           <ListPlus className="w-4 h-4 text-brand-600" />
           Add Inspection Item
