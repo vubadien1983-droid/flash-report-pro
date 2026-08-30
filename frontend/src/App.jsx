@@ -2,13 +2,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save, Download, FileSpreadsheet, FileText, Printer,
   Sparkles, Check, RefreshCw, AlertCircle, Share2, Menu,
-  Laptop, Smartphone, Sliders, ChevronDown
+  Laptop, Smartphone, Sliders, ChevronDown, Link as LinkIcon
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import HeaderForm from './components/HeaderForm';
 import InspectionTable from './components/InspectionTable';
 import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
+import ShareModal from './components/ShareModal';
+import ReportViewer from './components/ReportViewer';
 import Toast from './components/Toast';
 import {
   fetchReports, fetchReport, createReport, saveReport,
@@ -20,12 +22,28 @@ import {
 import {
   exportExcelClient, exportPdfClient
 } from './services/clientExport';
+import {
+  publishReportForSharing
+} from './services/shareService';
 
 export default function App() {
+  // Check if current route is a shared viewer link e.g. #/view/:id
+  const [currentHash, setCurrentHash] = useState(window.location.hash);
+
+  useEffect(() => {
+    const handleHashChange = () => setCurrentHash(window.location.hash);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Shared View Mode
+  const isViewRoute = currentHash.startsWith('#/view/');
+  const sharedReportId = isViewRoute ? currentHash.replace('#/view/', '').split('?')[0] : null;
+
   const [reports, setReports] = useState([]);
   const [activeReportId, setActiveReportId] = useState(null);
   const [currentReport, setCurrentReport] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isViewRoute);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -44,8 +62,10 @@ export default function App() {
   // Modals state
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, id: null, title: '' });
   const [imageModalState, setImageModalState] = useState({ isOpen: false, url: '', title: '' });
+  const [shareModalState, setShareModalState] = useState({ isOpen: false, shareUrl: '', reportTitle: '' });
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [isExporting, setIsExporting] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const autoSaveTimerRef = useRef(null);
 
@@ -64,6 +84,7 @@ export default function App() {
 
   // Load initial reports with fallback to IndexedDB
   const loadReportsList = async (preferredSelectId = null) => {
+    if (isViewRoute) return;
     try {
       let list = [];
       try {
@@ -114,8 +135,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadReportsList();
-  }, []);
+    if (!isViewRoute) {
+      loadReportsList();
+    }
+  }, [isViewRoute]);
 
   // Splitter resizing
   const startResizing = useCallback((e) => {
@@ -314,6 +337,26 @@ export default function App() {
     }
   };
 
+  // Share Link Handler
+  const handleOpenShareModal = async () => {
+    if (!currentReport) return;
+    setIsPublishing(true);
+    await executeSave(currentReport, false);
+    try {
+      const { shareUrl } = await publishReportForSharing(currentReport);
+      setShareModalState({
+        isOpen: true,
+        shareUrl,
+        reportTitle: currentReport.title
+      });
+    } catch (err) {
+      console.error('Failed to generate share link:', err);
+      showToast('Failed to generate share link', 'error');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handleExportExcel = async () => {
     if (!currentReport) return;
     setIsExporting(true);
@@ -372,6 +415,11 @@ export default function App() {
     }
   };
 
+  // If user opens a shared presentation link e.g. #/view/:id
+  if (isViewRoute && sharedReportId) {
+    return <ReportViewer reportId={sharedReportId} />;
+  }
+
   if (loading) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3">
@@ -396,7 +444,7 @@ export default function App() {
             </button>
           )}
 
-          <h2 className="text-xs md:text-sm font-bold text-slate-800 truncate max-w-[200px] md:max-w-md lg:max-w-xl">
+          <h2 className="text-xs md:text-sm font-bold text-slate-800 truncate max-w-[160px] sm:max-w-[240px] md:max-w-md lg:max-w-lg">
             {currentReport?.title || 'Untitled Flash Report'}
           </h2>
 
@@ -453,6 +501,19 @@ export default function App() {
             </button>
           </div>
 
+          {/* Share Link Button */}
+          <button
+            type="button"
+            onClick={handleOpenShareModal}
+            disabled={isPublishing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200/80 rounded-lg shadow-2xs transition-colors"
+            title="Generate shareable web link with QR code"
+          >
+            {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 text-brand-600" />}
+            <span className="hidden sm:inline">Share Link</span>
+            <span className="sm:hidden">Share</span>
+          </button>
+
           <button
             type="button"
             onClick={() => executeSave(currentReport, true)}
@@ -467,7 +528,7 @@ export default function App() {
             type="button"
             onClick={handleExportExcel}
             disabled={isExporting}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-lg shadow-xs transition-colors"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-lg shadow-2xs transition-colors"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
             Export Excel
@@ -477,7 +538,7 @@ export default function App() {
             type="button"
             onClick={handleExportPdf}
             disabled={isExporting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-xs transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-2xs transition-all"
           >
             <FileText className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Export PDF</span>
@@ -538,7 +599,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. Main Report Editor Area (Full Width Edge-to-Edge) */}
+        {/* 3. Main Report Editor Area */}
         <main className="flex-1 h-full overflow-y-auto p-3 md:p-4 lg:p-5 pb-24 sm:pb-6 w-full">
           <div className="w-full">
             {currentReport && (
@@ -562,12 +623,21 @@ export default function App() {
 
       {/* Mobile Sticky Bottom Action Bar */}
       {isPhoneView && (
-        <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-2.5 px-4 flex items-center justify-between gap-2 z-30 shadow-lg">
+        <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-2.5 px-3 flex items-center justify-between gap-1.5 z-30 shadow-lg">
+          <button
+            type="button"
+            onClick={handleOpenShareModal}
+            disabled={isPublishing}
+            className="flex-1 py-2 text-xs font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-xl flex items-center justify-center gap-1 transition-colors"
+          >
+            <Share2 className="w-4 h-4 text-brand-600" />
+            Share
+          </button>
           <button
             type="button"
             onClick={() => executeSave(currentReport, true)}
             disabled={isSaving}
-            className="flex-1 py-2 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+            className="flex-1 py-2 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center gap-1 transition-colors"
           >
             <Save className="w-4 h-4 text-slate-600" />
             Save
@@ -576,7 +646,7 @@ export default function App() {
             type="button"
             onClick={handleExportExcel}
             disabled={isExporting}
-            className="flex-1 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+            className="flex-1 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-xl flex items-center justify-center gap-1 transition-colors"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             Excel
@@ -585,13 +655,21 @@ export default function App() {
             type="button"
             onClick={handleExportPdf}
             disabled={isExporting}
-            className="flex-1 py-2 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm shadow-brand-600/30"
+            className="flex-1 py-2 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-xl flex items-center justify-center gap-1 transition-all shadow-sm shadow-brand-600/30"
           >
             <FileText className="w-4 h-4" />
             PDF
           </button>
         </div>
       )}
+
+      {/* Share Report Modal */}
+      <ShareModal
+        isOpen={shareModalState.isOpen}
+        shareUrl={shareModalState.shareUrl}
+        reportTitle={shareModalState.reportTitle}
+        onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
+      />
 
       {/* Delete Confirmation Modal */}
       <DeleteModal
