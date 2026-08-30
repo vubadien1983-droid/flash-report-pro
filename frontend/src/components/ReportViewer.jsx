@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   FileSpreadsheet, FileText, Download, Printer, Share2,
   Calendar, Tag, MapPin, Layers, Camera, Check, RefreshCw,
-  ExternalLink, ArrowLeft, ZoomIn
+  ExternalLink, ArrowLeft, ZoomIn, ImageIcon
 } from 'lucide-react';
 import { fetchSharedReport } from '../services/shareService';
 import { exportExcelClient, exportPdfClient } from '../services/clientExport';
@@ -34,6 +34,8 @@ export default function ReportViewer({ reportId }) {
         const data = await fetchSharedReport(reportId);
         if (data) {
           setReport(data);
+          // Set page title to Report Title
+          document.title = data.title || 'Flash Report';
         } else {
           showToast('Could not find or load this shared report', 'error');
         }
@@ -54,7 +56,7 @@ export default function ReportViewer({ reportId }) {
     setIsExporting(true);
     try {
       await exportExcelClient(report);
-      showToast('Excel report generated and downloaded!', 'success');
+      showToast('Excel report (.xlsx) downloaded successfully!', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
       showToast('Failed to export Excel report', 'error');
@@ -68,7 +70,7 @@ export default function ReportViewer({ reportId }) {
     setIsExporting(true);
     try {
       await exportPdfClient(report);
-      showToast('PDF report generated and downloaded!', 'success');
+      showToast('PDF report (.pdf) downloaded successfully!', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
       showToast('Failed to export PDF report', 'error');
@@ -86,7 +88,7 @@ export default function ReportViewer({ reportId }) {
     return (
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3 p-4">
         <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />
-        <p className="text-sm font-medium text-slate-300">Loading Shared Flash Report...</p>
+        <p className="text-sm font-medium text-slate-300">Loading Report...</p>
       </div>
     );
   }
@@ -119,17 +121,16 @@ export default function ReportViewer({ reportId }) {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans">
-      {/* Top Presentation Navbar */}
+      {/* Top Presentation Navbar - Showing Report Title */}
       <header className="h-14 px-4 md:px-8 bg-white border-b border-slate-200/90 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-sky-400 flex items-center justify-center text-white shadow-md shadow-brand-500/20 flex-shrink-0">
             <FileSpreadsheet className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <h1 className="text-xs md:text-sm font-bold text-slate-900 truncate">
-              {report.title || 'Flash Inspection Report'}
+              {report.title || 'Untitled Flash Report'}
             </h1>
-            <p className="text-[10px] text-slate-400 font-medium hidden sm:block">Block B - EPC#1</p>
           </div>
         </div>
 
@@ -152,7 +153,7 @@ export default function ReportViewer({ reportId }) {
             className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 rounded-lg shadow-2xs transition-colors"
             title="Download formatted Excel spreadsheet"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
             <span className="hidden sm:inline">Export Excel</span>
             <span className="sm:hidden">Excel</span>
           </button>
@@ -164,7 +165,7 @@ export default function ReportViewer({ reportId }) {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-2xs shadow-brand-600/20 transition-all"
             title="Download print-ready PDF document"
           >
-            <FileText className="w-3.5 h-3.5" />
+            {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" /> : <FileText className="w-3.5 h-3.5" />}
             <span>Export PDF</span>
           </button>
         </div>
@@ -175,12 +176,9 @@ export default function ReportViewer({ reportId }) {
         {/* Header Metadata Card */}
         <div className="w-full bg-white rounded-xl shadow-xs border border-slate-200/80 p-4 md:p-6">
           <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-brand-50 text-brand-700 text-[10px] font-bold rounded-md uppercase tracking-wide border border-brand-200">
-                Flash Report
-              </span>
-              <span className="text-xs text-slate-400 font-medium">Block B - EPC#1</span>
-            </div>
+            <span className="px-2 py-0.5 bg-brand-50 text-brand-700 text-[10px] font-bold rounded-md uppercase tracking-wide border border-brand-200">
+              Flash Report
+            </span>
             <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
               {report.inspection_date || 'No Date'}
@@ -228,12 +226,12 @@ export default function ReportViewer({ reportId }) {
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-700 text-xs font-bold">
-                    <th className="w-12 px-3 py-2.5 text-center">No</th>
-                    <th className="w-36 px-3 py-2.5">Tag</th>
-                    <th className="px-3 py-2.5 min-w-[200px]">Inspection Description</th>
-                    <th className="w-48 lg:w-60 px-3 py-2.5">Note</th>
-                    <th className="px-3 py-2.5 text-center" colSpan={4}>Photos (Columns E, F, G, H)</th>
+                  <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 text-xs font-bold">
+                    <th className="w-12 px-3 py-2.5 text-center font-bold">No</th>
+                    <th className="w-36 px-3 py-2.5 text-center font-bold">Tag</th>
+                    <th className="px-3 py-2.5 min-w-[200px] text-center font-bold">Inspection Description</th>
+                    <th className="w-48 lg:w-60 px-3 py-2.5 text-center font-bold">Note</th>
+                    <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>Illustration</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -253,7 +251,7 @@ export default function ReportViewer({ reportId }) {
                             <span className="text-slate-300 text-xs font-mono">-</span>
                           )}
                         </td>
-                        <td className="px-3 py-3 align-top text-xs font-bold text-slate-800">
+                        <td className="px-3 py-3 align-top text-xs font-bold text-slate-800 text-center">
                           {item.tag || '-'}
                         </td>
                         <td className="px-3 py-3 align-top text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
@@ -269,12 +267,12 @@ export default function ReportViewer({ reportId }) {
                               {p?.url ? (
                                 <div
                                   onClick={() => setActivePhotoUrl(p.url)}
-                                  className="relative group h-24 lg:h-28 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer hover:border-brand-500 transition-all shadow-2xs"
+                                  className="relative group h-24 lg:h-28 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer hover:border-brand-500 transition-all shadow-2xs flex items-center justify-center"
                                 >
                                   <img
                                     src={p.url}
                                     alt={p.filename || `Photo ${slotIdx + 1}`}
-                                    className="w-full h-full object-contain p-0.5"
+                                    className="w-full h-full object-contain p-1"
                                   />
                                   <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                     <ZoomIn className="w-5 h-5 text-white" />
@@ -343,13 +341,13 @@ export default function ReportViewer({ reportId }) {
                       {[0, 1, 2, 3].map((slotIdx) => {
                         const p = photos[slotIdx];
                         return (
-                          <div key={slotIdx} className="h-24 rounded-lg overflow-hidden border border-slate-200 bg-white">
+                          <div key={slotIdx} className="h-24 rounded-lg overflow-hidden border border-slate-200 bg-white flex items-center justify-center">
                             {p?.url ? (
                               <img
                                 src={p.url}
                                 alt={`Photo ${slotIdx + 1}`}
                                 onClick={() => setActivePhotoUrl(p.url)}
-                                className="w-full h-full object-contain p-0.5 cursor-pointer"
+                                className="w-full h-full object-contain p-1 cursor-pointer"
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-slate-300 text-[10px]">
@@ -369,8 +367,7 @@ export default function ReportViewer({ reportId }) {
 
         {/* Footer info */}
         <footer className="text-center py-6 text-xs text-slate-400">
-          <p>Flash Report Pro • Block B - EPC#1 Project</p>
-          <a href="#/" className="text-brand-600 hover:underline inline-flex items-center gap-1 mt-1 font-medium">
+          <a href="#/" className="text-brand-600 hover:underline inline-flex items-center gap-1 font-medium">
             <ExternalLink className="w-3 h-3" />
             Open Flash Report Editor
           </a>

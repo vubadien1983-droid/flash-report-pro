@@ -53,7 +53,6 @@ export default function InspectionTable({
   // Global window paste listener when a slot is selected
   useEffect(() => {
     const handleGlobalPaste = (e) => {
-      // Don't intercept if user is typing in input or textarea
       const targetTag = e.target.tagName?.toLowerCase();
       if (targetTag === 'input' || targetTag === 'textarea') return;
 
@@ -63,10 +62,10 @@ export default function InspectionTable({
       if (!clipboardData) return;
 
       // 1. Direct image items
-      const items = clipboardData.items;
-      if (items && items.length > 0) {
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
+      const itemsList = clipboardData.items;
+      if (itemsList && itemsList.length > 0) {
+        for (let i = 0; i < itemsList.length; i++) {
+          const item = itemsList[i];
           if (item.type.indexOf('image') !== -1) {
             const blob = item.getAsFile();
             if (blob) {
@@ -218,7 +217,7 @@ export default function InspectionTable({
                       value={item.tag || ''}
                       onChange={(e) => handleItemChange(idx, 'tag', e.target.value)}
                       placeholder="Tag: e.g. 21-TK-101"
-                      className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:border-brand-500 outline-none"
+                      className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:border-brand-500 outline-none text-center"
                     />
                   </div>
 
@@ -279,8 +278,8 @@ export default function InspectionTable({
 
                 {/* 2x2 Photo Touch Grid */}
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1.5 flex items-center justify-between">
-                    <span>Photos (Columns E, F, G, H)</span>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                    <span>Illustration</span>
                     <span className="text-[10px] text-brand-600 font-medium">Tap to snap camera / pick</span>
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -308,15 +307,15 @@ export default function InspectionTable({
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-700 text-xs font-bold">
-                <th className="w-12 px-3 py-2.5 text-center">No</th>
-                <th className="w-32 lg:w-44 px-3 py-2.5">Tag</th>
-                <th className="px-3 py-2.5 min-w-[200px]">Inspection Description</th>
-                <th className="w-48 lg:w-64 px-3 py-2.5">Note</th>
-                <th className="px-3 py-2.5 text-center" colSpan={4}>
-                  Photos (Columns E, F, G, H - Select & Paste Ctrl+V, or Browse)
+              <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
+                <th className="w-12 px-3 py-2.5 text-center font-bold">No</th>
+                <th className="w-32 lg:w-44 px-3 py-2.5 text-center font-bold">Tag</th>
+                <th className="px-3 py-2.5 min-w-[200px] text-center font-bold">Inspection Description</th>
+                <th className="w-48 lg:w-64 px-3 py-2.5 text-center font-bold">Note</th>
+                <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>
+                  Illustration
                 </th>
-                <th className="w-14 px-2 py-2.5 text-center">Action</th>
+                <th className="w-14 px-2 py-2.5 text-center font-bold">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
@@ -337,14 +336,14 @@ export default function InspectionTable({
                       )}
                     </td>
 
-                    {/* Tag */}
+                    {/* Tag (Centered) */}
                     <td className="px-2 py-2 align-top">
                       <input
                         type="text"
                         value={item.tag || ''}
                         onChange={(e) => handleItemChange(idx, 'tag', e.target.value)}
                         placeholder="e.g. 21-TK-101"
-                        className="w-full text-xs font-medium text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none"
+                        className="w-full text-xs font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none text-center"
                       />
                     </td>
 

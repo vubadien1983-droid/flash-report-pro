@@ -197,7 +197,7 @@ def generate_pdf_report(report_data: Dict[str, Any], static_photos_dir: str) -> 
             Paragraph("<b>Tag</b>", tbl_header_style),
             Paragraph("<b>Inspection Description</b>", tbl_header_style),
             Paragraph("<b>Note</b>", tbl_header_style),
-            Paragraph("<b>Photos</b>", tbl_header_style),
+            Paragraph("<b>Illustration</b>", tbl_header_style),
             "", "", ""
         ]
     ]

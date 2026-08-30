@@ -8,42 +8,63 @@ function sanitizeFilename(name) {
 
 /**
  * Robustly converts any image URL or Data URL (PNG, JPEG, WEBP, BMP, AVIF, Zalo clipboard)
- * into a clean JPEG/PNG base64 string compatible with ExcelJS and jsPDF.
+ * into a clean JPEG base64 string, and calculates its exact natural aspect ratio
+ * so images are NEVER squished or distorted in Excel and PDF.
  */
-async function getImageBase64(url) {
+async function getImageData(url) {
   if (!url) return null;
 
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width || 800;
-        canvas.height = img.naturalHeight || img.height || 600;
-        const ctx = canvas.getContext('2d');
-        // Fill white background for transparent PNGs before converting to JPEG
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        const base64 = dataUrl.split(',')[1];
-        resolve({ base64, extension: 'jpeg', dataUrl });
-      } catch (err) {
-        console.warn('Canvas conversion fallback:', err);
-        if (url.startsWith('data:image')) {
-          const parts = url.split(',');
-          resolve({ base64: parts[1], extension: 'png', dataUrl: url });
+      const nw = img.naturalWidth || img.width || 800;
+      const nh = img.naturalHeight || img.height || 600;
+      const maxDim = 800;
+      let w = nw;
+      let h = nh;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
         } else {
-          resolve(null);
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
         }
       }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      // Fill white background for transparent PNGs
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const base64 = dataUrl.split(',')[1];
+      resolve({
+        base64,
+        extension: 'jpeg',
+        dataUrl,
+        aspectRatio: nw / nh,
+        width: w,
+        height: h
+      });
     };
     img.onerror = () => {
       console.warn('Image load error during export:', url.substring(0, 40));
       if (url.startsWith('data:image')) {
         const parts = url.split(',');
-        resolve({ base64: parts[1], extension: 'png', dataUrl: url });
+        resolve({
+          base64: parts[1],
+          extension: 'jpeg',
+          dataUrl: url,
+          aspectRatio: 1.33,
+          width: 800,
+          height: 600
+        });
       } else {
         resolve(null);
       }
@@ -65,11 +86,11 @@ export async function exportExcelClient(report) {
     views: [{ showGridLines: true }]
   });
 
-  // Set column widths
+  // Set column widths (Photo columns E, F, G, H with generous width)
   worksheet.columns = [
-    { key: 'no', width: 8 },
+    { key: 'no', width: 7 },
     { key: 'tag', width: 16 },
-    { key: 'desc', width: 30 },
+    { key: 'desc', width: 32 },
     { key: 'note', width: 22 },
     { key: 'photo1', width: 18 },
     { key: 'photo2', width: 18 },
@@ -169,7 +190,7 @@ export async function exportExcelClient(report) {
     worksheet.getCell(`${col}4`).border = thinBorder;
   });
 
-  // Row 5: Column Headers
+  // Row 5: Column Headers (Bold & Centered, "Illustration" column)
   const row5 = worksheet.getRow(5);
   row5.height = 24;
   const headers = [
@@ -187,7 +208,8 @@ export async function exportExcelClient(report) {
     cell.border = thinBorder;
   });
 
-  worksheet.getCell('E5').value = 'Photos';
+  // Merge E5:H5 for "Illustration"
+  worksheet.getCell('E5').value = 'Illustration';
   worksheet.getCell('E5').font = { name: 'Arial', size: 10, bold: true, color: { argb: '111827' } };
   worksheet.getCell('E5').alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getCell('E5').fill = headerFill;
@@ -201,6 +223,11 @@ export async function exportExcelClient(report) {
   let currentRow = 6;
   let seqNo = 1;
 
+  // Approximate cell dimensions: Col width 18 ~ 135px; Row height 72pt ~ 96px
+  const cellWidthPx = 135;
+  const cellHeightPx = 96;
+  const cellAspectRatio = cellWidthPx / cellHeightPx; // ~1.406
+
   for (const item of items) {
     const tag = (item.tag || '').trim();
     const desc = (item.description || '').trim();
@@ -213,25 +240,25 @@ export async function exportExcelClient(report) {
     const row = worksheet.getRow(currentRow);
     row.height = 72;
 
-    // No
+    // No (Centered)
     const cellA = worksheet.getCell(`A${currentRow}`);
     cellA.value = itemNo;
     cellA.alignment = { horizontal: 'center', vertical: 'middle' };
     cellA.border = thinBorder;
 
-    // Tag
+    // Tag (Centered)
     const cellB = worksheet.getCell(`B${currentRow}`);
     cellB.value = tag;
     cellB.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cellB.border = thinBorder;
 
-    // Description
+    // Description (Left, Middle)
     const cellC = worksheet.getCell(`C${currentRow}`);
     cellC.value = desc;
     cellC.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
     cellC.border = thinBorder;
 
-    // Note
+    // Note (Left, Middle)
     const cellD = worksheet.getCell(`D${currentRow}`);
     cellD.value = note;
     cellD.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
@@ -246,17 +273,38 @@ export async function exportExcelClient(report) {
 
       const photoObj = photos[p];
       if (photoObj && photoObj.url) {
-        const imgData = await getImageBase64(photoObj.url);
+        const imgData = await getImageData(photoObj.url);
         if (imgData && imgData.base64) {
           try {
             const imageId = workbook.addImage({
               base64: imgData.base64,
-              extension: imgData.extension || 'jpeg'
+              extension: 'jpeg'
             });
 
+            // Calculate precise proportional offsets to PREVENT distortion/squishing
+            const imgAR = imgData.aspectRatio || 1.33;
+            let colOffset = 0.05;
+            let colSpan = 0.90;
+            let rowOffset = 0.05;
+            let rowSpan = 0.90;
+
+            if (imgAR < cellAspectRatio) {
+              // Image is taller than cell aspect ratio: scale width down to preserve aspect ratio
+              rowOffset = 0.05;
+              rowSpan = 0.90;
+              colSpan = Math.max(0.2, Math.min(0.90, 0.90 * (imgAR / cellAspectRatio)));
+              colOffset = (1.0 - colSpan) / 2;
+            } else {
+              // Image is wider than cell aspect ratio: scale height down to preserve aspect ratio
+              colOffset = 0.05;
+              colSpan = 0.90;
+              rowSpan = Math.max(0.2, Math.min(0.90, 0.90 * (cellAspectRatio / imgAR)));
+              rowOffset = (1.0 - rowSpan) / 2;
+            }
+
             worksheet.addImage(imageId, {
-              tl: { col: 4 + p + 0.05, row: currentRow - 1 + 0.05 },
-              br: { col: 4 + p + 0.95, row: currentRow - 1 + 0.95 },
+              tl: { col: 4 + p + colOffset, row: currentRow - 1 + rowOffset },
+              br: { col: 4 + p + colOffset + colSpan, row: currentRow - 1 + rowOffset + rowSpan },
               editAs: 'oneCell'
             });
           } catch (imgErr) {
@@ -360,8 +408,8 @@ export async function exportPdfClient(report) {
     for (let p = 0; p < 4; p++) {
       const pObj = item.photos?.[p];
       if (pObj && pObj.url) {
-        const img = await getImageBase64(pObj.url);
-        rowPhotos.push(img?.dataUrl || null);
+        const img = await getImageData(pObj.url);
+        rowPhotos.push(img || null);
       } else {
         rowPhotos.push(null);
       }
@@ -377,17 +425,17 @@ export async function exportPdfClient(report) {
     ]);
   }
 
-  // Draw table with AutoTable
+  // Draw table with AutoTable (Bold & Centered headers, "Illustration")
   doc.autoTable({
     startY: 114,
     margin: { left: 36, right: 36, bottom: 40 },
     head: [
       [
-        { content: 'No', styles: { halign: 'center' } },
-        { content: 'Tag', styles: { halign: 'center' } },
-        { content: 'Inspection Description', styles: { halign: 'left' } },
-        { content: 'Note', styles: { halign: 'left' } },
-        { content: 'Photos (Columns E, F, G, H)', colSpan: 4, styles: { halign: 'center' } }
+        { content: 'No', styles: { halign: 'center', fontStyle: 'bold' } },
+        { content: 'Tag', styles: { halign: 'center', fontStyle: 'bold' } },
+        { content: 'Inspection Description', styles: { halign: 'center', fontStyle: 'bold' } },
+        { content: 'Note', styles: { halign: 'center', fontStyle: 'bold' } },
+        { content: 'Illustration', colSpan: 4, styles: { halign: 'center', fontStyle: 'bold' } }
       ]
     ],
     body: tableRows,
@@ -418,19 +466,37 @@ export async function exportPdfClient(report) {
     didDrawCell: function (data) {
       if (data.section === 'body' && data.column.index >= 4 && data.column.index <= 7) {
         const photoIdx = data.column.index - 4;
-        const imgDataUrl = photoMatrix[data.row.index]?.[photoIdx];
-        if (imgDataUrl) {
+        const imgObj = photoMatrix[data.row.index]?.[photoIdx];
+        if (imgObj && imgObj.dataUrl) {
           const padding = 2;
-          const maxW = data.cell.width - padding * 2;
-          const maxH = data.cell.height - padding * 2;
+          const boxW = data.cell.width - padding * 2;
+          const boxH = data.cell.height - padding * 2;
+          const boxAR = boxW / boxH;
+          const imgAR = imgObj.aspectRatio || 1.33;
+
+          let drawW = boxW;
+          let drawH = boxH;
+          let drawX = data.cell.x + padding;
+          let drawY = data.cell.y + padding;
+
+          if (imgAR < boxAR) {
+            // Taller image: fit height, center horizontally
+            drawW = boxH * imgAR;
+            drawX += (boxW - drawW) / 2;
+          } else {
+            // Wider image: fit width, center vertically
+            drawH = boxW / imgAR;
+            drawY += (boxH - drawH) / 2;
+          }
+
           try {
             doc.addImage(
-              imgDataUrl,
+              imgObj.dataUrl,
               'JPEG',
-              data.cell.x + padding,
-              data.cell.y + padding,
-              maxW,
-              maxH,
+              drawX,
+              drawY,
+              drawW,
+              drawH,
               undefined,
               'FAST'
             );

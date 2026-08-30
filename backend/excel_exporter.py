@@ -121,7 +121,7 @@ def generate_excel_report(report_data: Dict[str, Any], static_photos_dir: str) -
         cell.fill = HEADER_FILL
         cell.border = THIN_BORDER
 
-    ws['E5'] = "Photos"
+    ws['E5'] = "Illustration"
     ws['E5'].font = Font(name="Arial", size=10, bold=True, color="111827")
     ws['E5'].alignment = Alignment(horizontal="center", vertical="center")
     ws['E5'].fill = HEADER_FILL
