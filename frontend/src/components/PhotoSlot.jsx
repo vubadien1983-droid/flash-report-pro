@@ -21,7 +21,7 @@ export default function PhotoSlot({
   const handleFile = async (file) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file');
+      alert('Please select a valid image file (JPG, PNG, WEBP)');
       return;
     }
     setSlotUploading(true);
@@ -75,8 +75,23 @@ export default function PhotoSlot({
     }
   };
 
-  const openSlotAction = () => {
-    setShowOptionsModal(true);
+  const handleSlotClick = () => {
+    if (isMobileView) {
+      // Phone Mode: show option to pick Camera or Gallery
+      setShowOptionsModal(true);
+    } else {
+      // Laptop Mode: directly open file explorer
+      galleryInputRef.current?.click();
+    }
+  };
+
+  const handleReplaceClick = (e) => {
+    e.stopPropagation();
+    if (isMobileView) {
+      setShowOptionsModal(true);
+    } else {
+      galleryInputRef.current?.click();
+    }
   };
 
   return (
@@ -99,15 +114,17 @@ export default function PhotoSlot({
             : 'border-dashed border-slate-300 hover:border-brand-400 bg-white hover:bg-slate-50'
         }`}
       >
-        {/* Hidden Camera Input */}
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={(e) => handleFile(e.target.files?.[0])}
-          className="hidden"
-        />
+        {/* Hidden Camera Input (Phone mode only) */}
+        {isMobileView && (
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => handleFile(e.target.files?.[0])}
+            className="hidden"
+          />
+        )}
 
         {/* Hidden Gallery / File Input */}
         <input
@@ -148,11 +165,8 @@ export default function PhotoSlot({
               </button>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openSlotAction();
-                }}
-                title="Replace photo"
+                onClick={handleReplaceClick}
+                title={isMobileView ? "Replace photo (Camera or Gallery)" : "Replace photo (Browse files)"}
                 className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow hover:scale-105 transition-all"
               >
                 <Upload className="w-3.5 h-3.5" />
@@ -173,22 +187,38 @@ export default function PhotoSlot({
         ) : (
           /* Empty Slot */
           <div
-            onClick={openSlotAction}
+            onClick={handleSlotClick}
             className="w-full h-full flex flex-col items-center justify-center p-1.5 cursor-pointer text-slate-400 hover:text-brand-600 transition-colors"
           >
-            <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-1">
-              <Camera className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-[11px] font-semibold text-slate-600 group-hover:text-brand-600 leading-tight">
-              {slotLabels[slotIndex]}
-            </span>
-            <span className="text-[10px] text-slate-400">Camera / Files</span>
+            {isMobileView ? (
+              /* Phone View: Camera Icon + Camera/Files */
+              <>
+                <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-1 text-slate-500 group-hover:text-brand-600">
+                  <Camera className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-[11px] font-semibold text-slate-600 group-hover:text-brand-600 leading-tight">
+                  {slotLabels[slotIndex]}
+                </span>
+                <span className="text-[10px] text-slate-400">Camera / Files</span>
+              </>
+            ) : (
+              /* Laptop View: Plus/Image Icon + Paste/Drop/Browse */
+              <>
+                <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-brand-50 flex items-center justify-center mb-1 text-slate-500 group-hover:text-brand-600">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <span className="text-[11px] font-semibold text-slate-600 group-hover:text-brand-600 leading-tight">
+                  {slotLabels[slotIndex]}
+                </span>
+                <span className="text-[10px] text-slate-400">Browse / Ctrl+V</span>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {/* Photo Picker Modal */}
-      {showOptionsModal && (
+      {/* Phone Mode Only: Photo Picker Bottom Sheet / Modal */}
+      {isMobileView && showOptionsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-xs w-full p-5 border border-slate-200">
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
@@ -235,7 +265,7 @@ export default function PhotoSlot({
                 </div>
                 <div>
                   <div className="text-slate-900 font-bold text-xs">Choose from Gallery / Files</div>
-                  <div className="text-[11px] text-slate-500 font-normal">Select existing photo from phone or laptop</div>
+                  <div className="text-[11px] text-slate-500 font-normal">Select existing photo from phone</div>
                 </div>
               </button>
             </div>
