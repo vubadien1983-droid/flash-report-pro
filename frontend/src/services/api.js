@@ -8,7 +8,7 @@ export async function fetchReports() {
 }
 
 export async function fetchReport(id) {
-  const res = await fetch(`${API_BASE}/reports/${id}`);
+  const res = await fetch(`${API_BASE}/reports?id=${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error('Failed to fetch report');
   return await res.json();
 }
@@ -24,17 +24,17 @@ export async function createReport(payload = {}) {
 }
 
 export async function saveReport(id, reportData) {
-  const res = await fetch(`${API_BASE}/reports/${id}`, {
-    method: 'PUT',
+  const res = await fetch(`${API_BASE}/reports`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reportData)
+    body: JSON.stringify({ ...reportData, id })
   });
   if (!res.ok) throw new Error('Failed to save report');
   return await res.json();
 }
 
 export async function deleteReport(id) {
-  const res = await fetch(`${API_BASE}/reports/${id}`, {
+  const res = await fetch(`${API_BASE}/reports?id=${encodeURIComponent(id)}`, {
     method: 'DELETE'
   });
   if (!res.ok) throw new Error('Failed to delete report');
@@ -42,39 +42,29 @@ export async function deleteReport(id) {
 }
 
 export async function duplicateReport(id) {
-  const res = await fetch(`${API_BASE}/reports/${id}/duplicate`, {
-    method: 'POST'
-  });
-  if (!res.ok) throw new Error('Failed to duplicate report');
-  return await res.json();
+  const report = await fetchReport(id);
+  const newId = `rep_${Date.now()}`;
+  const dup = {
+    ...report,
+    id: newId,
+    title: `${report.title || 'Report'} (Copy)`,
+    cloud_code: null
+  };
+  await saveReport(newId, dup);
+  return dup;
 }
 
 export async function uploadPhotoFile(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch(`${API_BASE}/upload-photo`, {
-    method: 'POST',
-    body: formData
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve({ url: reader.result });
+    };
+    reader.readAsDataURL(file);
   });
-  if (!res.ok) throw new Error('Failed to upload photo');
-  return await res.json();
 }
 
-export async function uploadPhotoBase64(base64String) {
-  const formData = new FormData();
-  formData.append('base64_data', base64String);
-  const res = await fetch(`${API_BASE}/upload-photo`, {
-    method: 'POST',
-    body: formData
-  });
-  if (!res.ok) throw new Error('Failed to upload clipboard photo');
-  return await res.json();
+export async function uploadPhotoBase64(base64) {
+  return { url: base64 };
 }
 
-export function getExcelExportUrl(reportId) {
-  return `${API_BASE}/reports/${reportId}/export/excel`;
-}
-
-export function getPdfExportUrl(reportId) {
-  return `${API_BASE}/reports/${reportId}/export/pdf`;
-}

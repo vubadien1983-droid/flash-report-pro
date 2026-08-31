@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen } from 'lucide-react';
-import { uploadPhotoFile } from '../services/api';
 
 export default function PhotoSlot({
   photo,

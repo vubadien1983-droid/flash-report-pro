@@ -96,23 +96,43 @@ export default function App() {
     setToast({ message, type });
   };
 
-  // Load initial reports with fallback to IndexedDB
+  // Load initial reports with seamless cloud + local IndexedDB merging
   const loadReportsList = async (preferredSelectId = null) => {
     if (isViewRoute) return;
     try {
-      let list = [];
+      // 1. Fetch from local IndexedDB
+      const localList = await getLocalReports();
+
+      // 2. Fetch from Cloud Serverless API
+      let cloudList = [];
       try {
-        list = await fetchReports();
+        cloudList = await fetchReports();
       } catch (e) {
-        console.warn('Backend unavailable, loading from IndexedDB storage:', e);
-        list = await getLocalReports();
+        console.warn('Cloud reports list note:', e);
       }
 
-      setReports(list);
+      // 3. Merge lists by ID (favoring newer timestamp)
+      const map = new Map();
+      localList.forEach((r) => map.set(r.id, r));
+      cloudList.forEach((r) => {
+        if (!map.has(r.id)) {
+          map.set(r.id, r);
+        } else {
+          const existing = map.get(r.id);
+          if (new Date(r.updated_at || 0) > new Date(existing.updated_at || 0)) {
+            map.set(r.id, { ...existing, ...r });
+          }
+        }
+      });
+
+      const mergedList = Array.from(map.values());
+      mergedList.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+
+      setReports(mergedList);
 
       let targetId = preferredSelectId;
-      if (!targetId && list.length > 0) {
-        targetId = list[0].id;
+      if (!targetId && mergedList.length > 0) {
+        targetId = mergedList[0].id;
       }
 
       if (targetId) {
@@ -130,11 +150,17 @@ export default function App() {
 
   const loadSingleReport = async (id) => {
     try {
-      let rep = null;
-      try {
-        rep = await fetchReport(id);
-      } catch (e) {
-        rep = await getLocalReport(id);
+      let rep = await getLocalReport(id);
+      if (!rep || !rep.title || !rep.items || rep.items.length === 0) {
+        try {
+          const cloudRep = await fetchReport(id);
+          if (cloudRep && cloudRep.title) {
+            rep = cloudRep;
+            await saveLocalReport(cloudRep);
+          }
+        } catch (e) {
+          console.warn('Cloud single report fetch note:', e);
+        }
       }
 
       if (rep) {
