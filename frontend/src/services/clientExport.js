@@ -86,16 +86,16 @@ export async function exportExcelClient(report) {
     views: [{ showGridLines: true }]
   });
 
-  // Set column widths (Photo columns E, F, G, H with generous width)
+  // Set column widths (Reduced text columns, enlarged photo columns E, F, G, H)
   worksheet.columns = [
-    { key: 'no', width: 7 },
-    { key: 'tag', width: 16 },
-    { key: 'desc', width: 32 },
-    { key: 'note', width: 22 },
-    { key: 'photo1', width: 18 },
-    { key: 'photo2', width: 18 },
-    { key: 'photo3', width: 18 },
-    { key: 'photo4', width: 18 }
+    { key: 'no', width: 6 },
+    { key: 'tag', width: 15 },
+    { key: 'desc', width: 28 },
+    { key: 'note', width: 20 },
+    { key: 'photo1', width: 22 },
+    { key: 'photo2', width: 22 },
+    { key: 'photo3', width: 22 },
+    { key: 'photo4', width: 22 }
   ];
 
   const thinBorder = {
@@ -238,30 +238,34 @@ export async function exportExcelClient(report) {
     const itemNo = hasContent ? seqNo++ : '';
 
     const row = worksheet.getRow(currentRow);
-    row.height = 72;
+    row.height = 92;
 
     // No (Centered)
     const cellA = worksheet.getCell(`A${currentRow}`);
     cellA.value = itemNo;
+    cellA.font = { name: 'Arial', size: 9.5, bold: false, color: { argb: '111827' } };
     cellA.alignment = { horizontal: 'center', vertical: 'middle' };
     cellA.border = thinBorder;
 
     // Tag (Centered)
     const cellB = worksheet.getCell(`B${currentRow}`);
     cellB.value = tag;
-    cellB.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cellB.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: '111827' } };
+    cellB.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
     cellB.border = thinBorder;
 
-    // Description (Left, Middle)
+    // Description (Left, Top)
     const cellC = worksheet.getCell(`C${currentRow}`);
     cellC.value = desc;
-    cellC.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    cellC.font = { name: 'Arial', size: 9.5, bold: false, color: { argb: '1F2937' } };
+    cellC.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
     cellC.border = thinBorder;
 
-    // Note (Left, Middle)
+    // Note (Left, Top)
     const cellD = worksheet.getCell(`D${currentRow}`);
     cellD.value = note;
-    cellD.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    cellD.font = { name: 'Arial', size: 9.5, bold: false, color: { argb: '374151' } };
+    cellD.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
     cellD.border = thinBorder;
 
     // Photo cells (E, F, G, H)
@@ -454,14 +458,14 @@ export async function exportPdfClient(report) {
       fontStyle: 'bold'
     },
     columnStyles: {
-      0: { cellWidth: 35, halign: 'center' },
-      1: { cellWidth: 75, halign: 'center' },
-      2: { cellWidth: 180 },
-      3: { cellWidth: 140 },
-      4: { cellWidth: 85, minCellHeight: 65 },
-      5: { cellWidth: 85 },
-      6: { cellWidth: 85 },
-      7: { cellWidth: 85 }
+      0: { cellWidth: 28, halign: 'center' },
+      1: { cellWidth: 62, halign: 'center' },
+      2: { cellWidth: 170, halign: 'left' },
+      3: { cellWidth: 130, halign: 'left' },
+      4: { cellWidth: 95, minCellHeight: 70 },
+      5: { cellWidth: 95 },
+      6: { cellWidth: 95 },
+      7: { cellWidth: 95 }
     },
     didDrawCell: function (data) {
       if (data.section === 'body' && data.column.index >= 4 && data.column.index <= 7) {

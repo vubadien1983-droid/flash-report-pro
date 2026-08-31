@@ -167,7 +167,7 @@ export default function PhotoSlot({
           setIsDragOver(false);
           if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
         }}
-        className={`relative group w-full ${isMobileView ? 'h-24' : 'h-24 lg:h-28'} rounded-lg border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none cursor-pointer ${
+        className={`relative group w-full ${isMobileView ? 'h-32 sm:h-36' : 'h-32 lg:h-36 xl:h-40'} rounded-xl border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none cursor-pointer ${
           isDragOver
             ? 'border-brand-500 bg-brand-50/80 ring-2 ring-brand-500/30'
             : isSelected && !isMobileView

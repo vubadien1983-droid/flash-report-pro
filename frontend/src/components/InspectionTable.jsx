@@ -363,14 +363,14 @@ export default function InspectionTable({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
-                <th className="w-12 px-3 py-2.5 text-center font-bold">No</th>
-                <th className="w-36 lg:w-48 px-3 py-2.5 text-center font-bold">Tag</th>
-                <th className="px-3 py-2.5 min-w-[200px] text-center font-bold">Inspection Description</th>
-                <th className="w-48 lg:w-64 px-3 py-2.5 text-center font-bold">Note</th>
+                <th className="w-10 px-2 py-2.5 text-center font-bold">No</th>
+                <th className="w-32 lg:w-36 px-2.5 py-2.5 text-center font-bold">Tag</th>
+                <th className="w-48 lg:w-56 px-3 py-2.5 text-center font-bold">Inspection Description</th>
+                <th className="w-36 lg:w-48 px-3 py-2.5 text-center font-bold">Note</th>
                 <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>
                   Illustration
                 </th>
-                <th className="w-20 px-2 py-2.5 text-center font-bold">Action</th>
+                <th className="w-16 px-2 py-2.5 text-center font-bold">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
@@ -381,9 +381,9 @@ export default function InspectionTable({
                 return (
                   <tr key={item.id || idx} className="hover:bg-slate-50/60 transition-colors group">
                     {/* No */}
-                    <td className="px-3 py-3 text-center align-middle">
+                    <td className="px-2 py-3 text-center align-middle">
                       {rowNo ? (
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200/80 text-slate-800 text-xs font-bold">
+                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200/80 text-slate-800 text-[11px] font-bold">
                           {rowNo}
                         </span>
                       ) : (
@@ -392,41 +392,41 @@ export default function InspectionTable({
                     </td>
 
                     {/* Tag (Auto-wrapping multiline textarea for full visibility) */}
-                    <td className="px-2 py-2 align-top">
+                    <td className="px-1.5 py-2 align-top">
                       <textarea
                         rows={3}
                         value={item.tag || ''}
                         onChange={(e) => handleItemChange(idx, 'tag', e.target.value)}
-                        placeholder="e.g. CPPT-E-1101-02 / CPPT-E-1102"
-                        className="w-full text-xs font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none text-center resize-y whitespace-pre-wrap break-words leading-snug min-h-[72px]"
+                        placeholder="e.g. CPPT-E-1101-02"
+                        className="w-full text-[11px] font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none text-center resize-y whitespace-pre-wrap break-words leading-snug min-h-[85px]"
                       />
                     </td>
 
-                    {/* Inspection Description */}
+                    {/* Inspection Description (Left-aligned, compact font) */}
                     <td className="px-2 py-2 align-top">
                       <textarea
                         rows={3}
                         value={item.description || ''}
                         onChange={(e) => handleItemChange(idx, 'description', e.target.value)}
                         placeholder="Enter description of inspection findings..."
-                        className="w-full text-xs text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2.5 py-1.5 transition-all outline-none resize-y min-h-[72px]"
+                        className="w-full text-[11px] text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2.5 py-1.5 transition-all outline-none resize-y min-h-[85px] text-left leading-relaxed"
                       />
                     </td>
 
-                    {/* Note */}
+                    {/* Note (Left-aligned, compact font) */}
                     <td className="px-2 py-2 align-top">
                       <textarea
                         rows={3}
                         value={item.note || ''}
                         onChange={(e) => handleItemChange(idx, 'note', e.target.value)}
                         placeholder="e.g. Needs immediate repair"
-                        className="w-full text-xs text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2.5 py-1.5 transition-all outline-none resize-y min-h-[72px]"
+                        className="w-full text-[11px] text-slate-700 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2.5 py-1.5 transition-all outline-none resize-y min-h-[85px] text-left leading-relaxed"
                       />
                     </td>
 
-                    {/* 4 Photo Columns (Equal widths) */}
+                    {/* 4 Photo Columns (Enlarged widths for prominent photo viewing) */}
                     {[0, 1, 2, 3].map((slotIdx) => (
-                      <td key={slotIdx} className="px-1.5 py-2 align-middle w-28 md:w-32 lg:w-36 xl:w-44">
+                      <td key={slotIdx} className="px-1.5 py-2 align-middle w-36 md:w-44 lg:w-52 xl:w-60">
                         <PhotoSlot
                           photo={photos[slotIdx]}
                           slotIndex={slotIdx}

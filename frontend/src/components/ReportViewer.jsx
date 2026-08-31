@@ -292,31 +292,31 @@ export default function ReportViewer({ reportId }) {
                       </span>
                     </div>
 
-                    {/* Description */}
+                    {/* Description (Left aligned) */}
                     {item.description && (
                       <div>
                         <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-0.5">
                           Inspection Description
                         </span>
-                        <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                        <p className="text-[11px] text-slate-800 leading-relaxed whitespace-pre-wrap break-words text-left">
                           {item.description}
                         </p>
                       </div>
                     )}
 
-                    {/* Note */}
+                    {/* Note (Left aligned) */}
                     {item.note && (
                       <div>
                         <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-0.5">
                           Note / Action
                         </span>
-                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                        <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap break-words text-left">
                           {item.note}
                         </p>
                       </div>
                     )}
 
-                    {/* 2x2 Photo Grid */}
+                    {/* 2x2 Photo Grid (Enlarged) */}
                     <div>
                       <span className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider mb-1.5">
                         Illustration
@@ -327,7 +327,7 @@ export default function ReportViewer({ reportId }) {
                           return (
                             <div
                               key={slotIdx}
-                              className="h-28 rounded-lg overflow-hidden border border-slate-200 bg-white flex items-center justify-center relative shadow-2xs"
+                              className="h-32 sm:h-36 rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center relative shadow-2xs"
                             >
                               {p?.url ? (
                                 <div
@@ -358,10 +358,10 @@ export default function ReportViewer({ reportId }) {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
-                    <th className="w-12 px-3 py-2.5 text-center font-bold">No</th>
-                    <th className="w-36 px-3 py-2.5 text-center font-bold">Tag</th>
-                    <th className="px-3 py-2.5 min-w-[200px] text-center font-bold">Inspection Description</th>
-                    <th className="w-48 lg:w-60 px-3 py-2.5 text-center font-bold">Note</th>
+                    <th className="w-10 px-2 py-2.5 text-center font-bold">No</th>
+                    <th className="w-32 lg:w-36 px-2.5 py-2.5 text-center font-bold">Tag</th>
+                    <th className="w-48 lg:w-56 px-3 py-2.5 text-center font-bold">Inspection Description</th>
+                    <th className="w-36 lg:w-48 px-3 py-2.5 text-center font-bold">Note</th>
                     <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>Illustration</th>
                   </tr>
                 </thead>
@@ -373,32 +373,32 @@ export default function ReportViewer({ reportId }) {
 
                     return (
                       <tr key={item.id || idx} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-3 py-3 text-center align-middle">
+                        <td className="px-2 py-3 text-center align-middle">
                           {no ? (
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 text-slate-800 text-xs font-bold">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 text-slate-800 text-[11px] font-bold">
                               {no}
                             </span>
                           ) : (
                             <span className="text-slate-300 text-xs font-mono">-</span>
                           )}
                         </td>
-                        <td className="px-3 py-3 align-top text-xs font-bold text-slate-800 text-center whitespace-pre-wrap break-words">
+                        <td className="px-2 py-3 align-top text-[11px] font-bold text-slate-800 text-center whitespace-pre-wrap break-words leading-snug">
                           {item.tag || '-'}
                         </td>
-                        <td className="px-3 py-3 align-top text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                        <td className="px-3 py-3 align-top text-[11px] text-slate-800 leading-relaxed whitespace-pre-wrap break-words text-left">
                           {item.description || '-'}
                         </td>
-                        <td className="px-3 py-3 align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
+                        <td className="px-3 py-3 align-top text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap break-words text-left">
                           {item.note || '-'}
                         </td>
                         {[0, 1, 2, 3].map((slotIdx) => {
                           const p = photos[slotIdx];
                           return (
-                            <td key={slotIdx} className="px-1.5 py-2 align-middle w-28 md:w-32 lg:w-36">
+                            <td key={slotIdx} className="px-1.5 py-2 align-middle w-36 md:w-44 lg:w-52 xl:w-60">
                               {p?.url ? (
                                 <div
                                   onClick={() => setActivePhotoUrl(p.url)}
-                                  className="relative group h-24 lg:h-28 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer hover:border-brand-500 transition-all shadow-2xs flex items-center justify-center"
+                                  className="relative group h-32 lg:h-36 xl:h-40 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer hover:border-brand-500 transition-all shadow-2xs flex items-center justify-center"
                                 >
                                   <img
                                     src={p.url}
@@ -410,7 +410,7 @@ export default function ReportViewer({ reportId }) {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="h-24 lg:h-28 rounded-lg border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-slate-300 text-[10px]">
+                                <div className="h-32 lg:h-36 xl:h-40 rounded-xl border border-dashed border-slate-200 bg-slate-50/40 flex items-center justify-center text-slate-300 text-[10px]">
                                   -
                                 </div>
                               )}
