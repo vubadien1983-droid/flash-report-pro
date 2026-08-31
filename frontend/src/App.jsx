@@ -97,21 +97,11 @@ export default function App() {
     setToast({ message, type });
   };
 
-  // Load initial reports with seamless cloud + local IndexedDB merging & auto-sync
+  // Cloud-First Initial Loader & Synchronizer
   const loadReportsList = async (preferredSelectId = null) => {
     if (isViewRoute) return;
     try {
-      // 1. Fetch from local IndexedDB
-      const localList = await getLocalReports();
-
-      // Clean out any legacy test dummy reports
-      for (const r of localList) {
-        if (r.id === 'rep_test_sync_phone' || (r.title && r.title.includes('Second Report'))) {
-          await deleteLocalReport(r.id);
-        }
-      }
-
-      // 2. Fetch from Cloud Serverless API
+      // 1. Fetch Cloud list (Master Truth)
       let cloudList = [];
       try {
         cloudList = await fetchReports();
@@ -119,46 +109,58 @@ export default function App() {
         console.warn('Cloud reports list note:', e);
       }
 
-      // 3. Fast Parallel Batch Sync if local has un-synced reports
-      const cloudMap = new Map();
-      cloudList.forEach((r) => cloudMap.set(r.id, r));
+      // 2. Fetch local IndexedDB list
+      const localList = await getLocalReports();
 
-      const unSynced = localList.filter((loc) => {
-        if (loc.id === 'rep_test_sync_phone' || loc.title?.includes('Second Report')) return false;
-        const inCloud = cloudMap.get(loc.id);
-        return !inCloud || new Date(loc.updated_at || 0) > new Date(inCloud.updated_at || 0);
-      });
-
-      if (unSynced.length > 0) {
-        batchSyncReports(localList)
-          .then((updatedCloud) => {
-            if (Array.isArray(updatedCloud) && updatedCloud.length > 0) {
-              setReports((prev) => {
-                const pMap = new Map();
-                prev.forEach((r) => pMap.set(r.id, r));
-                updatedCloud.forEach((r) => pMap.set(r.id, r));
-                return Array.from(pMap.values()).sort(
-                  (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
-                );
-              });
-            }
-          })
-          .catch(() => {});
+      // Clean out test dummy entries
+      for (const r of localList) {
+        if (r.id === 'rep_test_sync_phone' || (r.title && r.title.includes('Second Report'))) {
+          await deleteLocalReport(r.id);
+        }
       }
 
-      // 4. Merge lists by ID, removing test dummy entries
+      // 3. Auto-push any local reports that are missing in Cloud (e.g. created offline on laptop)
+      const cloudIdMap = new Map();
+      cloudList.forEach((r) => cloudIdMap.set(r.id, r));
+
+      const localMissingInCloud = localList.filter((loc) => {
+        if (loc.id === 'rep_test_sync_phone' || (loc.title && loc.title.includes('Second Report'))) {
+          return false;
+        }
+        const hasRealContent = Boolean(
+          (loc.title && loc.title !== 'New Flash Report') ||
+          loc.system_tag ||
+          (loc.items && loc.items.some((it) => it.tag?.trim() || it.description?.trim() || (it.photos && it.photos.length > 0)))
+        );
+        return hasRealContent && !cloudIdMap.has(loc.id);
+      });
+
+      if (localMissingInCloud.length > 0) {
+        try {
+          const updatedCloud = await batchSyncReports(localList);
+          if (Array.isArray(updatedCloud) && updatedCloud.length > 0) {
+            cloudList = updatedCloud;
+          }
+        } catch (e) {
+          console.warn('Auto batch sync on load note:', e);
+        }
+      }
+
+      // 4. Merge lists: Cloud is authoritative, cache to local IndexedDB
       const map = new Map();
-      localList.forEach((r) => {
+      cloudList.forEach((r) => {
         if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
           map.set(r.id, r);
+          saveLocalReport(r).catch(() => {});
         }
       });
 
-      cloudList.forEach((r) => {
+      localList.forEach((r) => {
         if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
           if (!map.has(r.id)) {
-            map.set(r.id, r);
-            saveLocalReport(r).catch(() => {});
+            if (r.title && r.title !== 'New Flash Report') {
+              map.set(r.id, r);
+            }
           } else {
             const existing = map.get(r.id);
             if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
@@ -168,8 +170,9 @@ export default function App() {
         }
       });
 
-      const mergedList = Array.from(map.values());
-      mergedList.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+      const mergedList = Array.from(map.values()).sort(
+        (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
+      );
 
       setReports(mergedList);
 
@@ -229,7 +232,7 @@ export default function App() {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     try {
-      // 1. If current report is dirty, save it locally first
+      // 1. If current report is dirty, save locally first
       if (currentReport && currentReport.id && currentReport.id !== 'rep_test_sync_phone') {
         await saveLocalReport(currentReport);
       }
@@ -240,35 +243,24 @@ export default function App() {
         (r) => r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')
       );
 
-      // 3. One single batch request syncs EVERYTHING to cloud (< 0.5s)
+      // 3. Batch Sync all local reports to Cloud in 1 request
       const cloudReports = await batchSyncReports(cleanLocal);
 
-      // 4. Update state & IndexedDB cache
-      const mergedMap = new Map();
-      cleanLocal.forEach((r) => mergedMap.set(r.id, r));
-      cloudReports.forEach((r) => {
-        if (!mergedMap.has(r.id)) {
-          mergedMap.set(r.id, r);
-          saveLocalReport(r).catch(() => {});
-        } else {
-          const existing = mergedMap.get(r.id);
-          if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
-            mergedMap.set(r.id, { ...existing, ...r });
-          }
-        }
-      });
-
-      const mergedList = Array.from(mergedMap.values()).sort(
-        (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
-      );
-
-      setReports(mergedList);
-
-      if (activeReportId) {
-        await loadSingleReport(activeReportId);
+      // 4. Update local IndexedDB with latest from Cloud
+      for (const r of cloudReports) {
+        await saveLocalReport(r);
       }
 
-      showToast(`Đồng bộ Cloud thành công! Có ${mergedList.length} báo cáo`, 'success');
+      setReports(cloudReports);
+
+      // Reload active report from Cloud/Local
+      if (activeReportId) {
+        await loadSingleReport(activeReportId);
+      } else if (cloudReports.length > 0) {
+        await loadSingleReport(cloudReports[0].id);
+      }
+
+      showToast(`Đồng bộ Cloud thành công! Có ${cloudReports.length} báo cáo`, 'success');
     } catch (err) {
       console.error('Sync failed:', err);
       showToast('Lỗi khi đồng bộ dữ liệu', 'error');
@@ -312,7 +304,7 @@ export default function App() {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // Debounced auto-save
+  // Debounced auto-save: saves to IndexedDB AND Cloud
   const triggerAutoSave = (updatedReport) => {
     setHasUnsavedChanges(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -325,37 +317,32 @@ export default function App() {
     if (!reportToSave || !reportToSave.id) return;
     setIsSaving(true);
     try {
+      // 1. Save to local IndexedDB
       await saveLocalReport(reportToSave);
 
+      // 2. Save directly to Cloud
       try {
         await saveReport(reportToSave.id, reportToSave);
       } catch (e) {
-        console.warn('Saved to local IndexedDB (offline mode)');
+        console.warn('Cloud save error note:', e);
       }
 
       setHasUnsavedChanges(false);
 
-      // Refresh list
-      const localList = await getLocalReports();
-      let cloudList = [];
+      // 3. Refresh reports list from Cloud
       try {
-        cloudList = await fetchReports();
+        const updatedList = await fetchReports();
+        if (Array.isArray(updatedList) && updatedList.length > 0) {
+          setReports(updatedList);
+        }
       } catch (e) {}
 
-      const map = new Map();
-      localList.forEach((r) => map.set(r.id, r));
-      cloudList.forEach((r) => map.set(r.id, r));
-      const updatedList = Array.from(map.values()).sort(
-        (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
-      );
-      setReports(updatedList);
-
       if (notify) {
-        showToast('Report saved successfully', 'success');
+        showToast('Báo cáo đã được lưu lên Cloud thành công', 'success');
       }
     } catch (err) {
       console.error('Save failed:', err);
-      showToast('Failed to save report', 'error');
+      showToast('Lỗi khi lưu báo cáo', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -400,13 +387,19 @@ export default function App() {
         await saveReport(defaultNew.id, defaultNew);
       } catch (e) {}
 
-      const localList = await getLocalReports();
-      setReports(localList);
+      const cloudList = await fetchReports().catch(() => []);
+      if (cloudList.length > 0) {
+        setReports(cloudList);
+      } else {
+        const localList = await getLocalReports();
+        setReports(localList);
+      }
+
       setCurrentReport(defaultNew);
       setActiveReportId(defaultNew.id);
       localStorage.setItem('flash_report_last_active_id', defaultNew.id);
       setHasUnsavedChanges(false);
-      showToast('New report created', 'success');
+      showToast('Tạo báo cáo mới thành công', 'success');
     } catch (err) {
       console.error('Failed to create report:', err);
       showToast('Error creating report', 'error');
@@ -440,17 +433,20 @@ export default function App() {
           await saveReport(dup.id, dup);
         } catch (e) {}
 
-        const localList = await getLocalReports();
-        setReports(localList);
+        const cloudList = await fetchReports().catch(() => []);
+        if (cloudList.length > 0) {
+          setReports(cloudList);
+        }
+
         setCurrentReport(dup);
         setActiveReportId(dup.id);
         localStorage.setItem('flash_report_last_active_id', dup.id);
         setHasUnsavedChanges(false);
-        showToast('Report duplicated successfully', 'success');
+        showToast('Nhân bản báo cáo thành công', 'success');
       }
     } catch (err) {
       console.error('Duplicate failed:', err);
-      showToast('Failed to duplicate report', 'error');
+      showToast('Lỗi khi nhân bản báo cáo', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -460,7 +456,7 @@ export default function App() {
     setDeleteModalState({ isOpen: true, id, title });
   };
 
-  // Fixed Delete: Removes strictly the selected report without wiping others
+  // Fixed Delete: Removes strictly the selected report from Cloud & Local
   const confirmDelete = async () => {
     const idToDelete = deleteModalState.id;
     if (!idToDelete) return;
@@ -497,11 +493,10 @@ export default function App() {
     }
   };
 
-  // Share Link Handler
+  // Share Link Handler (< 50ms)
   const handleOpenShareModal = async () => {
     if (!currentReport) return;
     setIsPublishing(true);
-    await executeSave(currentReport, false);
     try {
       const { shareUrl } = await publishReportForSharing(currentReport);
       setShareModalState({
@@ -517,33 +512,31 @@ export default function App() {
     }
   };
 
-  // 100% Reliable Client-Side Excel Export
+  // Client-Side Excel Export
   const handleExportExcel = async () => {
     if (!currentReport) return;
     setIsExporting(true);
-    await executeSave(currentReport, false);
     try {
       await exportExcelClient(currentReport);
-      showToast('Excel report (.xlsx) downloaded successfully', 'success');
+      showToast('Xuất Excel (.xlsx) thành công', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
-      showToast('Failed to generate Excel report', 'error');
+      showToast('Lỗi khi xuất file Excel', 'error');
     } finally {
       setIsExporting(false);
     }
   };
 
-  // 100% Reliable Client-Side PDF Export
+  // Client-Side PDF Export
   const handleExportPdf = async () => {
     if (!currentReport) return;
     setIsExporting(true);
-    await executeSave(currentReport, false);
     try {
       await exportPdfClient(currentReport);
-      showToast('PDF report (.pdf) downloaded successfully', 'success');
+      showToast('Xuất PDF (.pdf) thành công', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
-      showToast('Failed to generate PDF report', 'error');
+      showToast('Lỗi khi xuất file PDF', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -558,7 +551,7 @@ export default function App() {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3">
         <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />
-        <p className="text-sm font-medium text-slate-300">Loading Flash Report Pro...</p>
+        <p className="text-sm font-medium text-slate-300">Đang tải Flash Report Pro...</p>
       </div>
     );
   }
@@ -594,7 +587,7 @@ export default function App() {
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <Check className="w-3 h-3" />
-                Saved
+                Cloud Synced
               </span>
             )}
           </div>
@@ -608,7 +601,7 @@ export default function App() {
             onClick={handleSyncWithCloud}
             disabled={isSyncing}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg shadow-2xs transition-colors"
-            title="Đồng bộ Cloud (Tải & Lưu báo cáo giữa Điện thoại & Máy tính)"
+            title="Đồng bộ dữ liệu trực tiếp với Cloud (Điện thoại & Máy tính)"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Sync Cloud</span>

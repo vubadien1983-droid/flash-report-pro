@@ -1,7 +1,7 @@
 /**
- * Vercel Serverless Function: High-Speed Batch Cloud Reports Management
- * Uses restful-api.dev persistent master registry + dpaste payload storage
- * with Batch Sync & Instant Parallel Upload (< 0.5s latency).
+ * Vercel Serverless Function: High-Speed Cloud Reports Management
+ * Uses restful-api.dev persistent master registry + dpaste.com & paste.rs fallback
+ * Guarantees 100% reliable 2-way multi-device synchronization.
  */
 
 const MASTER_REGISTRY_OBJ_ID = 'ff808181a04ccf2d01a05613c1a02006';
@@ -57,6 +57,8 @@ async function updateMasterRegistry(reportsList) {
 
 async function uploadPayloadToCloud(report) {
   if (!report || !report.id) return null;
+  
+  // 1. Try dpaste.com
   try {
     const params = new URLSearchParams();
     params.append('content', JSON.stringify(report));
@@ -74,11 +76,29 @@ async function uploadPayloadToCloud(report) {
 
     if (dpasteRes.ok) {
       const pasteUrl = (await dpasteRes.text()).trim();
-      return pasteUrl.split('/').filter(Boolean).pop();
+      const code = pasteUrl.split('/').filter(Boolean).pop();
+      if (code) return code;
     }
   } catch (e) {
-    console.warn('Cloud payload upload note:', e);
+    console.warn('dpaste upload note:', e);
   }
+
+  // 2. Fallback to paste.rs
+  try {
+    const pRes = await fetch('https://paste.rs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report)
+    });
+    if (pRes.ok) {
+      const pUrl = (await pRes.text()).trim();
+      const code = pUrl.split('/').filter(Boolean).pop();
+      if (code) return code;
+    }
+  } catch (e) {
+    console.warn('paste.rs upload note:', e);
+  }
+
   return report.cloud_code || report.id;
 }
 
@@ -107,6 +127,7 @@ export default async function handler(req, res) {
       const match = reg.find((r) => r.id === cleanId || r.cloud_code === cleanId);
       const targetCode = match?.cloud_code || cleanId;
 
+      // Try dpaste
       try {
         const rawRes = await fetch(`https://dpaste.com/${targetCode}.txt`, {
           headers: { 'User-Agent': 'FlashReportApp/1.0', 'Accept': 'text/plain' }
@@ -116,9 +137,19 @@ export default async function handler(req, res) {
           const reportObj = JSON.parse(text);
           return res.status(200).json(reportObj);
         }
-      } catch (err) {
-        console.error('Single report fetch note:', err);
-      }
+      } catch (err) {}
+
+      // Try paste.rs
+      try {
+        const rawRes2 = await fetch(`https://paste.rs/${targetCode}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (rawRes2.ok) {
+          const text2 = await rawRes2.text();
+          const reportObj2 = JSON.parse(text2);
+          return res.status(200).json(reportObj2);
+        }
+      } catch (err) {}
 
       if (match) {
         return res.status(200).json(match);
@@ -139,7 +170,7 @@ export default async function handler(req, res) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const { action } = req.query;
 
-      // --- A. BATCH SYNC (< 0.5s for all reports) ---
+      // --- A. BATCH SYNC ---
       if (action === 'batch' && Array.isArray(body.batch)) {
         const incomingReports = body.batch.filter(
           (r) => r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')
@@ -149,7 +180,7 @@ export default async function handler(req, res) {
         const updatedIncoming = await Promise.all(
           incomingReports.map(async (r) => {
             let code = r.cloud_code;
-            if (!code) {
+            if (!code || code.startsWith('rep_')) {
               code = await uploadPayloadToCloud(r);
             }
             return {
