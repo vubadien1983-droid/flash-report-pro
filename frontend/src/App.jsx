@@ -447,14 +447,17 @@ export default function App() {
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-100 font-sans">
       {/* Top Navbar */}
       <header className="h-14 px-3 md:px-5 bg-white border-b border-slate-200/90 flex items-center justify-between flex-shrink-0 z-20 shadow-xs">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           {isPhoneView && (
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
-              title="Open reports menu"
+              className="p-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1.5 border border-slate-200 transition-colors"
+              title="Open reports list"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-4 h-4 text-brand-600" />
+              <span className="text-[11px] font-bold text-slate-800">
+                Reports ({reports.length})
+              </span>
             </button>
           )}
 
