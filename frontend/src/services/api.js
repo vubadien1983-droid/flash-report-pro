@@ -33,6 +33,17 @@ export async function saveReport(id, reportData) {
   return await res.json();
 }
 
+export async function batchSyncReports(localReportsList) {
+  const res = await fetch(`${API_BASE}/reports?action=batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batch: localReportsList })
+  });
+  if (!res.ok) throw new Error('Failed to batch sync reports');
+  const data = await res.json();
+  return data.reports || [];
+}
+
 export async function deleteReport(id) {
   const res = await fetch(`${API_BASE}/reports?id=${encodeURIComponent(id)}`, {
     method: 'DELETE'
@@ -67,4 +78,3 @@ export async function uploadPhotoFile(file) {
 export async function uploadPhotoBase64(base64) {
   return { url: base64 };
 }
-
