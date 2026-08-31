@@ -97,12 +97,19 @@ export default function App() {
     setToast({ message, type });
   };
 
-  // Load initial reports with seamless cloud + local IndexedDB merging
+  // Load initial reports with seamless cloud + local IndexedDB merging & auto-sync
   const loadReportsList = async (preferredSelectId = null) => {
     if (isViewRoute) return;
     try {
       // 1. Fetch from local IndexedDB
       const localList = await getLocalReports();
+
+      // Clean out any legacy test dummy reports
+      for (const r of localList) {
+        if (r.id === 'rep_test_sync_phone' || (r.title && r.title.includes('Second Report'))) {
+          await deleteLocalReport(r.id);
+        }
+      }
 
       // 2. Fetch from Cloud Serverless API
       let cloudList = [];
@@ -112,16 +119,58 @@ export default function App() {
         console.warn('Cloud reports list note:', e);
       }
 
-      // 3. Merge lists by ID (favoring newer timestamp)
+      // 3. Auto-sync: Push any local report that is missing from cloud or newer
+      const cloudMap = new Map();
+      cloudList.forEach((r) => cloudMap.set(r.id, r));
+
+      let pushedAny = false;
+      for (const loc of localList) {
+        if (loc.id === 'rep_test_sync_phone' || (loc.title && loc.title.includes('Second Report'))) {
+          continue;
+        }
+
+        const hasRealContent = Boolean(
+          (loc.title && loc.title !== 'New Flash Report') ||
+          loc.system_tag ||
+          (loc.items && loc.items.some((it) => it.tag?.trim() || it.description?.trim() || (it.photos && it.photos.length > 0)))
+        );
+
+        const inCloud = cloudMap.get(loc.id);
+        if (hasRealContent && (!inCloud || new Date(loc.updated_at || 0) > new Date(inCloud.updated_at || 0))) {
+          try {
+            await saveReport(loc.id, loc);
+            pushedAny = true;
+          } catch (e) {
+            console.warn('Auto sync push report error:', e);
+          }
+        }
+      }
+
+      // 4. If we pushed new reports to cloud, re-fetch cloud list
+      if (pushedAny) {
+        try {
+          cloudList = await fetchReports();
+        } catch (e) {}
+      }
+
+      // 5. Merge lists by ID, removing test dummy entries
       const map = new Map();
-      localList.forEach((r) => map.set(r.id, r));
-      cloudList.forEach((r) => {
-        if (!map.has(r.id)) {
+      localList.forEach((r) => {
+        if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
           map.set(r.id, r);
-        } else {
-          const existing = map.get(r.id);
-          if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
-            map.set(r.id, { ...existing, ...r });
+        }
+      });
+
+      cloudList.forEach((r) => {
+        if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
+          if (!map.has(r.id)) {
+            map.set(r.id, r);
+            saveLocalReport(r).catch(() => {});
+          } else {
+            const existing = map.get(r.id);
+            if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+              map.set(r.id, { ...existing, ...r });
+            }
           }
         }
       });
@@ -141,7 +190,6 @@ export default function App() {
       if (targetId) {
         await loadSingleReport(targetId);
       } else if (mergedList.length === 0) {
-        // ONLY initialize a new blank report if there are strictly 0 reports
         await handleNewReport();
       }
     } catch (err) {
@@ -189,7 +237,7 @@ export default function App() {
 
     try {
       // 1. If current report is dirty, save it first
-      if (currentReport && currentReport.id) {
+      if (currentReport && currentReport.id && currentReport.id !== 'rep_test_sync_phone') {
         await saveLocalReport(currentReport);
         try {
           await saveReport(currentReport.id, currentReport);
@@ -212,6 +260,10 @@ export default function App() {
       cloudList.forEach((r) => cloudMap.set(r.id, r));
 
       for (const loc of localList) {
+        if (loc.id === 'rep_test_sync_phone' || (loc.title && loc.title.includes('Second Report'))) {
+          await deleteLocalReport(loc.id);
+          continue;
+        }
         if (!cloudMap.has(loc.id) && loc.title) {
           try {
             await saveReport(loc.id, loc);
@@ -229,14 +281,22 @@ export default function App() {
 
       // 6. Merge local + cloud and cache locally
       const mergedMap = new Map();
-      localList.forEach((r) => mergedMap.set(r.id, r));
-      finalCloudList.forEach((r) => {
-        if (!mergedMap.has(r.id)) {
+      localList.forEach((r) => {
+        if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
           mergedMap.set(r.id, r);
-        } else {
-          const existing = mergedMap.get(r.id);
-          if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
-            mergedMap.set(r.id, { ...existing, ...r });
+        }
+      });
+
+      finalCloudList.forEach((r) => {
+        if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
+          if (!mergedMap.has(r.id)) {
+            mergedMap.set(r.id, r);
+            saveLocalReport(r).catch(() => {});
+          } else {
+            const existing = mergedMap.get(r.id);
+            if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+              mergedMap.set(r.id, { ...existing, ...r });
+            }
           }
         }
       });
@@ -252,7 +312,7 @@ export default function App() {
         await loadSingleReport(activeReportId);
       }
 
-      showToast(`Đồng bộ Cloud thành công! (${mergedList.length} báo cáo)`, 'success');
+      showToast(`Đồng bộ Cloud thành công! Có ${mergedList.length} báo cáo`, 'success');
     } catch (err) {
       console.error('Sync failed:', err);
       showToast('Lỗi khi đồng bộ dữ liệu', 'error');
