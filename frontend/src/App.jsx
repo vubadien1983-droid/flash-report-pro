@@ -59,6 +59,7 @@ export default function App() {
   const [currentReport, setCurrentReport] = useState(null);
   const [loading, setLoading] = useState(!isViewRoute);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Responsive device view mode: 'auto' | 'laptop' | 'phone'
@@ -119,7 +120,7 @@ export default function App() {
           map.set(r.id, r);
         } else {
           const existing = map.get(r.id);
-          if (new Date(r.updated_at || 0) > new Date(existing.updated_at || 0)) {
+          if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
             map.set(r.id, { ...existing, ...r });
           }
         }
@@ -130,14 +131,17 @@ export default function App() {
 
       setReports(mergedList);
 
-      let targetId = preferredSelectId;
-      if (!targetId && mergedList.length > 0) {
-        targetId = mergedList[0].id;
+      // Determine target report to open
+      const lastActiveId = localStorage.getItem('flash_report_last_active_id');
+      let targetId = preferredSelectId || lastActiveId;
+      if (!targetId || !mergedList.some((r) => r.id === targetId)) {
+        targetId = mergedList.length > 0 ? mergedList[0].id : null;
       }
 
       if (targetId) {
         await loadSingleReport(targetId);
-      } else {
+      } else if (mergedList.length === 0) {
+        // ONLY initialize a new blank report if there are strictly 0 reports
         await handleNewReport();
       }
     } catch (err) {
@@ -149,6 +153,9 @@ export default function App() {
   };
 
   const loadSingleReport = async (id) => {
+    if (!id) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
     try {
       let rep = await getLocalReport(id);
       if (!rep || !rep.title || !rep.items || rep.items.length === 0) {
@@ -166,11 +173,91 @@ export default function App() {
       if (rep) {
         setCurrentReport(rep);
         setActiveReportId(id);
+        localStorage.setItem('flash_report_last_active_id', id);
         setHasUnsavedChanges(false);
       }
     } catch (err) {
       console.error('Error loading report:', err);
       showToast('Failed to load report data', 'error');
+    }
+  };
+
+  // Full Two-Way Cloud Sync
+  const handleSyncWithCloud = async () => {
+    setIsSyncing(true);
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    try {
+      // 1. If current report is dirty, save it first
+      if (currentReport && currentReport.id) {
+        await saveLocalReport(currentReport);
+        try {
+          await saveReport(currentReport.id, currentReport);
+        } catch (e) {}
+      }
+
+      // 2. Fetch local reports
+      const localList = await getLocalReports();
+
+      // 3. Fetch cloud reports
+      let cloudList = [];
+      try {
+        cloudList = await fetchReports();
+      } catch (e) {
+        console.warn('Cloud list fetch note:', e);
+      }
+
+      // 4. Push local reports missing in cloud to cloud
+      const cloudMap = new Map();
+      cloudList.forEach((r) => cloudMap.set(r.id, r));
+
+      for (const loc of localList) {
+        if (!cloudMap.has(loc.id) && loc.title) {
+          try {
+            await saveReport(loc.id, loc);
+          } catch (e) {}
+        }
+      }
+
+      // 5. Re-fetch final merged cloud list
+      let finalCloudList = [];
+      try {
+        finalCloudList = await fetchReports();
+      } catch (e) {
+        finalCloudList = cloudList;
+      }
+
+      // 6. Merge local + cloud and cache locally
+      const mergedMap = new Map();
+      localList.forEach((r) => mergedMap.set(r.id, r));
+      finalCloudList.forEach((r) => {
+        if (!mergedMap.has(r.id)) {
+          mergedMap.set(r.id, r);
+        } else {
+          const existing = mergedMap.get(r.id);
+          if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
+            mergedMap.set(r.id, { ...existing, ...r });
+          }
+        }
+      });
+
+      const mergedList = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
+      );
+
+      setReports(mergedList);
+
+      // Refresh current report data if needed
+      if (activeReportId) {
+        await loadSingleReport(activeReportId);
+      }
+
+      showToast(`Đồng bộ Cloud thành công! (${mergedList.length} báo cáo)`, 'success');
+    } catch (err) {
+      console.error('Sync failed:', err);
+      showToast('Lỗi khi đồng bộ dữ liệu', 'error');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -232,13 +319,20 @@ export default function App() {
 
       setHasUnsavedChanges(false);
 
+      // Refresh list
+      const localList = await getLocalReports();
+      let cloudList = [];
       try {
-        const updatedList = await fetchReports();
-        setReports(updatedList);
-      } catch (e) {
-        const localList = await getLocalReports();
-        setReports(localList);
-      }
+        cloudList = await fetchReports();
+      } catch (e) {}
+
+      const map = new Map();
+      localList.forEach((r) => map.set(r.id, r));
+      cloudList.forEach((r) => map.set(r.id, r));
+      const updatedList = Array.from(map.values()).sort(
+        (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
+      );
+      setReports(updatedList);
 
       if (notify) {
         showToast('Report saved successfully', 'success');
@@ -266,6 +360,7 @@ export default function App() {
   };
 
   const handleNewReport = async () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     try {
       setIsSaving(true);
       const newId = `rep_${Date.now()}`;
@@ -284,20 +379,16 @@ export default function App() {
         ]
       };
 
-      let created = defaultNew;
+      await saveLocalReport(defaultNew);
       try {
-        created = await createReport(defaultNew);
-      } catch (e) {
-        await saveLocalReport(defaultNew);
-      }
+        await saveReport(defaultNew.id, defaultNew);
+      } catch (e) {}
 
-      const list = await (async () => {
-        try { return await fetchReports(); } catch { return await getLocalReports(); }
-      })();
-
-      setReports(list);
-      setCurrentReport(created);
-      setActiveReportId(created.id);
+      const localList = await getLocalReports();
+      setReports(localList);
+      setCurrentReport(defaultNew);
+      setActiveReportId(defaultNew.id);
+      localStorage.setItem('flash_report_last_active_id', defaultNew.id);
       setHasUnsavedChanges(false);
       showToast('New report created', 'success');
     } catch (err) {
@@ -309,35 +400,38 @@ export default function App() {
   };
 
   const handleDuplicate = async (reportId) => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     try {
       setIsSaving(true);
-      let dup = null;
-      try {
-        dup = await duplicateReport(reportId);
-      } catch (e) {
-        const orig = await getLocalReport(reportId);
-        if (orig) {
-          const newId = `rep_${Date.now()}`;
-          dup = {
-            ...orig,
-            id: newId,
-            title: `Copy of ${orig.title || 'Report'}`,
-            created_at: new Date().toISOString()
-          };
-          await saveLocalReport(dup);
-        }
+      let orig = await getLocalReport(reportId);
+      if (!orig) {
+        try {
+          orig = await fetchReport(reportId);
+        } catch (e) {}
       }
 
-      const list = await (async () => {
-        try { return await fetchReports(); } catch { return await getLocalReports(); }
-      })();
+      if (orig) {
+        const newId = `rep_${Date.now()}`;
+        const dup = {
+          ...orig,
+          id: newId,
+          title: `Copy of ${orig.title || 'Report'}`,
+          updated_at: new Date().toISOString(),
+          cloud_code: null
+        };
+        await saveLocalReport(dup);
+        try {
+          await saveReport(dup.id, dup);
+        } catch (e) {}
 
-      setReports(list);
-      if (dup) {
+        const localList = await getLocalReports();
+        setReports(localList);
         setCurrentReport(dup);
         setActiveReportId(dup.id);
+        localStorage.setItem('flash_report_last_active_id', dup.id);
+        setHasUnsavedChanges(false);
+        showToast('Report duplicated successfully', 'success');
       }
-      showToast('Report duplicated successfully', 'success');
     } catch (err) {
       console.error('Duplicate failed:', err);
       showToast('Failed to duplicate report', 'error');
@@ -350,26 +444,36 @@ export default function App() {
     setDeleteModalState({ isOpen: true, id, title });
   };
 
+  // Fixed Delete: Removes strictly the selected report without wiping others
   const confirmDelete = async () => {
-    if (!deleteModalState.id) return;
+    const idToDelete = deleteModalState.id;
+    if (!idToDelete) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
     try {
+      // 1. Delete from Cloud
       try {
-        await deleteReport(deleteModalState.id);
+        await deleteReport(idToDelete);
       } catch (e) {
-        await deleteLocalReport(deleteModalState.id);
+        console.warn('Cloud delete note:', e);
       }
+
+      // 2. Delete from Local IndexedDB
+      await deleteLocalReport(idToDelete);
+
+      // 3. Remove specifically idToDelete from state
+      const updatedList = reports.filter((r) => r.id !== idToDelete);
+      setReports(updatedList);
       setDeleteModalState({ isOpen: false, id: null, title: '' });
-      showToast('Report deleted', 'info');
+      showToast('Báo cáo đã được xóa thành công', 'info');
 
-      const list = await (async () => {
-        try { return await fetchReports(); } catch { return await getLocalReports(); }
-      })();
-      setReports(list);
-
-      if (list.length > 0) {
-        await loadSingleReport(list[0].id);
-      } else {
-        await handleNewReport();
+      // 4. Switch to remaining report or create new if 0 left
+      if (activeReportId === idToDelete) {
+        if (updatedList.length > 0) {
+          await loadSingleReport(updatedList[0].id);
+        } else {
+          await handleNewReport();
+        }
       }
     } catch (err) {
       console.error('Delete failed:', err);
@@ -482,6 +586,19 @@ export default function App() {
 
         {/* Action Toolbar & Mode Switcher */}
         <div className="flex items-center gap-1.5 md:gap-2">
+          {/* Sync Cloud Button */}
+          <button
+            type="button"
+            onClick={handleSyncWithCloud}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg shadow-2xs transition-colors"
+            title="Đồng bộ Cloud (Tải & Lưu báo cáo giữa Điện thoại & Máy tính)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Sync Cloud</span>
+            <span className="sm:hidden">Sync</span>
+          </button>
+
           {/* Device Mode Switcher */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
             <button
@@ -578,6 +695,8 @@ export default function App() {
                 onDuplicateReport={handleDuplicate}
                 onDeleteReport={openDeleteModal}
                 isSaving={isSaving}
+                isSyncing={isSyncing}
+                onSyncCloud={handleSyncWithCloud}
               />
             </div>
 
@@ -609,6 +728,8 @@ export default function App() {
                 onDuplicateReport={handleDuplicate}
                 onDeleteReport={openDeleteModal}
                 isSaving={isSaving}
+                isSyncing={isSyncing}
+                onSyncCloud={handleSyncWithCloud}
                 isMobileDrawer={true}
                 onCloseMobileDrawer={() => setMobileDrawerOpen(false)}
               />
@@ -648,45 +769,30 @@ export default function App() {
             className="flex-1 py-2 text-xs font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-xl flex items-center justify-center gap-1 transition-colors"
           >
             <Share2 className="w-4 h-4 text-brand-600" />
-            Share
+            <span>Share Link</span>
           </button>
+
           <button
             type="button"
-            onClick={() => executeSave(currentReport, true)}
-            disabled={isSaving}
-            className="flex-1 py-2 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center gap-1 transition-colors"
+            onClick={handleSyncWithCloud}
+            disabled={isSyncing}
+            className="py-2 px-3 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center gap-1 transition-colors border border-sky-200"
           >
-            <Save className="w-4 h-4 text-slate-600" />
-            Save
+            <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>Sync</span>
           </button>
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            disabled={isExporting}
-            className="flex-1 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 rounded-xl flex items-center justify-center gap-1 transition-colors"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            Excel
-          </button>
+
           <button
             type="button"
             onClick={handleExportPdf}
             disabled={isExporting}
-            className="flex-1 py-2 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-xl flex items-center justify-center gap-1 transition-all shadow-sm shadow-brand-600/30"
+            className="flex-1 py-2 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-xl flex items-center justify-center gap-1 shadow-md shadow-brand-600/20 transition-all"
           >
             <FileText className="w-4 h-4" />
-            PDF
+            <span>Export PDF</span>
           </button>
         </div>
       )}
-
-      {/* Share Report Modal */}
-      <ShareModal
-        isOpen={shareModalState.isOpen}
-        shareUrl={shareModalState.shareUrl}
-        report={currentReport}
-        onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
-      />
 
       {/* Delete Confirmation Modal */}
       <DeleteModal
@@ -696,12 +802,21 @@ export default function App() {
         onCancel={() => setDeleteModalState({ isOpen: false, id: null, title: '' })}
       />
 
-      {/* Image Lightbox Zoom Modal */}
+      {/* Image Lightbox Modal */}
       <ImageModal
         isOpen={imageModalState.isOpen}
         imageUrl={imageModalState.url}
         title={imageModalState.title}
         onClose={() => setImageModalState({ isOpen: false, url: '', title: '' })}
+      />
+
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={shareModalState.isOpen}
+        shareUrl={shareModalState.shareUrl}
+        reportTitle={shareModalState.reportTitle}
+        currentReport={currentReport}
+        onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
       />
 
       {/* Toast Notification */}

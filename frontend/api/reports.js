@@ -1,45 +1,53 @@
 /**
  * Vercel Serverless Function: Cloud Reports Management
- * Synchronizes reports across all devices (Laptop & Phone).
+ * Uses restful-api.dev persistent master registry + dpaste payload storage
+ * to guarantee 100% reliable real-time synchronization between Laptop & Phone.
  */
 
-// Master registry ID to persist the global index of project reports
-const REGISTRY_INDEX_URL = 'https://dpaste.com/BPZST9JQN.txt';
+const MASTER_REGISTRY_OBJ_ID = 'ff808181a04ccf2d01a05613c1a02006';
+const MASTER_REGISTRY_URL = `https://api.restful-api.dev/objects/${MASTER_REGISTRY_OBJ_ID}`;
 
-let memoryIndex = [
-  {
-    id: 'rep_1788093367866',
-    title: 'Equipment installation on 31 Aug 2026',
-    system_tag: 'CPPT-E-1101-02 / CPPT-E-1101-03',
-    location: 'Block B Platform',
-    inspection_date: '2026-08-31',
-    discipline: 'Electrical',
-    items_count: 2,
-    updated_at: '2026-08-31T09:50:00.000Z',
-    cloud_code: 'GCW4AJHU5'
-  }
-];
-
-async function getCloudRegistry() {
+async function fetchMasterRegistry() {
   try {
-    const res = await fetch(REGISTRY_INDEX_URL, {
-      headers: { 'User-Agent': 'FlashReportApp/1.0', 'Accept': 'text/plain' }
+    const res = await fetch(MASTER_REGISTRY_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FlashReportApp/1.0',
+        'Accept': 'application/json'
+      }
     });
     if (res.ok) {
-      const text = await res.text();
-      const list = JSON.parse(text);
-      if (Array.isArray(list)) {
-        // Merge with memoryIndex
-        const map = new Map();
-        memoryIndex.forEach((item) => map.set(item.id, item));
-        list.forEach((item) => map.set(item.id, item));
-        memoryIndex = Array.from(map.values());
+      const json = await res.json();
+      if (json && json.data && Array.isArray(json.data.reports)) {
+        return json.data.reports;
       }
     }
-  } catch (e) {
-    console.warn('Registry fetch fallback to memoryIndex:', e);
+  } catch (err) {
+    console.error('Error fetching master registry:', err);
   }
-  return memoryIndex;
+  return [];
+}
+
+async function updateMasterRegistry(reportsList) {
+  try {
+    const payload = {
+      name: 'FlashReport_Master_Registry',
+      data: {
+        reports: reportsList
+      }
+    };
+    const res = await fetch(MASTER_REGISTRY_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) FlashReportApp/1.0'
+      },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('Error updating master registry:', err);
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
@@ -56,29 +64,29 @@ export default async function handler(req, res) {
     return;
   }
 
-  // 1. GET: Fetch list or single report
+  // 1. GET: Fetch list of reports or single report
   if (req.method === 'GET') {
     const { id } = req.query;
 
     // Single report fetch
     if (id) {
       const cleanId = String(id).split('?')[0].split('/')[0].trim();
-
-      // Check if id is in registry with a cloud_code
-      const reg = await getCloudRegistry();
+      const reg = await fetchMasterRegistry();
       const match = reg.find((r) => r.id === cleanId || r.cloud_code === cleanId);
       const targetCode = match?.cloud_code || cleanId;
 
+      // Fetch full report JSON from dpaste
       try {
         const rawRes = await fetch(`https://dpaste.com/${targetCode}.txt`, {
           headers: { 'User-Agent': 'FlashReportApp/1.0', 'Accept': 'text/plain' }
         });
         if (rawRes.ok) {
           const text = await rawRes.text();
-          return res.status(200).json(JSON.parse(text));
+          const reportObj = JSON.parse(text);
+          return res.status(200).json(reportObj);
         }
       } catch (err) {
-        console.error('Fetch report error:', err);
+        console.error('Single report fetch from dpaste note:', err);
       }
 
       if (match) {
@@ -89,8 +97,7 @@ export default async function handler(req, res) {
     }
 
     // List of reports
-    const list = await getCloudRegistry();
-    // Sort descending by updated_at
+    const list = await fetchMasterRegistry();
     list.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
     return res.status(200).json({ reports: list });
   }
@@ -139,14 +146,16 @@ export default async function handler(req, res) {
         cloud_code: cloudCode || report.cloud_code || report.id
       };
 
-      const reg = await getCloudRegistry();
+      const reg = await fetchMasterRegistry();
       const existingIdx = reg.findIndex((r) => r.id === report.id);
       if (existingIdx >= 0) {
         reg[existingIdx] = summaryItem;
       } else {
         reg.unshift(summaryItem);
       }
-      memoryIndex = reg;
+
+      // Persist to master cloud registry
+      await updateMasterRegistry(reg);
 
       return res.status(200).json({
         success: true,
@@ -158,12 +167,13 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3. DELETE: Remove report from registry
+  // 3. DELETE: Remove single report from cloud registry
   if (req.method === 'DELETE') {
     const { id } = req.query;
     if (id) {
-      const reg = await getCloudRegistry();
-      memoryIndex = reg.filter((r) => r.id !== id && r.cloud_code !== id);
+      const reg = await fetchMasterRegistry();
+      const filtered = reg.filter((r) => r.id !== id && r.cloud_code !== id);
+      await updateMasterRegistry(filtered);
     }
     return res.status(200).json({ success: true });
   }

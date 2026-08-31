@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Plus, Search, FileSpreadsheet, Copy, Trash2, Calendar, Tag,
-  Clock, CheckCircle2, ChevronRight, Layers, FileText, X
+  Clock, CheckCircle2, ChevronRight, Layers, FileText, X, RefreshCw
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -12,6 +12,8 @@ export default function Sidebar({
   onDuplicateReport,
   onDeleteReport,
   isSaving,
+  isSyncing = false,
+  onSyncCloud,
   isMobileDrawer = false,
   onCloseMobileDrawer
 }) {
@@ -24,7 +26,13 @@ export default function Sidebar({
     const location = (r.location || '').toLowerCase();
     const discipline = (r.discipline || '').toLowerCase();
     const date = (r.inspection_date || '').toLowerCase();
-    return title.includes(term) || tag.includes(term) || location.includes(term) || discipline.includes(term) || date.includes(term);
+    return (
+      title.includes(term) ||
+      tag.includes(term) ||
+      location.includes(term) ||
+      discipline.includes(term) ||
+      date.includes(term)
+    );
   });
 
   const handleSelect = (id) => {
@@ -61,8 +69,8 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* New Report Button */}
-      <div className="p-3 border-b border-slate-800/80">
+      {/* Action Buttons: New Report + Sync Cloud */}
+      <div className="p-3 border-b border-slate-800/80 space-y-2">
         <button
           type="button"
           onClick={() => {
@@ -74,6 +82,19 @@ export default function Sidebar({
           <Plus className="w-4 h-4" />
           New Report
         </button>
+
+        {onSyncCloud && (
+          <button
+            type="button"
+            onClick={onSyncCloud}
+            disabled={isSyncing}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700/80 rounded-xl transition-all active:scale-[0.98]"
+            title="Synchronize all reports with cloud"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing with Cloud...' : '🔄 Sync with Cloud'}
+          </button>
+        )}
       </div>
 
       {/* Search Filter */}
@@ -93,12 +114,17 @@ export default function Sidebar({
       {/* Report Count summary */}
       <div className="px-4 py-1.5 flex items-center justify-between text-[11px] text-slate-400 font-medium border-b border-slate-800/40">
         <span>Reports ({filteredReports.length})</span>
-        {isSaving && (
+        {isSaving ? (
           <span className="flex items-center gap-1 text-emerald-400 text-[10px]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             Saving...
           </span>
-        )}
+        ) : isSyncing ? (
+          <span className="flex items-center gap-1 text-sky-400 text-[10px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>
+            Syncing...
+          </span>
+        ) : null}
       </div>
 
       {/* Report Items List */}
@@ -124,7 +150,7 @@ export default function Sidebar({
               >
                 {/* Title with hover tooltip */}
                 <div className="flex items-start justify-between gap-1 mb-1">
-                  <div className="relative flex-1 min-w-0">
+                  <div className="relative flex-1 min-w-0 pr-12">
                     <p
                       className={`text-xs font-semibold truncate ${
                         isActive ? 'text-white' : 'text-slate-200 group-hover:text-white'
@@ -159,8 +185,8 @@ export default function Sidebar({
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="absolute right-2 bottom-2 hidden group-hover:flex items-center gap-1 bg-slate-850/90 backdrop-blur-sm p-0.5 rounded-md border border-slate-700">
+                {/* Actions: Always visible on Mobile Drawer, Visible on Hover on Desktop */}
+                <div className={`absolute right-2 bottom-2 ${isMobileDrawer ? 'flex' : 'hidden group-hover:flex'} items-center gap-1 bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-md border border-slate-700`}>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -188,12 +214,6 @@ export default function Sidebar({
             );
           })
         )}
-      </div>
-
-      {/* Footer info */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 text-[10px] text-slate-500 flex items-center justify-between">
-        <span>SQLite + IndexedDB</span>
-        <span>v1.1</span>
       </div>
     </div>
   );
