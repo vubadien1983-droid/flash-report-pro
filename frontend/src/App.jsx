@@ -97,7 +97,7 @@ export default function App() {
     setToast({ message, type });
   };
 
-  // Cloud-First Initial Loader & Synchronizer
+  // Cloud-First Initial Loader & Synchronizer (Never Auto-Creates Blank Reports)
   const loadReportsList = async (preferredSelectId = null) => {
     if (isViewRoute) return;
     try {
@@ -112,14 +112,14 @@ export default function App() {
       // 2. Fetch local IndexedDB list
       const localList = await getLocalReports();
 
-      // Clean out test dummy entries
+      // Clean out test dummy entries from local storage
       for (const r of localList) {
         if (r.id === 'rep_test_sync_phone' || (r.title && r.title.includes('Second Report'))) {
           await deleteLocalReport(r.id);
         }
       }
 
-      // 3. Auto-push any local reports that are missing in Cloud (e.g. created offline on laptop)
+      // 3. Detect any real local reports that are missing in Cloud (e.g. created on laptop)
       const cloudIdMap = new Map();
       cloudList.forEach((r) => cloudIdMap.set(r.id, r));
 
@@ -146,7 +146,7 @@ export default function App() {
         }
       }
 
-      // 4. Merge lists: Cloud is authoritative, cache to local IndexedDB
+      // 4. Build unified list with Cloud as authoritative truth
       const map = new Map();
       cloudList.forEach((r) => {
         if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
@@ -186,6 +186,7 @@ export default function App() {
       if (targetId) {
         await loadSingleReport(targetId);
       } else if (mergedList.length === 0) {
+        // ONLY initialize a new report if there are strictly 0 reports anywhere
         await handleNewReport();
       }
     } catch (err) {
@@ -201,24 +202,51 @@ export default function App() {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     try {
+      // 1. Check local IndexedDB
       let rep = await getLocalReport(id);
-      if (!rep || !rep.title || !rep.items || rep.items.length === 0) {
-        try {
-          const cloudRep = await fetchReport(id);
-          if (cloudRep && cloudRep.title) {
-            rep = cloudRep;
-            await saveLocalReport(cloudRep);
-          }
-        } catch (e) {
-          console.warn('Cloud single report fetch note:', e);
-        }
-      }
-
-      if (rep) {
+      if (rep && rep.title && Array.isArray(rep.items) && rep.items.length > 0) {
         setCurrentReport(rep);
         setActiveReportId(id);
         localStorage.setItem('flash_report_last_active_id', id);
         setHasUnsavedChanges(false);
+      }
+
+      // 2. Fetch fresh from Cloud
+      try {
+        const cloudRep = await fetchReport(id);
+        if (cloudRep && cloudRep.title) {
+          rep = cloudRep;
+          setCurrentReport(cloudRep);
+          setActiveReportId(id);
+          localStorage.setItem('flash_report_last_active_id', id);
+          setHasUnsavedChanges(false);
+          await saveLocalReport(cloudRep);
+          return;
+        }
+      } catch (e) {
+        console.warn('Cloud single report fetch note:', e);
+      }
+
+      // 3. Fallback: if not loaded yet, construct from existing reports summary
+      if (!rep) {
+        const summary = reports.find((r) => r.id === id);
+        if (summary) {
+          rep = {
+            id: summary.id,
+            title: summary.title || 'Untitled Flash Report',
+            system_tag: summary.system_tag || '',
+            location: summary.location || '',
+            inspection_date: summary.inspection_date || new Date().toISOString().split('T')[0],
+            discipline: summary.discipline || 'Mechanical',
+            items: [
+              { id: `${summary.id}_1`, tag: summary.system_tag || '', description: '', note: '', photos: [] }
+            ]
+          };
+          setCurrentReport(rep);
+          setActiveReportId(id);
+          localStorage.setItem('flash_report_last_active_id', id);
+          setHasUnsavedChanges(false);
+        }
       }
     } catch (err) {
       console.error('Error loading report:', err);
