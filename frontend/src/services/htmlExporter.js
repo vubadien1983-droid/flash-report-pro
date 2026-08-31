@@ -19,6 +19,15 @@ export function exportStandaloneHtml(report) {
   const date = report.inspection_date || '-';
   const discipline = report.discipline || '-';
 
+  const activeItemsCount = items.filter(
+    (item) =>
+      item.tag?.trim() ||
+      item.description?.trim() ||
+      item.note?.trim() ||
+      (item.photos && item.photos.some((p) => p?.url))
+  ).length;
+  const displayCount = activeItemsCount > 0 ? activeItemsCount : items.length;
+
   // Build rows HTML
   const rowsHtml = items.map((item, idx) => {
     const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
@@ -49,13 +58,13 @@ export function exportStandaloneHtml(report) {
         <td style="padding: 8px; text-align: center; vertical-align: middle; font-weight: bold; border: 1px solid #d1d5db; width: 45px;">
           ${no ? `<span style="display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: #e2e8f0; align-items: center; justify-content: center; font-size: 11px;">${no}</span>` : '-'}
         </td>
-        <td style="padding: 8px; text-align: center; vertical-align: middle; font-weight: bold; border: 1px solid #d1d5db; width: 120px;">
+        <td style="padding: 8px; text-align: center; vertical-align: middle; font-weight: bold; border: 1px solid #d1d5db; width: 120px; white-space: pre-wrap; word-break: break-word;">
           ${item.tag || '-'}
         </td>
-        <td style="padding: 8px; text-align: left; vertical-align: middle; border: 1px solid #d1d5db; font-size: 12px; line-height: 1.5; white-space: pre-wrap;">
+        <td style="padding: 8px; text-align: left; vertical-align: middle; border: 1px solid #d1d5db; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">
           ${item.description || '-'}
         </td>
-        <td style="padding: 8px; text-align: left; vertical-align: middle; border: 1px solid #d1d5db; font-size: 12px; line-height: 1.5; white-space: pre-wrap; width: 150px;">
+        <td style="padding: 8px; text-align: left; vertical-align: middle; border: 1px solid #d1d5db; font-size: 12px; line-height: 1.5; white-space: pre-wrap; width: 150px; word-break: break-word;">
           ${item.note || '-'}
         </td>
         ${photoCellsHtml}
@@ -133,7 +142,7 @@ export function exportStandaloneHtml(report) {
       </div>
 
       <div style="margin-bottom: 8px; font-size: 12px; font-weight: bold; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">
-        Detail of inspection (${items.length} ${items.length === 1 ? 'item' : 'items'})
+        Detail of inspection (${displayCount} ${displayCount === 1 ? 'item' : 'items'})
       </div>
 
       <div class="table-container">

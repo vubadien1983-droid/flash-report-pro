@@ -123,6 +123,15 @@ export default function ReportViewer({ reportId }) {
   const items = report.items || [];
   let seqCounter = 1;
 
+  const activeItemsCount = items.filter(
+    (item) =>
+      item.tag?.trim() ||
+      item.description?.trim() ||
+      item.note?.trim() ||
+      (item.photos && item.photos.some((p) => p?.url))
+  ).length;
+  const displayCount = activeItemsCount > 0 ? activeItemsCount : items.length;
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans">
       {/* Top Navbar */}
@@ -254,7 +263,7 @@ export default function ReportViewer({ reportId }) {
             <div className="flex items-center gap-2">
               <Camera className="w-4 h-4 text-brand-600" />
               <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Detail of Inspection ({items.length} {items.length === 1 ? 'item' : 'items'})
+                Detail of Inspection ({displayCount} {displayCount === 1 ? 'item' : 'items'})
               </h2>
             </div>
             <span className="text-[11px] text-slate-500 font-medium">Tap photo to zoom</span>
@@ -373,7 +382,7 @@ export default function ReportViewer({ reportId }) {
                             <span className="text-slate-300 text-xs font-mono">-</span>
                           )}
                         </td>
-                        <td className="px-3 py-3 align-top text-xs font-bold text-slate-800 text-center">
+                        <td className="px-3 py-3 align-top text-xs font-bold text-slate-800 text-center whitespace-pre-wrap break-words">
                           {item.tag || '-'}
                         </td>
                         <td className="px-3 py-3 align-top text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">

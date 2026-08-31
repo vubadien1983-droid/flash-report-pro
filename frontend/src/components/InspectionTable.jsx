@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus, CornerDownRight } from 'lucide-react';
 import PhotoSlot from './PhotoSlot';
 
 export default function InspectionTable({
@@ -134,7 +134,7 @@ export default function InspectionTable({
 
   const addRow = () => {
     const newItem = {
-      id: `item_${Date.now()}`,
+      id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       tag: '',
       description: '',
       note: '',
@@ -143,10 +143,25 @@ export default function InspectionTable({
     onItemsChange([...items, newItem]);
   };
 
+  // Insert a new row directly below index (pre-filling same Tag for continuous sequence)
+  const insertRowBelow = (index) => {
+    const currentRow = items[index];
+    const newItem = {
+      id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      tag: currentRow?.tag || '', // Pre-fill with parent Tag
+      description: '',
+      note: '',
+      photos: []
+    };
+    const newItems = [...items];
+    newItems.splice(index + 1, 0, newItem);
+    onItemsChange(newItems);
+  };
+
   const removeRow = (index) => {
     if (items.length <= 1) {
       onItemsChange([{
-        id: `item_${Date.now()}`,
+        id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         tag: '',
         description: '',
         note: '',
@@ -167,27 +182,43 @@ export default function InspectionTable({
     onItemsChange(newItems);
   };
 
-  // Compute sequence numbers
+  // Compute sequence numbers and count real active items
   let seqCounter = 1;
   const computedNos = items.map((item) => {
-    const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
+    const hasContent = Boolean(
+      item.tag?.trim() ||
+      item.description?.trim() ||
+      item.note?.trim() ||
+      (item.photos && item.photos.some((p) => p?.url))
+    );
     return hasContent ? seqCounter++ : '';
   });
 
+  const activeItemsCount = items.filter(
+    (item) =>
+      item.tag?.trim() ||
+      item.description?.trim() ||
+      item.note?.trim() ||
+      (item.photos && item.photos.some((p) => p?.url))
+  ).length;
+
+  const displayCount = activeItemsCount > 0 ? activeItemsCount : items.length;
+
   return (
     <div className="w-full bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-8">
-      {/* Section Header */}
+      {/* Section Header with dynamic actual item count */}
       <div className="px-4 md:px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Camera className="w-4 h-4 text-brand-600" />
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            Detail of Inspection ({items.length} {items.length === 1 ? 'item' : 'items'})
+            Detail of Inspection ({displayCount} {displayCount === 1 ? 'item' : 'items'})
           </h3>
         </div>
         <button
           type="button"
           onClick={addRow}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition-colors shadow-2xs"
+          title="Add new inspection item at the end"
         >
           <Plus className="w-3.5 h-3.5" />
           Add Item
@@ -206,27 +237,37 @@ export default function InspectionTable({
                 key={item.id || idx}
                 className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-xs hover:border-brand-300 transition-all"
               >
-                {/* Card Top: No + Tag + Move & Delete */}
+                {/* Card Top: No + Tag + Move & Delete & Insert Below */}
                 <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="flex-shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-600 text-white text-xs font-bold">
                       {rowNo || idx + 1}
                     </span>
-                    <input
-                      type="text"
+                    {/* Auto-wrapping Tag Textarea */}
+                    <textarea
+                      rows={2}
                       value={item.tag || ''}
                       onChange={(e) => handleItemChange(idx, 'tag', e.target.value)}
-                      placeholder="Tag: e.g. 21-TK-101"
-                      className="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:border-brand-500 outline-none text-center"
+                      placeholder="Tag: e.g. CPPT-E-1101-02"
+                      className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:border-brand-500 outline-none text-center resize-y whitespace-pre-wrap break-words leading-snug"
                     />
                   </div>
 
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
+                      onClick={() => insertRowBelow(idx)}
+                      className="p-1.5 text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-md transition-colors"
+                      title="Insert row below (same Tag)"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       disabled={idx === 0}
                       onClick={() => moveRow(idx, -1)}
                       className="p-1 hover:bg-slate-200 text-slate-500 disabled:opacity-20 rounded"
+                      title="Move Up"
                     >
                       <ChevronUp className="w-4 h-4" />
                     </button>
@@ -235,6 +276,7 @@ export default function InspectionTable({
                       disabled={idx === items.length - 1}
                       onClick={() => moveRow(idx, 1)}
                       className="p-1 hover:bg-slate-200 text-slate-500 disabled:opacity-20 rounded"
+                      title="Move Down"
                     >
                       <ChevronDown className="w-4 h-4" />
                     </button>
@@ -242,6 +284,7 @@ export default function InspectionTable({
                       type="button"
                       onClick={() => removeRow(idx)}
                       className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                      title="Delete Item"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -298,6 +341,18 @@ export default function InspectionTable({
                     ))}
                   </div>
                 </div>
+
+                {/* Quick Add Row Below Button */}
+                <div className="pt-1 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => insertRowBelow(idx)}
+                    className="w-full py-1 text-[11px] font-semibold text-brand-700 bg-white hover:bg-brand-50 border border-dashed border-brand-300 rounded-lg transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Insert item below this Tag
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -309,13 +364,13 @@ export default function InspectionTable({
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
                 <th className="w-12 px-3 py-2.5 text-center font-bold">No</th>
-                <th className="w-32 lg:w-44 px-3 py-2.5 text-center font-bold">Tag</th>
+                <th className="w-36 lg:w-48 px-3 py-2.5 text-center font-bold">Tag</th>
                 <th className="px-3 py-2.5 min-w-[200px] text-center font-bold">Inspection Description</th>
                 <th className="w-48 lg:w-64 px-3 py-2.5 text-center font-bold">Note</th>
                 <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>
                   Illustration
                 </th>
-                <th className="w-14 px-2 py-2.5 text-center font-bold">Action</th>
+                <th className="w-20 px-2 py-2.5 text-center font-bold">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
@@ -336,14 +391,14 @@ export default function InspectionTable({
                       )}
                     </td>
 
-                    {/* Tag (Centered) */}
+                    {/* Tag (Auto-wrapping multiline textarea for full visibility) */}
                     <td className="px-2 py-2 align-top">
-                      <input
-                        type="text"
+                      <textarea
+                        rows={3}
                         value={item.tag || ''}
                         onChange={(e) => handleItemChange(idx, 'tag', e.target.value)}
-                        placeholder="e.g. 21-TK-101"
-                        className="w-full text-xs font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none text-center"
+                        placeholder="e.g. CPPT-E-1101-02 / CPPT-E-1102"
+                        className="w-full text-xs font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 transition-all outline-none text-center resize-y whitespace-pre-wrap break-words leading-snug min-h-[72px]"
                       />
                     </td>
 
@@ -387,8 +442,18 @@ export default function InspectionTable({
 
                     {/* Row Actions */}
                     <td className="px-2 py-2 text-center align-middle">
-                      <div className="flex items-center justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                        <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        {/* Insert row below button (+) */}
+                        <button
+                          type="button"
+                          onClick={() => insertRowBelow(idx)}
+                          className="w-7 h-7 flex items-center justify-center bg-brand-50 hover:bg-brand-600 text-brand-600 hover:text-white border border-brand-200 hover:border-brand-600 rounded-md transition-all shadow-2xs group/btn"
+                          title="Insert row below (same Tag)"
+                        >
+                          <Plus className="w-4 h-4 transition-transform group-hover/btn:scale-110" />
+                        </button>
+
+                        <div className="flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
                           <button
                             type="button"
                             disabled={idx === 0}
@@ -407,15 +472,15 @@ export default function InspectionTable({
                           >
                             <ChevronDown className="w-3 h-3" />
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => removeRow(idx)}
+                            className="p-1 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-md transition-colors"
+                            title="Delete Row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeRow(idx)}
-                          className="p-1.5 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-md transition-colors"
-                          title="Delete Row"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     </td>
                   </tr>
