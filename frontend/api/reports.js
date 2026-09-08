@@ -18,9 +18,7 @@ async function fetchMasterRegistry() {
     if (res.ok) {
       const json = await res.json();
       if (json && json.data && Array.isArray(json.data.reports)) {
-        return json.data.reports.filter(
-          (r) => r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')
-        );
+        return json.data.reports;
       }
     }
   } catch (err) {
@@ -31,13 +29,10 @@ async function fetchMasterRegistry() {
 
 async function updateMasterRegistry(reportsList) {
   try {
-    const cleanList = reportsList.filter(
-      (r) => r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')
-    );
     const payload = {
       name: 'FlashReport_Master_Registry',
       data: {
-        reports: cleanList
+        reports: reportsList
       }
     };
     const res = await fetch(MASTER_REGISTRY_URL, {
@@ -189,9 +184,7 @@ export default async function handler(req, res) {
 
       // --- A. BATCH SYNC ---
       if (action === 'batch' && Array.isArray(body.batch)) {
-        const incomingReports = body.batch.filter(
-          (r) => r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')
-        );
+        const incomingReports = body.batch;
 
         const reg = await fetchMasterRegistry();
         const map = new Map();

@@ -3,6 +3,7 @@ import {
   Plus, Search, FileSpreadsheet, Copy, Trash2, Calendar, Tag,
   Clock, CheckCircle2, ChevronRight, Layers, FileText, X, RefreshCw
 } from 'lucide-react';
+import { ReportSyncDot } from './SyncStatusIndicator';
 
 export default function Sidebar({
   reports,
@@ -160,9 +161,12 @@ export default function Sidebar({
                       {fullTitle}
                     </p>
                   </div>
-                  {isActive && (
-                    <span className="w-2 h-2 rounded-full bg-brand-400 flex-shrink-0 mt-1"></span>
-                  )}
+                  <div className="flex items-center gap-1 flex-shrink-0 mt-1">
+                    <ReportSyncDot status={report._syncStatus} />
+                    {isActive && (
+                      <span className="w-2 h-2 rounded-full bg-brand-400"></span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Sub info tags */}

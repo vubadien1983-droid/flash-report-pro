@@ -12,6 +12,7 @@ import ImageModal from './components/ImageModal';
 import ShareModal from './components/ShareModal';
 import ReportViewer from './components/ReportViewer';
 import Toast from './components/Toast';
+import SyncStatusIndicator from './components/SyncStatusIndicator';
 import {
   fetchReports, fetchReport, createReport, saveReport,
   deleteReport, duplicateReport, batchSyncReports
@@ -25,6 +26,7 @@ import {
 import {
   publishReportForSharing
 } from './services/shareService';
+import syncEngine, { SyncStatus } from './services/syncEngine';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -62,6 +64,11 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // ─── NEW: Sync Engine State ─────────────────────────────────────
+  const [syncStatus, setSyncStatus] = useState(SyncStatus.SYNCED);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [lastSyncResult, setLastSyncResult] = useState(null);
+
   // Responsive device view mode: 'auto' | 'laptop' | 'phone'
   const [viewMode, setViewMode] = useState('auto');
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -97,6 +104,104 @@ export default function App() {
     setToast({ message, type });
   };
 
+  // ─── NEW: Initialize SyncEngine & Subscribe to Events ───────────
+  useEffect(() => {
+    if (isViewRoute) return;
+
+    syncEngine.init();
+
+    const unsubscribe = syncEngine.subscribe((event) => {
+      switch (event.type) {
+        case 'sync_start':
+          setIsSyncing(true);
+          setSyncStatus('syncing');
+          break;
+
+        case 'sync_end':
+          setIsSyncing(false);
+          setLastSyncResult(event.result);
+          setSyncStatus(syncEngine.getOverallStatus());
+          setPendingCount(syncEngine.getPendingCount());
+
+          // Refresh reports list after sync
+          refreshReportsList();
+
+          if (event.result) {
+            const { pushed, pulled, conflicts, errors } = event.result;
+            if (errors.length === 0) {
+              if (pushed > 0 || pulled > 0) {
+                showToast(
+                  `Sync OK! ${pushed > 0 ? `Pushed ${pushed}` : ''} ${pulled > 0 ? `Pulled ${pulled}` : ''} ${conflicts.length > 0 ? `(${conflicts.length} conflicts resolved)` : ''}`.trim(),
+                  'success'
+                );
+              }
+            } else {
+              showToast(`Sync: ${errors[0]}`, 'error');
+            }
+          }
+          break;
+
+        case 'report_saved_local':
+          setPendingCount(syncEngine.getPendingCount());
+          setSyncStatus(syncEngine.getOverallStatus());
+          break;
+
+        case 'report_synced':
+          setPendingCount(syncEngine.getPendingCount());
+          setSyncStatus(syncEngine.getOverallStatus());
+          break;
+
+        case 'sync_failed':
+          setSyncStatus(SyncStatus.FAILED);
+          showToast('Sync failed for a report after multiple retries', 'error');
+          break;
+
+        case 'online':
+          showToast('Back online — syncing...', 'success');
+          setSyncStatus(syncEngine.getOverallStatus());
+          break;
+
+        case 'offline':
+          setSyncStatus(SyncStatus.OFFLINE);
+          showToast('You are offline. Changes saved locally.', 'info');
+          break;
+
+        case 'resume_pull':
+          // App returned from background — refresh list and active report
+          refreshReportsList();
+          if (activeReportId) {
+            getLocalReport(activeReportId).then((fresh) => {
+              if (fresh && fresh.items) {
+                setCurrentReport(fresh);
+              }
+            });
+          }
+          if (event.pulled > 0) {
+            showToast(`Pulled ${event.pulled} update(s) from cloud`, 'success');
+          }
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      syncEngine.destroy();
+    };
+  }, [isViewRoute]);
+
+  // ─── Helper: Refresh reports list from local + cloud ────────────
+  const refreshReportsList = async () => {
+    try {
+      const localList = await getLocalReports();
+      setReports(localList);
+    } catch (e) {
+      console.warn('Refresh reports list error:', e);
+    }
+  };
+
   // Cloud-First Initial Loader & Synchronizer (Never Auto-Creates Blank Reports)
   const loadReportsList = async (preferredSelectId = null) => {
     if (isViewRoute) return;
@@ -112,69 +217,60 @@ export default function App() {
       // 2. Fetch local IndexedDB list
       const localList = await getLocalReports();
 
-      // Clean out test dummy entries from local storage
-      for (const r of localList) {
-        if (r.id === 'rep_test_sync_phone' || (r.title && r.title.includes('Second Report'))) {
-          await deleteLocalReport(r.id);
-        }
-      }
-
-      // 3. Detect any real local reports that are missing in Cloud (e.g. created on laptop)
-      const cloudIdMap = new Map();
-      cloudList.forEach((r) => cloudIdMap.set(r.id, r));
-
-      const localMissingInCloud = localList.filter((loc) => {
-        if (loc.id === 'rep_test_sync_phone' || (loc.title && loc.title.includes('Second Report'))) {
-          return false;
-        }
-        const hasRealContent = Boolean(
-          (loc.title && loc.title !== 'New Flash Report') ||
-          loc.system_tag ||
-          (loc.items && loc.items.some((it) => it.tag?.trim() || it.description?.trim() || (it.photos && it.photos.length > 0)))
-        );
-        return hasRealContent && !cloudIdMap.has(loc.id);
-      });
-
-      if (localMissingInCloud.length > 0) {
-        try {
-          const updatedCloud = await batchSyncReports(localList);
-          if (Array.isArray(updatedCloud) && updatedCloud.length > 0) {
-            cloudList = updatedCloud;
-          }
-        } catch (e) {
-          console.warn('Auto batch sync on load note:', e);
-        }
-      }
-
-      // 4. Build unified list with Cloud as authoritative truth
+      // 3. Build unified list — Cloud + Local merge with version awareness
       const map = new Map();
+
+      // Add cloud reports first (as baseline)
       cloudList.forEach((r) => {
-        if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
-          map.set(r.id, r);
-          saveLocalReport(r).catch(() => {});
-        }
+        map.set(r.id, {
+          ...r,
+          _syncStatus: SyncStatus.SYNCED,
+          _lastSyncedAt: new Date().toISOString(),
+        });
       });
 
+      // Merge local reports
       localList.forEach((r) => {
-        if (r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')) {
-          if (!map.has(r.id)) {
-            if (r.title && r.title !== 'New Flash Report') {
-              map.set(r.id, r);
-            }
+        const existing = map.get(r.id);
+        if (!existing) {
+          // Only in local → keep it (mark pending)
+          if (r.title && r.title !== 'New Flash Report') {
+            map.set(r.id, { ...r, _syncStatus: r._syncStatus || SyncStatus.PENDING });
+          }
+        } else {
+          // In both → keep the newer version
+          const localTime = new Date(r._localModifiedAt || r.updated_at || 0).getTime();
+          const cloudTime = new Date(existing.updated_at || 0).getTime();
+
+          if (localTime > cloudTime && r._syncStatus === SyncStatus.PENDING) {
+            // Local is newer and has unsent changes → keep local version
+            map.set(r.id, r);
           } else {
-            const existing = map.get(r.id);
-            if (new Date(r.updated_at || 0) >= new Date(existing.updated_at || 0)) {
-              map.set(r.id, { ...existing, ...r });
-            }
+            // Cloud is newer or same → use cloud but preserve local sync metadata
+            map.set(r.id, {
+              ...existing,
+              _version: Math.max(r._version || 0, existing._version || 0),
+              _syncStatus: r._syncStatus === SyncStatus.PENDING ? SyncStatus.PENDING : SyncStatus.SYNCED,
+              _lastSyncedAt: existing._lastSyncedAt || r._lastSyncedAt,
+            });
           }
         }
       });
+
+      // Save merged data back to IndexedDB
+      for (const [, r] of map) {
+        saveLocalReport(r).catch(() => {});
+      }
 
       const mergedList = Array.from(map.values()).sort(
         (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
       );
 
       setReports(mergedList);
+
+      // Update sync status counts
+      setPendingCount(mergedList.filter(r => r._syncStatus === SyncStatus.PENDING).length);
+      setSyncStatus(syncEngine.getOverallStatus());
 
       // Determine target report to open
       const lastActiveId = localStorage.getItem('flash_report_last_active_id');
@@ -189,6 +285,11 @@ export default function App() {
         // ONLY initialize a new report if there are strictly 0 reports anywhere
         await handleNewReport();
       }
+
+      // 4. Trigger background sync to push any pending local reports
+      if (mergedList.some(r => r._syncStatus === SyncStatus.PENDING)) {
+        syncEngine.processQueue();
+      }
     } catch (err) {
       console.error('Error loading reports:', err);
       showToast('Could not load reports', 'error');
@@ -202,7 +303,7 @@ export default function App() {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
     try {
-      // 1. Check local IndexedDB
+      // 1. Check local IndexedDB first (instant)
       let rep = await getLocalReport(id);
       if (rep && rep.title && Array.isArray(rep.items) && rep.items.length > 0) {
         setCurrentReport(rep);
@@ -215,12 +316,35 @@ export default function App() {
       try {
         const cloudRep = await fetchReport(id);
         if (cloudRep && cloudRep.title) {
-          rep = cloudRep;
-          setCurrentReport(cloudRep);
+          // ─── NEW: Conflict-aware merge ─────────────────────────
+          if (rep && rep._syncStatus === SyncStatus.PENDING) {
+            // Local has unsaved changes → DON'T overwrite!
+            // Compare timestamps to decide
+            const localTime = new Date(rep._localModifiedAt || rep.updated_at || 0).getTime();
+            const cloudTime = new Date(cloudRep.updated_at || 0).getTime();
+
+            if (cloudTime > localTime) {
+              // Cloud is genuinely newer → notify user of conflict
+              showToast('Cloud has newer changes. Your local edits are preserved. Tap Sync to merge.', 'info');
+              // Don't overwrite — user can manually sync
+              return;
+            }
+            // Local is newer → keep local, don't overwrite
+            return;
+          }
+
+          // No local pending changes → safe to update from cloud
+          const merged = {
+            ...cloudRep,
+            _version: Math.max(rep?._version || 0, cloudRep._version || 0),
+            _syncStatus: SyncStatus.SYNCED,
+            _lastSyncedAt: new Date().toISOString(),
+          };
+          setCurrentReport(merged);
           setActiveReportId(id);
           localStorage.setItem('flash_report_last_active_id', id);
           setHasUnsavedChanges(false);
-          await saveLocalReport(cloudRep);
+          await saveLocalReport(merged);
           return;
         }
       } catch (e) {
@@ -240,7 +364,9 @@ export default function App() {
             discipline: summary.discipline || 'Mechanical',
             items: [
               { id: `${summary.id}_1`, tag: summary.system_tag || '', description: '', note: '', photos: [] }
-            ]
+            ],
+            _version: 1,
+            _syncStatus: SyncStatus.PENDING,
           };
           setCurrentReport(rep);
           setActiveReportId(id);
@@ -254,47 +380,29 @@ export default function App() {
     }
   };
 
-  // Full Two-Way High-Speed Batch Cloud Sync (< 0.5s)
+  // ─── UPDATED: Full Two-Way Sync via SyncEngine ──────────────────
   const handleSyncWithCloud = async () => {
-    setIsSyncing(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
-    try {
-      // 1. If current report is dirty, save locally first
-      if (currentReport && currentReport.id && currentReport.id !== 'rep_test_sync_phone') {
-        await saveLocalReport(currentReport);
-      }
-
-      // 2. Fetch local reports
-      const localList = await getLocalReports();
-      const cleanLocal = localList.filter(
-        (r) => r.id !== 'rep_test_sync_phone' && !r.title?.includes('Second Report')
-      );
-
-      // 3. Batch Sync all local reports to Cloud in 1 request
-      const cloudReports = await batchSyncReports(cleanLocal);
-
-      // 4. Update local IndexedDB with latest from Cloud
-      for (const r of cloudReports) {
-        await saveLocalReport(r);
-      }
-
-      setReports(cloudReports);
-
-      // Reload active report from Cloud/Local
-      if (activeReportId) {
-        await loadSingleReport(activeReportId);
-      } else if (cloudReports.length > 0) {
-        await loadSingleReport(cloudReports[0].id);
-      }
-
-      showToast(`Đồng bộ Cloud thành công! Có ${cloudReports.length} báo cáo`, 'success');
-    } catch (err) {
-      console.error('Sync failed:', err);
-      showToast('Lỗi khi đồng bộ dữ liệu', 'error');
-    } finally {
-      setIsSyncing(false);
+    // 1. Save current report locally first (if dirty)
+    if (currentReport && hasUnsavedChanges) {
+      await syncEngine.saveReport(currentReport);
+      setHasUnsavedChanges(false);
     }
+
+    // 2. Full bidirectional sync
+    const result = await syncEngine.fullSync();
+
+    // 3. Reload active report if it was pulled
+    if (result.pulled > 0 && activeReportId) {
+      const freshLocal = await getLocalReport(activeReportId);
+      if (freshLocal) {
+        setCurrentReport(freshLocal);
+      }
+    }
+
+    // 4. Refresh reports list
+    await refreshReportsList();
   };
 
   useEffect(() => {
@@ -332,12 +440,12 @@ export default function App() {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // Debounced auto-save: saves to IndexedDB AND Cloud
+  // ─── UPDATED: Auto-save uses SyncEngine (local instant, cloud debounced) ─
   const triggerAutoSave = (updatedReport) => {
     setHasUnsavedChanges(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(() => {
-      executeSave(updatedReport, false);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      await executeSave(updatedReport, false);
     }, 1500);
   };
 
@@ -345,32 +453,20 @@ export default function App() {
     if (!reportToSave || !reportToSave.id) return;
     setIsSaving(true);
     try {
-      // 1. Save to local IndexedDB
-      await saveLocalReport(reportToSave);
-
-      // 2. Save directly to Cloud
-      try {
-        await saveReport(reportToSave.id, reportToSave);
-      } catch (e) {
-        console.warn('Cloud save error note:', e);
-      }
-
+      // ─── NEW: Save via SyncEngine (handles version bump + cloud queue) ─
+      const savedReport = await syncEngine.saveReport(reportToSave);
+      setCurrentReport(savedReport);
       setHasUnsavedChanges(false);
 
-      // 3. Refresh reports list from Cloud
-      try {
-        const updatedList = await fetchReports();
-        if (Array.isArray(updatedList) && updatedList.length > 0) {
-          setReports(updatedList);
-        }
-      } catch (e) {}
+      // Refresh reports list
+      await refreshReportsList();
 
       if (notify) {
-        showToast('Báo cáo đã được lưu lên Cloud thành công', 'success');
+        showToast('Report saved. Cloud sync queued.', 'success');
       }
     } catch (err) {
       console.error('Save failed:', err);
-      showToast('Lỗi khi lưu báo cáo', 'error');
+      showToast('Error saving report', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -407,27 +503,20 @@ export default function App() {
           { id: `${newId}_2`, tag: '', description: '', note: '', photos: [] },
           { id: `${newId}_3`, tag: '', description: '', note: '', photos: [] },
           { id: `${newId}_4`, tag: '', description: '', note: '', photos: [] },
-        ]
+        ],
+        _version: 1,
+        _syncStatus: SyncStatus.PENDING,
       };
 
-      await saveLocalReport(defaultNew);
-      try {
-        await saveReport(defaultNew.id, defaultNew);
-      } catch (e) {}
+      // Save via SyncEngine
+      const saved = await syncEngine.saveReport(defaultNew);
+      await refreshReportsList();
 
-      const cloudList = await fetchReports().catch(() => []);
-      if (cloudList.length > 0) {
-        setReports(cloudList);
-      } else {
-        const localList = await getLocalReports();
-        setReports(localList);
-      }
-
-      setCurrentReport(defaultNew);
-      setActiveReportId(defaultNew.id);
-      localStorage.setItem('flash_report_last_active_id', defaultNew.id);
+      setCurrentReport(saved);
+      setActiveReportId(saved.id);
+      localStorage.setItem('flash_report_last_active_id', saved.id);
       setHasUnsavedChanges(false);
-      showToast('Tạo báo cáo mới thành công', 'success');
+      showToast('New report created', 'success');
     } catch (err) {
       console.error('Failed to create report:', err);
       showToast('Error creating report', 'error');
@@ -454,27 +543,24 @@ export default function App() {
           id: newId,
           title: `Copy of ${orig.title || 'Report'}`,
           updated_at: new Date().toISOString(),
-          cloud_code: null
+          cloud_code: null,
+          _version: 1,
+          _syncStatus: SyncStatus.PENDING,
         };
-        await saveLocalReport(dup);
-        try {
-          await saveReport(dup.id, dup);
-        } catch (e) {}
 
-        const cloudList = await fetchReports().catch(() => []);
-        if (cloudList.length > 0) {
-          setReports(cloudList);
-        }
+        // Save via SyncEngine
+        const saved = await syncEngine.saveReport(dup);
+        await refreshReportsList();
 
-        setCurrentReport(dup);
-        setActiveReportId(dup.id);
-        localStorage.setItem('flash_report_last_active_id', dup.id);
+        setCurrentReport(saved);
+        setActiveReportId(saved.id);
+        localStorage.setItem('flash_report_last_active_id', saved.id);
         setHasUnsavedChanges(false);
-        showToast('Nhân bản báo cáo thành công', 'success');
+        showToast('Report duplicated successfully', 'success');
       }
     } catch (err) {
       console.error('Duplicate failed:', err);
-      showToast('Lỗi khi nhân bản báo cáo', 'error');
+      showToast('Error duplicating report', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -505,7 +591,7 @@ export default function App() {
       const updatedList = reports.filter((r) => r.id !== idToDelete);
       setReports(updatedList);
       setDeleteModalState({ isOpen: false, id: null, title: '' });
-      showToast('Báo cáo đã được xóa thành công', 'info');
+      showToast('Report deleted successfully', 'info');
 
       // 4. Switch to remaining report or create new if 0 left
       if (activeReportId === idToDelete) {
@@ -521,7 +607,7 @@ export default function App() {
     }
   };
 
-  // Share Link Handler (< 50ms)
+  // Share Link Handler
   const handleOpenShareModal = async () => {
     if (!currentReport) return;
     setIsPublishing(true);
@@ -546,10 +632,10 @@ export default function App() {
     setIsExporting(true);
     try {
       await exportExcelClient(currentReport);
-      showToast('Xuất Excel (.xlsx) thành công', 'success');
+      showToast('Excel export successful', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
-      showToast('Lỗi khi xuất file Excel', 'error');
+      showToast('Excel export failed', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -561,10 +647,10 @@ export default function App() {
     setIsExporting(true);
     try {
       await exportPdfClient(currentReport);
-      showToast('Xuất PDF (.pdf) thành công', 'success');
+      showToast('PDF export successful', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
-      showToast('Lỗi khi xuất file PDF', 'error');
+      showToast('PDF export failed', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -579,7 +665,7 @@ export default function App() {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3">
         <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />
-        <p className="text-sm font-medium text-slate-300">Đang tải Flash Report Pro...</p>
+        <p className="text-sm font-medium text-slate-300">Loading Flash Report Pro...</p>
       </div>
     );
   }
@@ -606,18 +692,21 @@ export default function App() {
             {currentReport?.title || 'Untitled Flash Report'}
           </h2>
 
+          {/* ─── UPDATED: 3-State Sync Status Indicator ─────────── */}
           <div className="hidden sm:flex items-center gap-2">
-            {hasUnsavedChanges ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                Unsaved
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <Check className="w-3 h-3" />
-                Cloud Synced
-              </span>
-            )}
+            <SyncStatusIndicator
+              status={hasUnsavedChanges ? SyncStatus.PENDING : syncStatus}
+              pendingCount={pendingCount}
+              onRetry={() => syncEngine.processQueue()}
+            />
+          </div>
+          {/* Mobile: compact indicator */}
+          <div className="sm:hidden">
+            <SyncStatusIndicator
+              status={hasUnsavedChanges ? SyncStatus.PENDING : syncStatus}
+              pendingCount={pendingCount}
+              compact={true}
+            />
           </div>
         </div>
 
@@ -629,11 +718,17 @@ export default function App() {
             onClick={handleSyncWithCloud}
             disabled={isSyncing}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg shadow-2xs transition-colors"
-            title="Đồng bộ dữ liệu trực tiếp với Cloud (Điện thoại & Máy tính)"
+            title="Full 2-way sync between Phone & Laptop"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Sync Cloud</span>
             <span className="sm:hidden">Sync</span>
+            {/* Pending count badge */}
+            {pendingCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0 text-[9px] font-bold bg-amber-500 text-white rounded-full leading-relaxed">
+                {pendingCount}
+              </span>
+            )}
           </button>
 
           {/* Device Mode Switcher */}
@@ -813,10 +908,16 @@ export default function App() {
             type="button"
             onClick={handleSyncWithCloud}
             disabled={isSyncing}
-            className="py-2 px-3 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center gap-1 transition-colors border border-sky-200"
+            className="relative py-2 px-3 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center gap-1 transition-colors border border-sky-200"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>Sync</span>
+            {/* Pending badge on mobile */}
+            {pendingCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0 text-[9px] font-bold bg-amber-500 text-white rounded-full leading-relaxed">
+                {pendingCount}
+              </span>
+            )}
           </button>
 
           <button
