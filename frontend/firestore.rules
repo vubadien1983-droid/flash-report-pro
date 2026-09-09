@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// Flash Report Pro — Firestore security rules
+//
+// The previous rules were the console's default test-mode block:
+//
+//     allow read, write: if request.time < timestamp.date(2026, 3, 12);
+//
+// That date passed, so every read and write started failing — which is why
+// reports stopped syncing and share links returned "Report Not Found".
+//
+// This database is shared with the account's other apps (app_data, app_v2,
+// app_v4, app_v8, lqp_data), so the catch-all below deliberately keeps the
+// same open access those apps were written against, minus the expiry.
+//
+// SECURITY NOTE: anyone who knows the project id can read and write this
+// database. Replace the catch-all with `if request.auth != null` once
+// sign-in is added to the apps that use it.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Flash Report Pro: author's working reports ──────────────────
+    // Photos live in a `photos` subcollection so each image gets its own
+    // 1 MiB document budget — this is what makes image storage work on the
+    // free Spark plan without Firebase Storage.
+    match /reports/{reportId} {
+      allow read, write: if true;
+
+      match /photos/{photoId} {
+        allow read, write: if true;
+      }
+    }
+
+    // ── Flash Report Pro: publicly shared reports ───────────────────
+    // World-readable by design: that is what lets a recipient open a share
+    // link without signing in. Share ids are random and never enumerated.
+    match /shared_reports/{shareId} {
+      allow read, write: if true;
+
+      match /photos/{photoId} {
+        allow read, write: if true;
+      }
+    }
+
+    // ── Everything else (the account's other apps) ──────────────────
+    // Restores the access these collections had before the test-mode rule
+    // expired. Left open intentionally; see the security note above.
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

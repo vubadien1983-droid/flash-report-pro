@@ -13,12 +13,34 @@
 import {
   isFirebaseConfigured,
   reportsCollection, reportDoc,
+  reportPhotosCollection, reportPhotoDoc, photoKey,
   getDoc, getDocs, setDoc, deleteDoc, writeBatch,
   query, orderBy, db,
   uploadPhotoToStorage,
   deleteReportPhotos,
   base64ToBlob,
 } from './firebase';
+
+/**
+ * Firestore hard-caps a single document at 1 MiB. A photo is therefore
+ * stored in its own document inside the report's `photos` subcollection,
+ * and the report document keeps only a lightweight reference.
+ *
+ * PHOTO_MAX_BYTES leaves headroom for the surrounding document fields.
+ */
+const PHOTO_MAX_BYTES = 900_000;
+
+/**
+ * Placeholder written by a previous version of this file, which replaced
+ * base64 image data whenever a Firebase Storage upload failed. On the Spark
+ * plan Storage is unavailable, so that upload ALWAYS failed and the string
+ * overwrote real photos. It is treated as "image absent" everywhere now.
+ */
+const LEGACY_TOMBSTONE = '__base64_pending_upload__';
+
+function _isMissingImage(url) {
+  return !url || url === LEGACY_TOMBSTONE;
+}
 
 const API_BASE = '/api';
 
@@ -58,7 +80,8 @@ export async function fetchReport(id) {
   if (isFirebaseConfigured) {
     const snap = await getDoc(reportDoc(id));
     if (!snap.exists()) throw new Error('Report not found');
-    return { id: snap.id, ...snap.data() };
+    const report = { id: snap.id, ...snap.data() };
+    return await _hydratePhotos(id, report);
   }
 
   // Legacy fallback
@@ -73,6 +96,7 @@ export async function createReport(payload = {}) {
   if (isFirebaseConfigured) {
     const row = _toFirestoreDoc(payload);
     await setDoc(reportDoc(payload.id), row);
+    await _pushPhotos(payload.id, payload);
     return { ...row, id: payload.id };
   }
 
@@ -92,6 +116,7 @@ export async function saveReport(id, reportData) {
   if (isFirebaseConfigured) {
     const row = _toFirestoreDoc({ ...reportData, id });
     await setDoc(reportDoc(id), row, { merge: true });
+    await _pushPhotos(id, reportData);
     return { ...row, id };
   }
 
@@ -121,6 +146,18 @@ export async function batchSyncReports(localReportsList) {
     }
 
     await batch.commit();
+
+    // Photos go in their own subcollection documents, after the parent
+    // documents are committed.
+    for (const report of localReportsList) {
+      if (!report || !report.id) continue;
+      try {
+        await _pushPhotos(report.id, report);
+      } catch (e) {
+        console.warn(`Photo push failed for ${report.id}:`, e.message);
+      }
+    }
+
     return results;
   }
 
@@ -139,13 +176,26 @@ export async function batchSyncReports(localReportsList) {
 
 export async function deleteReport(id) {
   if (isFirebaseConfigured) {
-    // Delete photos from Storage first
+    // Firestore does not cascade — remove the photos subcollection first,
+    // otherwise its documents are orphaned and keep consuming quota.
+    try {
+      const snap = await getDocs(reportPhotosCollection(id));
+      for (let i = 0; i < snap.docs.length; i += 400) {
+        const batch = writeBatch(db);
+        snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('Photo subcollection cleanup:', e.message);
+    }
+
+    // Also clean Storage, for reports created before the subcollection change
     try {
       await deleteReportPhotos(id);
     } catch (e) {
       console.warn('Photo cleanup on delete:', e);
     }
-    // Delete Firestore document
+
     await deleteDoc(reportDoc(id));
     return { success: true };
   }
@@ -224,42 +274,17 @@ export async function uploadPhotoBase64(base64) {
 export async function migrateReportPhotosToStorage(report) {
   if (!isFirebaseConfigured || !report || !report.items) return report;
 
-  let hasChanges = false;
-  const updatedItems = await Promise.all(
-    report.items.map(async (item) => {
-      if (!item.photos || item.photos.length === 0) return item;
+  // Firebase Storage requires the paid Blaze plan. On Spark, photos live in
+  // the report's Firestore `photos` subcollection instead, which _pushPhotos
+  // already handles. The local base64 is deliberately left untouched so the
+  // image keeps rendering offline.
+  try {
+    await _pushPhotos(report.id, report);
+  } catch (e) {
+    console.warn('Photo push during migration:', e.message);
+  }
 
-      const updatedPhotos = await Promise.all(
-        item.photos.map(async (photo, idx) => {
-          if (!photo || !photo.url) return photo;
-          // Skip if already a URL (not base64)
-          if (!photo.url.startsWith('data:')) return photo;
-
-          try {
-            const blob = base64ToBlob(photo.url);
-            const storageUrl = await uploadPhotoToStorage(
-              blob,
-              report.id,
-              item.id || `item_${idx}`,
-              photo.slot_index ?? idx
-            );
-            if (storageUrl) {
-              hasChanges = true;
-              return { ...photo, url: storageUrl };
-            }
-          } catch (e) {
-            console.warn(`Photo migration failed for ${item.id}:`, e);
-          }
-          return photo; // Keep base64 if upload fails
-        })
-      );
-
-      return { ...item, photos: updatedPhotos };
-    })
-  );
-
-  if (!hasChanges) return report;
-  return { ...report, items: updatedItems };
+  return report;
 }
 
 // ─── Private Helpers ─────────────────────────────────────────────
@@ -281,25 +306,118 @@ function _toFirestoreDoc(report) {
     created_at: report.created_at || new Date().toISOString(),
   };
 
-  // Strip base64 photo data from cloud copy to avoid Firestore 1MB doc limit
+  // Replace inline base64 with a REFERENCE to the photos subcollection.
+  // The bytes are never discarded — _pushPhotos writes them alongside this
+  // document, and _hydratePhotos reads them back on load.
   if (Array.isArray(doc.items)) {
-    doc.items = doc.items.map((item) => {
+    doc.items = doc.items.map((item, itemIdx) => {
       if (!item.photos || item.photos.length === 0) return item;
+      const itemId = item.id || `item_${itemIdx}`;
       return {
         ...item,
-        photos: item.photos.map((p) => {
+        photos: item.photos.map((p, pIdx) => {
           if (!p || !p.url) return p;
-          // If still base64 (not yet migrated), store a placeholder
-          if (p.url.startsWith('data:') && p.url.length > 500) {
-            return { ...p, url: '__base64_pending_upload__' };
-          }
-          return p;
+          if (!p.url.startsWith('data:')) return p; // already a hosted URL
+          const slot = p.slot_index ?? pIdx;
+          return {
+            id: p.id,
+            filename: p.filename,
+            slot_index: slot,
+            url: '',
+            photo_ref: photoKey(itemId, slot), // ← pointer, not a tombstone
+          };
         }),
       };
     });
   }
 
   return doc;
+}
+
+/**
+ * Write every base64 photo of a report into its `photos` subcollection,
+ * one document per image. Oversized images are skipped (and reported)
+ * rather than silently replaced, so nothing is ever destroyed.
+ */
+async function _pushPhotos(reportId, report) {
+  if (!isFirebaseConfigured || !report?.items?.length) return;
+
+  const writes = [];
+  report.items.forEach((item, itemIdx) => {
+    const itemId = item.id || `item_${itemIdx}`;
+    (item.photos || []).forEach((p, pIdx) => {
+      if (!p || !p.url || !p.url.startsWith('data:')) return;
+      if (p.url.length > PHOTO_MAX_BYTES) {
+        console.warn(
+          `Photo ${itemId}/${pIdx} is ${Math.round(p.url.length / 1024)}KB — ` +
+          'above the Firestore document limit, kept locally only.'
+        );
+        return;
+      }
+      writes.push({
+        key: photoKey(itemId, p.slot_index ?? pIdx),
+        data: {
+          url: p.url,
+          filename: p.filename || '',
+          slot_index: p.slot_index ?? pIdx,
+          item_id: itemId,
+          updated_at: new Date().toISOString(),
+        },
+      });
+    });
+  });
+
+  if (writes.length === 0) return;
+
+  // Firestore batches cap at 500 operations.
+  for (let i = 0; i < writes.length; i += 400) {
+    const chunk = writes.slice(i, i + 400);
+    const batch = writeBatch(db);
+    chunk.forEach(({ key, data }) => {
+      batch.set(reportPhotoDoc(reportId, key), data);
+    });
+    await batch.commit();
+  }
+}
+
+/**
+ * Read a report's photos subcollection back and splice the base64 data
+ * into the items, reversing what _toFirestoreDoc stored as references.
+ */
+async function _hydratePhotos(reportId, report) {
+  if (!isFirebaseConfigured || !report?.items?.length) return report;
+
+  const needsHydration = report.items.some((item) =>
+    (item.photos || []).some((p) => p && _isMissingImage(p.url))
+  );
+  if (!needsHydration) return report;
+
+  let byKey = new Map();
+  try {
+    const snap = await getDocs(reportPhotosCollection(reportId));
+    snap.docs.forEach((d) => byKey.set(d.id, d.data()));
+  } catch (e) {
+    console.warn('Photo hydration failed:', e.message);
+    return report;
+  }
+
+  const items = report.items.map((item, itemIdx) => {
+    if (!item.photos || item.photos.length === 0) return item;
+    const itemId = item.id || `item_${itemIdx}`;
+    return {
+      ...item,
+      photos: item.photos.map((p, pIdx) => {
+        if (!p) return p;
+        if (!_isMissingImage(p.url)) return p; // already has real data
+        const key = p.photo_ref || photoKey(itemId, p.slot_index ?? pIdx);
+        const stored = byKey.get(key);
+        // Blank out the legacy tombstone so it never renders as a broken <img>
+        return stored ? { ...p, url: stored.url } : { ...p, url: '' };
+      }),
+    };
+  });
+
+  return { ...report, items };
 }
 
 /**

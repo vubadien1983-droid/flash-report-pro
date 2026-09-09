@@ -59,6 +59,8 @@ export default app;
 // ─── Firestore Helpers ───────────────────────────────────────────
 
 const REPORTS_COLLECTION = 'reports';
+const PHOTOS_SUBCOLLECTION = 'photos';
+const SHARED_COLLECTION = 'shared_reports';
 
 export function reportsCollection() {
   return collection(db, REPORTS_COLLECTION);
@@ -66,6 +68,45 @@ export function reportsCollection() {
 
 export function reportDoc(id) {
   return doc(db, REPORTS_COLLECTION, id);
+}
+
+/**
+ * Photos live in a SUBCOLLECTION so each image gets its own 1MB document
+ * budget. This is what makes photo storage work on the free Spark plan
+ * without Firebase Storage (which requires Blaze).
+ *
+ *   reports/{reportId}/photos/{photoKey}  →  { url: <base64>, ... }
+ */
+export function reportPhotosCollection(reportId) {
+  return collection(db, REPORTS_COLLECTION, reportId, PHOTOS_SUBCOLLECTION);
+}
+
+export function reportPhotoDoc(reportId, photoKey) {
+  return doc(db, REPORTS_COLLECTION, reportId, PHOTOS_SUBCOLLECTION, photoKey);
+}
+
+/** Deterministic key for a photo slot so re-saves overwrite in place. */
+export function photoKey(itemId, slotIndex) {
+  const safeItem = String(itemId || 'item').replace(/[^A-Za-z0-9_-]/g, '_');
+  return `${safeItem}__s${slotIndex}`;
+}
+
+// ─── Shared (public-read) reports ────────────────────────────────
+
+export function sharedCollection() {
+  return collection(db, SHARED_COLLECTION);
+}
+
+export function sharedDoc(shareId) {
+  return doc(db, SHARED_COLLECTION, shareId);
+}
+
+export function sharedPhotosCollection(shareId) {
+  return collection(db, SHARED_COLLECTION, shareId, PHOTOS_SUBCOLLECTION);
+}
+
+export function sharedPhotoDoc(shareId, key) {
+  return doc(db, SHARED_COLLECTION, shareId, PHOTOS_SUBCOLLECTION, key);
 }
 
 // Re-export Firestore functions for api.js to use

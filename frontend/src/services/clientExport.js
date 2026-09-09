@@ -92,7 +92,7 @@ export async function exportExcelClient(report) {
     { key: 'tag', width: 15 },
     { key: 'desc', width: 28 },
     { key: 'note', width: 20 },
-    { key: 'photo1', width: 22 },
+    { key: 'photo1', width: 22 },  // PHOTO_COL_WIDTH
     { key: 'photo2', width: 22 },
     { key: 'photo3', width: 22 },
     { key: 'photo4', width: 22 }
@@ -223,10 +223,17 @@ export async function exportExcelClient(report) {
   let currentRow = 6;
   let seqNo = 1;
 
-  // Approximate cell dimensions: Col width 18 ~ 135px; Row height 72pt ~ 96px
-  const cellWidthPx = 135;
-  const cellHeightPx = 96;
-  const cellAspectRatio = cellWidthPx / cellHeightPx; // ~1.406
+  // Derive the photo cell's true aspect ratio from the values actually used
+  // above, rather than hard-coding it — a mismatch here is what stretches
+  // images out of proportion.
+  //   Excel column width unit → px:  width * 7 + 5
+  //   Row height points       → px:  points * 96/72
+  const PHOTO_COL_WIDTH = 22;   // must match worksheet.columns photo entries
+  const PHOTO_ROW_HEIGHT = 92;  // must match row.height below
+
+  const cellWidthPx = PHOTO_COL_WIDTH * 7 + 5;      // ≈ 159px
+  const cellHeightPx = PHOTO_ROW_HEIGHT * (96 / 72); // ≈ 123px
+  const cellAspectRatio = cellWidthPx / cellHeightPx; // ≈ 1.30
 
   for (const item of items) {
     const tag = (item.tag || '').trim();
@@ -238,7 +245,7 @@ export async function exportExcelClient(report) {
     const itemNo = hasContent ? seqNo++ : '';
 
     const row = worksheet.getRow(currentRow);
-    row.height = 92;
+    row.height = PHOTO_ROW_HEIGHT;
 
     // No (Centered)
     const cellA = worksheet.getCell(`A${currentRow}`);
@@ -285,26 +292,25 @@ export async function exportExcelClient(report) {
               extension: 'jpeg'
             });
 
-            // Calculate precise proportional offsets to PREVENT distortion/squishing
+            // Letterbox the image inside the cell: scale the constraining
+            // axis to the full padded area, shrink the other by the aspect
+            // ratio, then centre both. Preserves proportions exactly.
+            const PAD = 0.90; // leaves a 5% margin on every side
             const imgAR = imgData.aspectRatio || 1.33;
-            let colOffset = 0.05;
-            let colSpan = 0.90;
-            let rowOffset = 0.05;
-            let rowSpan = 0.90;
+
+            let colSpan = PAD;
+            let rowSpan = PAD;
 
             if (imgAR < cellAspectRatio) {
-              // Image is taller than cell aspect ratio: scale width down to preserve aspect ratio
-              rowOffset = 0.05;
-              rowSpan = 0.90;
-              colSpan = Math.max(0.2, Math.min(0.90, 0.90 * (imgAR / cellAspectRatio)));
-              colOffset = (1.0 - colSpan) / 2;
+              // Taller than the cell → height fills, width shrinks
+              colSpan = PAD * (imgAR / cellAspectRatio);
             } else {
-              // Image is wider than cell aspect ratio: scale height down to preserve aspect ratio
-              colOffset = 0.05;
-              colSpan = 0.90;
-              rowSpan = Math.max(0.2, Math.min(0.90, 0.90 * (cellAspectRatio / imgAR)));
-              rowOffset = (1.0 - rowSpan) / 2;
+              // Wider than the cell → width fills, height shrinks
+              rowSpan = PAD * (cellAspectRatio / imgAR);
             }
+
+            const colOffset = (1 - colSpan) / 2;
+            const rowOffset = (1 - rowSpan) / 2;
 
             worksheet.addImage(imageId, {
               tl: { col: 4 + p + colOffset, row: currentRow - 1 + rowOffset },
@@ -444,6 +450,11 @@ export async function exportPdfClient(report) {
     ],
     body: tableRows,
     theme: 'grid',
+    // Engineering reports must not tear a row — or the photo drawn inside
+    // it — across a page boundary. 'avoid' moves the whole row to the next
+    // page instead, and the header is redrawn there.
+    rowPageBreak: 'avoid',
+    showHead: 'everyPage',
     styles: {
       font: 'Helvetica',
       fontSize: 8,

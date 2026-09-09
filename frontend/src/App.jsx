@@ -24,7 +24,7 @@ import {
   exportExcelClient, exportPdfClient
 } from './services/clientExport';
 import {
-  publishReportForSharing
+  publishReportForSharing, republishIfShared
 } from './services/shareService';
 import syncEngine, { SyncStatus } from './services/syncEngine';
 
@@ -460,6 +460,11 @@ export default function App() {
 
       // Refresh reports list
       await refreshReportsList();
+
+      // If this report has already been shared, push the new content to the
+      // same share link so recipients always see current data. No-op
+      // otherwise, and never blocks the save.
+      republishIfShared(savedReport).catch(() => {});
 
       if (notify) {
         showToast('Report saved. Cloud sync queued.', 'success');

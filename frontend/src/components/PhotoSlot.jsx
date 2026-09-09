@@ -18,7 +18,7 @@ export default function PhotoSlot({
   const [slotUploading, setSlotUploading] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
 
-  const slotLabels = ['Col E (1)', 'Col F (2)', 'Col G (3)', 'Col H (4)'];
+  const slotLabels = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4'];
 
   const handleFile = async (file) => {
     if (!file) return;
