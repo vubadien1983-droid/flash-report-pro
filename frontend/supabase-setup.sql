@@ -1,5 +1,0 @@
--- ═══════════════════════════════════════════════════════════════
--- DEPRECATED — Supabase is no longer used.
--- Cloud backend has been migrated to Firebase (Firestore + Storage).
--- See: firebase-setup.md for setup instructions.
--- ═══════════════════════════════════════════════════════════════

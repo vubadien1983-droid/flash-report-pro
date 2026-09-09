@@ -94,9 +94,13 @@ export async function fetchReport(id) {
 
 export async function createReport(payload = {}) {
   if (isFirebaseConfigured) {
+    // Photos FIRST. _toFirestoreDoc replaces inline base64 with photo_ref
+    // pointers, so writing the parent document before the bytes exist leaves
+    // pointers to nothing if the photo write then fails — and the next load
+    // hydrates them as empty. See ERROR_LOG BUG-012.
+    await _pushPhotos(payload.id, payload);
     const row = _toFirestoreDoc(payload);
     await setDoc(reportDoc(payload.id), row);
-    await _pushPhotos(payload.id, payload);
     return { ...row, id: payload.id };
   }
 
@@ -114,9 +118,12 @@ export async function createReport(payload = {}) {
 
 export async function saveReport(id, reportData) {
   if (isFirebaseConfigured) {
+    // Photos FIRST — see the note in createReport. If this throws, the parent
+    // document keeps its previous, still-consistent state instead of being
+    // left pointing at bytes that were never written.
+    await _pushPhotos(id, reportData);
     const row = _toFirestoreDoc({ ...reportData, id });
     await setDoc(reportDoc(id), row, { merge: true });
-    await _pushPhotos(id, reportData);
     return { ...row, id };
   }
 
@@ -134,29 +141,33 @@ export async function saveReport(id, reportData) {
 
 export async function batchSyncReports(localReportsList) {
   if (isFirebaseConfigured) {
+    // Photos FIRST, for every report, before any parent document is written.
+    // A parent document stores photo_ref pointers, so committing it while the
+    // bytes are missing is what made photos disappear on reload (BUG-012).
+    // A report whose photos fail to write is dropped from this batch and left
+    // PENDING, so it retries rather than being recorded as synced.
+    const writable = [];
+    for (const report of localReportsList) {
+      if (!report || !report.id) continue;
+      try {
+        await _pushPhotos(report.id, report);
+        writable.push(report);
+      } catch (e) {
+        console.warn(`Photo push failed for ${report.id}, deferring:`, e.message);
+      }
+    }
+
     // Firestore batch write (max 500 per batch, we're well under)
     const batch = writeBatch(db);
     const results = [];
 
-    for (const report of localReportsList) {
-      if (!report || !report.id) continue;
+    for (const report of writable) {
       const row = _toFirestoreDoc(report);
       batch.set(reportDoc(report.id), row, { merge: true });
       results.push({ id: report.id, ...row });
     }
 
     await batch.commit();
-
-    // Photos go in their own subcollection documents, after the parent
-    // documents are committed.
-    for (const report of localReportsList) {
-      if (!report || !report.id) continue;
-      try {
-        await _pushPhotos(report.id, report);
-      } catch (e) {
-        console.warn(`Photo push failed for ${report.id}:`, e.message);
-      }
-    }
 
     return results;
   }
@@ -454,13 +465,16 @@ async function _hydratePhotos(reportId, report) {
   if (!needsHydration) return report;
 
   let byKey = new Map();
+  let hydrationOk = true;
   try {
     const snap = await getDocs(reportPhotosCollection(reportId));
     snap.docs.forEach((d) => byKey.set(d.id, d.data()));
   } catch (e) {
     console.warn('Photo hydration failed:', e.message);
-    return report;
+    hydrationOk = false;
   }
+
+  let missing = 0;
 
   const items = report.items.map((item, itemIdx) => {
     if (!item.photos || item.photos.length === 0) return item;
@@ -472,13 +486,23 @@ async function _hydratePhotos(reportId, report) {
         if (!_isMissingImage(p.url)) return p; // already has real data
         const key = p.photo_ref || photoKey(itemId, p.slot_index ?? pIdx);
         const stored = byKey.get(key);
-        // Blank out the legacy tombstone so it never renders as a broken <img>
-        return stored ? { ...p, url: stored.url } : { ...p, url: '' };
+        if (stored) return { ...p, url: stored.url };
+
+        // The pointer resolved to nothing. Do NOT invent a url of any kind —
+        // an earlier version wrote '' here, and callers then saved that over
+        // a local copy that still had the image, destroying it (BUG-012).
+        // Leaving the slot untouched and flagging the report lets the caller
+        // prefer whatever it already holds.
+        missing++;
+        return p;
       }),
     };
   });
 
-  return { ...report, items };
+  // `_photosIncomplete` marks a cloud copy that must never be treated as the
+  // authoritative version of this report's photos.
+  const incomplete = !hydrationOk || missing > 0;
+  return { ...report, items, _photosIncomplete: incomplete };
 }
 
 /**

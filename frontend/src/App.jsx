@@ -283,8 +283,19 @@ export default function App() {
           // and only while they have nothing unsaved (BUG-001).
           if (ev.report.id !== activeReportIdRef.current) return;
           if (hasUnsavedRef.current) return;
-          setCurrentReport(ev.report);
-          await saveLocalReport({ ...ev.report, _syncStatus: SyncStatus.SYNCED });
+
+          // Same protection as loadSingleReport: a remote copy whose photo
+          // slots came back empty must not wipe images held only here.
+          const localCopy = await getLocalReport(ev.report.id);
+          const safe = {
+            ...ev.report,
+            items: mergePhotosPreferLocal(ev.report.items, localCopy?.items),
+            _syncStatus: SyncStatus.SYNCED,
+          };
+          delete safe._photosIncomplete;
+
+          setCurrentReport(safe);
+          await saveLocalReport(safe);
           await refreshReportsList();
           showToast('Updated from another device', 'info');
           break;
@@ -446,6 +457,55 @@ export default function App() {
     }
   };
 
+  /**
+   * Combine cloud items with local ones, keeping a LOCAL photo whenever the
+   * cloud slot has no image. Cloud photos live in a subcollection behind
+   * `photo_ref` pointers, so an empty slot means "not fetched" at least as
+   * often as it means "deleted" — and guessing wrong destroys the only copy.
+   * Text fields always come from the cloud; only images are protected.
+   */
+  const mergePhotosPreferLocal = (cloudItems, localItems) => {
+    if (!Array.isArray(cloudItems)) return localItems || [];
+    if (!Array.isArray(localItems) || localItems.length === 0) return cloudItems;
+
+    const localById = new Map(localItems.map((it, i) => [it?.id || `item_${i}`, it]));
+
+    return cloudItems.map((item, idx) => {
+      const local = localById.get(item?.id || `item_${idx}`);
+      if (!local || !Array.isArray(item?.photos)) return item;
+
+      return {
+        ...item,
+        photos: item.photos.map((p, pIdx) => {
+          if (p && p.url) return p; // cloud has the image
+          const slot = p?.slot_index ?? pIdx;
+          const localPhoto = (local.photos || []).find(
+            (lp, li) => lp && lp.url && (lp.slot_index ?? li) === slot
+          );
+          return localPhoto ? { ...(p || {}), ...localPhoto } : p;
+        }),
+      };
+    });
+  };
+
+  /** True when this device holds at least one image the cloud copy is missing. */
+  const localHasPhotoCloudLacks = (cloudItems, localItems) => {
+    if (!Array.isArray(cloudItems) || !Array.isArray(localItems)) return false;
+    const localById = new Map(localItems.map((it, i) => [it?.id || `item_${i}`, it]));
+
+    return cloudItems.some((item, idx) => {
+      const local = localById.get(item?.id || `item_${idx}`);
+      if (!local || !Array.isArray(item?.photos)) return false;
+      return item.photos.some((p, pIdx) => {
+        if (p && p.url) return false;
+        const slot = p?.slot_index ?? pIdx;
+        return (local.photos || []).some(
+          (lp, li) => lp && lp.url && (lp.slot_index ?? li) === slot
+        );
+      });
+    });
+  };
+
   const loadSingleReport = async (id) => {
     if (!id) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -481,18 +541,34 @@ export default function App() {
             return;
           }
 
-          // No local pending changes → safe to update from cloud
+          // No local pending changes → safe to take the cloud text.
+          // Photos are a different matter: the cloud copy stores them as
+          // pointers into a subcollection, so a slot can come back empty
+          // simply because that read failed or the bytes were never written.
+          // Overwriting a local image with an empty slot destroys the only
+          // copy — which is exactly what used to happen (BUG-012).
           const merged = {
             ...cloudRep,
+            items: mergePhotosPreferLocal(cloudRep.items, rep?.items),
             _version: Math.max(rep?._version || 0, cloudRep._version || 0),
             _syncStatus: SyncStatus.SYNCED,
             _lastSyncedAt: new Date().toISOString(),
           };
+          delete merged._photosIncomplete;
+
           setCurrentReport(merged);
           setActiveReportId(id);
           localStorage.setItem('flash_report_last_active_id', id);
           setHasUnsavedChanges(false);
           await saveLocalReport(merged);
+
+          // A photo held only on this device is one power-cycle from being
+          // lost, so push it back up rather than leaving it stranded.
+          if (cloudRep._photosIncomplete && localHasPhotoCloudLacks(cloudRep.items, rep?.items)) {
+            syncEngine.saveReport({ ...merged, _syncStatus: SyncStatus.PENDING })
+              .then(() => syncEngine.processQueue())
+              .catch((e) => console.warn('Photo re-push failed:', e.message));
+          }
           return;
         }
       } catch (e) {

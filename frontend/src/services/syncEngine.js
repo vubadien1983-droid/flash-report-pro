@@ -310,12 +310,19 @@ class SyncEngine {
             }
           }
 
+          // A pulled copy carries photos as subcollection pointers, so a slot
+          // can be empty merely because that read failed. Keep whatever image
+          // this device already holds for such a slot — overwriting it with an
+          // empty slot destroys the only copy (BUG-012).
+          const existing = await getLocalReport(cloudReport.id);
           const pulled = {
             ...fullReport,
+            items: this._mergePhotosPreferLocal(fullReport.items, existing?.items),
             _version: fullReport._version || 1,
             _syncStatus: SyncStatus.SYNCED,
             _lastSyncedAt: new Date().toISOString(),
           };
+          delete pulled._photosIncomplete;
           await saveLocalReport(pulled);
           this._updateMeta(pulled.id, { status: SyncStatus.SYNCED, version: pulled._version });
           result.pulled++;
@@ -472,6 +479,36 @@ class SyncEngine {
    * Determine action for a report that exists both locally and in cloud.
    * Returns: 'push' | 'pull' | 'conflict' | 'equal'
    */
+  /**
+   * Combine cloud items with local ones, keeping a LOCAL photo wherever the
+   * cloud slot has no image. Mirrors mergePhotosPreferLocal in App.jsx; both
+   * exist because a cloud report's photos are pointers that can resolve to
+   * nothing, and an empty slot means "not fetched" as often as "deleted".
+   */
+  _mergePhotosPreferLocal(cloudItems, localItems) {
+    if (!Array.isArray(cloudItems)) return localItems || [];
+    if (!Array.isArray(localItems) || localItems.length === 0) return cloudItems;
+
+    const localById = new Map(localItems.map((it, i) => [it?.id || `item_${i}`, it]));
+
+    return cloudItems.map((item, idx) => {
+      const local = localById.get(item?.id || `item_${idx}`);
+      if (!local || !Array.isArray(item?.photos)) return item;
+
+      return {
+        ...item,
+        photos: item.photos.map((p, pIdx) => {
+          if (p && p.url) return p;
+          const slot = p?.slot_index ?? pIdx;
+          const localPhoto = (local.photos || []).find(
+            (lp, li) => lp && lp.url && (lp.slot_index ?? li) === slot
+          );
+          return localPhoto ? { ...(p || {}), ...localPhoto } : p;
+        }),
+      };
+    });
+  }
+
   _resolveConflict(local, cloud) {
     const localVersion = local._version || 0;
     const cloudVersion = cloud._version || 0;
