@@ -23,8 +23,11 @@ import {
   isFirebaseConfigured,
   sharedDoc, sharedPhotosCollection, sharedPhotoDoc,
   photoKey,
-  getDoc, getDocs, setDoc, writeBatch, db,
+  getDoc, getDocs, setDoc,
 } from './firebase';
+import {
+  compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser,
+} from './imageCompression';
 
 /** Leaves headroom under the 1 MiB per-document limit. */
 const PHOTO_MAX_BYTES = 900_000;
@@ -37,45 +40,45 @@ function makeShareId() {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
+const READ_TIMEOUT_MS = 30_000;
+const WRITE_TIMEOUT_MS = 45_000;
+
+/**
+ * Fingerprints of photos already published under a given share id, so a
+ * re-publish only sends what changed.
+ *
+ * This is the single biggest reason share links used to hang. The old code
+ * pushed EVERY photo through a `<canvas>` decode-and-re-encode on the main
+ * thread each time — including on `republishIfShared`, which runs after every
+ * save. Eight multi-megabyte images recompressed on every autosave is not a
+ * slow network, it is a blocked browser.
+ */
+function _shareHashKey(shareId) { return `fr_sharehash_${shareId}`; }
+
+function _readShareHashes(shareId) {
+  try { return JSON.parse(localStorage.getItem(_shareHashKey(shareId)) || '{}'); }
+  catch { return {}; }
+}
+
+function _writeShareHashes(shareId, map) {
+  try { localStorage.setItem(_shareHashKey(shareId), JSON.stringify(map)); }
+  catch { /* private mode — we only lose the skip optimisation */ }
+}
+
+function _emitProgress(detail) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('flashreport:upload-progress', { detail }));
+}
+
+/**
+ * Photos are compressed once, at ingest, so by the time they reach here they
+ * already fit. This only has to rescue images stored before that change, and
+ * it is bounded by a timeout so it can never hang the publish.
+ */
 async function compressPhotoForShare(url) {
   if (!url) return null;
-  if (url.length < 120_000) return url;
-
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      const maxDim = 900;
-      let w = img.naturalWidth || img.width || 400;
-      let h = img.naturalHeight || img.height || 300;
-      if (w > maxDim || h > maxDim) {
-        if (w > h) {
-          h = Math.round((h * maxDim) / w);
-          w = maxDim;
-        } else {
-          w = Math.round((w * maxDim) / h);
-          h = maxDim;
-        }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-
-      // Step the quality down until the payload fits a Firestore document.
-      let out = canvas.toDataURL('image/jpeg', 0.8);
-      for (const q of [0.65, 0.5, 0.38]) {
-        if (out.length <= PHOTO_MAX_BYTES) break;
-        out = canvas.toDataURL('image/jpeg', q);
-      }
-      resolve(out);
-    };
-    img.onerror = () => resolve(url);
-    img.src = url;
-  });
+  if (url.length <= PHOTO_MAX_BYTES) return url;
+  return compressDataUrl(url, { maxBytes: PHOTO_MAX_BYTES });
 }
 
 /**
@@ -95,49 +98,84 @@ export async function publishReportForSharing(report) {
   const shareId = report.share_id || report.cloud_code || makeShareId();
   const baseUrl = window.location.origin + window.location.pathname;
 
-  // 1. Compress photos in parallel and split them out of the main document.
+  const uploaded = _readShareHashes(shareId);
   const items = report.items || [];
   const photoWrites = [];
 
-  const sharedItems = await Promise.all(
-    items.map(async (item, itemIdx) => {
-      const itemId = item.id || `item_${itemIdx}`;
-      const photos = item.photos || [];
+  // 1. Split photos out of the main document, keeping the ones that are
+  //    already published untouched.
+  const sharedItems = [];
+  for (const [itemIdx, item] of items.entries()) {
+    const itemId = item.id || `item_${itemIdx}`;
+    const photos = item.photos || [];
+    const refs = [];
 
-      const refs = await Promise.all(
-        photos.map(async (p, pIdx) => {
-          if (!p || !p.url) return null;
-          const slot = p.slot_index ?? pIdx;
-          const key = photoKey(itemId, slot);
+    for (const [pIdx, p] of photos.entries()) {
+      if (!p || !p.url) { refs.push(null); continue; }
+      const slot = p.slot_index ?? pIdx;
+      const key = photoKey(itemId, slot);
 
-          // Already-hosted URLs are passed through untouched.
-          if (!p.url.startsWith('data:')) {
-            return { id: p.id, filename: p.filename, slot_index: slot, url: p.url };
-          }
+      // Already-hosted URLs are passed through untouched.
+      if (!p.url.startsWith('data:')) {
+        refs.push({ id: p.id, filename: p.filename, slot_index: slot, url: p.url });
+        continue;
+      }
 
-          const compact = await compressPhotoForShare(p.url);
-          if (!compact || compact.length > PHOTO_MAX_BYTES) {
-            console.warn(`Photo ${key} too large to share; skipped.`);
-            return { id: p.id, filename: p.filename, slot_index: slot, url: '' };
-          }
+      const fingerprint = photoFingerprint(p.url);
+      const ref = {
+        id: p.id,
+        filename: p.filename,
+        slot_index: slot,
+        url: '',
+        photo_ref: key,
+      };
 
-          photoWrites.push({ key, data: { url: compact, slot_index: slot, item_id: itemId } });
-          return {
-            id: p.id,
-            filename: p.filename,
-            slot_index: slot,
-            url: '',
-            photo_ref: key,
-          };
-        })
-      );
+      if (uploaded[key] === fingerprint) {
+        // Unchanged since the last publish — the shared photo document is
+        // already correct, so nothing to send.
+        refs.push(ref);
+        continue;
+      }
 
-      return { ...item, photos: refs };
-    })
-  );
+      const compact = await compressPhotoForShare(p.url);
+      if (!compact || compact.length > PHOTO_MAX_BYTES) {
+        console.warn(`Photo ${key} too large to share; skipped.`);
+        refs.push({ id: p.id, filename: p.filename, slot_index: slot, url: '' });
+        continue;
+      }
 
-  // 2. Write the report document.
-  await setDoc(sharedDoc(shareId), {
+      photoWrites.push({ key, fingerprint, data: { url: compact, slot_index: slot, item_id: itemId } });
+      refs.push(ref);
+      await yieldToBrowser();
+    }
+
+    sharedItems.push({ ...item, photos: refs });
+  }
+
+  // 2. Photo documents first, one at a time. The report document stores
+  //    pointers, so writing it before the bytes exist would publish a link
+  //    that renders empty slots (the same shape of failure as BUG-012).
+  //    Sequential writes also mean progress can be shown and an interrupted
+  //    publish resumes instead of restarting.
+  const total = photoWrites.length;
+  if (total > 0) _emitProgress({ reportId: report.id, done: 0, total, phase: 'share' });
+
+  let done = 0;
+  for (const { key, fingerprint, data } of photoWrites) {
+    await withTimeout(
+      setDoc(sharedPhotoDoc(shareId, key), data),
+      WRITE_TIMEOUT_MS,
+      `Publishing photo ${done + 1} of ${total}`
+    );
+    uploaded[key] = fingerprint;
+    _writeShareHashes(shareId, uploaded);
+    done++;
+    _emitProgress({ reportId: report.id, done, total, phase: 'share' });
+    await yieldToBrowser();
+  }
+
+  // 3. Write the report document.
+  await withTimeout(setDoc(sharedDoc(shareId), {
     title: report.title || 'Untitled Flash Report',
     system_tag: report.system_tag || '',
     location: report.location || '',
@@ -147,16 +185,9 @@ export async function publishReportForSharing(report) {
     source_report_id: report.id || '',
     updated_at: new Date().toISOString(),
     created_at: report.created_at || new Date().toISOString(),
-  });
+  }), WRITE_TIMEOUT_MS, 'Publishing report');
 
-  // 3. Write the photo documents (batched, 400 per commit).
-  for (let i = 0; i < photoWrites.length; i += 400) {
-    const batch = writeBatch(db);
-    photoWrites.slice(i, i + 400).forEach(({ key, data }) => {
-      batch.set(sharedPhotoDoc(shareId, key), data);
-    });
-    await batch.commit();
-  }
+  if (total > 0) _emitProgress({ reportId: report.id, done: total, total, phase: 'done' });
 
   // 4. Remember the id so future edits republish to the same URL.
   saveLocalReport({ ...report, share_id: shareId, cloud_code: shareId }).catch(() => {});
@@ -172,14 +203,25 @@ export async function publishReportForSharing(report) {
  * No-op for reports that have never been shared, so it is safe to call
  * on every save.
  */
+const _republishInFlight = new Set();
+
 export async function republishIfShared(report) {
   if (!isFirebaseConfigured) return;
   const shareId = report?.share_id || report?.cloud_code;
   if (!shareId) return;
+
+  // This runs after every save. Without a guard, a burst of autosaves starts
+  // several overlapping publishes of the same report, each re-reading and
+  // re-writing the same photos — which is how a single edit could leave the
+  // app grinding for a minute.
+  if (_republishInFlight.has(shareId)) return;
+  _republishInFlight.add(shareId);
   try {
     await publishReportForSharing(report);
   } catch (e) {
     console.warn('Share refresh failed:', e.message);
+  } finally {
+    _republishInFlight.delete(shareId);
   }
 }
 
@@ -193,7 +235,7 @@ export async function fetchSharedReport(shareId) {
 
   if (isFirebaseConfigured) {
     try {
-      const snap = await getDoc(sharedDoc(cleanId));
+      const snap = await withTimeout(getDoc(sharedDoc(cleanId)), READ_TIMEOUT_MS, 'Loading shared report');
       if (snap.exists()) {
         const report = { id: cleanId, ...snap.data() };
         return await hydrateSharedPhotos(cleanId, report);
@@ -223,7 +265,9 @@ async function hydrateSharedPhotos(shareId, report) {
 
   const byKey = new Map();
   try {
-    const snap = await getDocs(sharedPhotosCollection(shareId));
+    const snap = await withTimeout(
+      getDocs(sharedPhotosCollection(shareId)), READ_TIMEOUT_MS, 'Loading shared photos'
+    );
     snap.docs.forEach((d) => byKey.set(d.id, d.data()));
   } catch (e) {
     console.warn('Shared photo hydration failed:', e.message);

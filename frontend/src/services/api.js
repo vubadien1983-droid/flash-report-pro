@@ -20,6 +20,9 @@ import {
   deleteReportPhotos,
   base64ToBlob,
 } from './firebase';
+import {
+  compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser, HARD_MAX_BYTES,
+} from './imageCompression';
 
 /**
  * Firestore hard-caps a single document at 1 MiB. A photo is therefore
@@ -28,7 +31,53 @@ import {
  *
  * PHOTO_MAX_BYTES leaves headroom for the surrounding document fields.
  */
-const PHOTO_MAX_BYTES = 900_000;
+const PHOTO_MAX_BYTES = HARD_MAX_BYTES;
+
+/**
+ * Every Firestore call is bounded. The SDK applies a write to its local cache
+ * immediately but only RESOLVES the returned promise once the server has
+ * acknowledged it — so on a weak field connection `await setDoc(...)` can stay
+ * pending forever. That unsettled promise was reaching the UI as a spinner
+ * that never stopped and an app that could not be closed. A timeout here is
+ * not data loss: the write stays queued in the SDK and the report stays
+ * PENDING, so the offline queue retries it.
+ */
+const READ_TIMEOUT_MS = 30_000;
+const WRITE_TIMEOUT_MS = 45_000;
+
+/**
+ * Fingerprints of photos already written to the cloud, per report.
+ *
+ * Re-uploading eight unchanged images on every sync is what made a second
+ * "Sync with Cloud" as slow as the first. Kept in localStorage rather than in
+ * the report document so it never travels between devices: a device that has
+ * not uploaded a photo itself must not assume it is in the cloud.
+ */
+function _hashKey(reportId) { return `fr_photohash_${reportId}`; }
+
+function _readUploadedHashes(reportId) {
+  try { return JSON.parse(localStorage.getItem(_hashKey(reportId)) || '{}'); }
+  catch { return {}; }
+}
+
+function _writeUploadedHashes(reportId, map) {
+  try { localStorage.setItem(_hashKey(reportId), JSON.stringify(map)); }
+  catch { /* private mode or quota — we just lose the skip optimisation */ }
+}
+
+/**
+ * Forget what we believe is in the cloud for this report, so the next push
+ * re-uploads everything. Called whenever a read comes back with photos
+ * missing: the local belief is demonstrably wrong.
+ */
+export function invalidatePhotoCache(reportId) {
+  try { localStorage.removeItem(_hashKey(reportId)); } catch { /* ignore */ }
+}
+
+function _emitUploadProgress(detail) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('flashreport:upload-progress', { detail }));
+}
 
 /**
  * Placeholder written by a previous version of this file, which replaced
@@ -49,7 +98,7 @@ const API_BASE = '/api';
 export async function fetchReports() {
   if (isFirebaseConfigured) {
     const q = query(reportsCollection(), orderBy('updated_at', 'desc'));
-    const snapshot = await getDocs(q);
+    const snapshot = await withTimeout(getDocs(q), READ_TIMEOUT_MS, 'Loading report list');
     return snapshot.docs.map((d) => {
       const data = d.data();
       return {
@@ -78,7 +127,7 @@ export async function fetchReports() {
 
 export async function fetchReport(id) {
   if (isFirebaseConfigured) {
-    const snap = await getDoc(reportDoc(id));
+    const snap = await withTimeout(getDoc(reportDoc(id)), READ_TIMEOUT_MS, 'Loading report');
     if (!snap.exists()) throw new Error('Report not found');
     const report = { id: snap.id, ...snap.data() };
     return await _hydratePhotos(id, report);
@@ -100,7 +149,7 @@ export async function createReport(payload = {}) {
     // hydrates them as empty. See ERROR_LOG BUG-012.
     await _pushPhotos(payload.id, payload);
     const row = _toFirestoreDoc(payload);
-    await setDoc(reportDoc(payload.id), row);
+    await withTimeout(setDoc(reportDoc(payload.id), row), WRITE_TIMEOUT_MS, 'Saving report');
     return { ...row, id: payload.id };
   }
 
@@ -123,7 +172,7 @@ export async function saveReport(id, reportData) {
     // left pointing at bytes that were never written.
     await _pushPhotos(id, reportData);
     const row = _toFirestoreDoc({ ...reportData, id });
-    await setDoc(reportDoc(id), row, { merge: true });
+    await withTimeout(setDoc(reportDoc(id), row, { merge: true }), WRITE_TIMEOUT_MS, 'Saving report');
     return { ...row, id };
   }
 
@@ -167,7 +216,9 @@ export async function batchSyncReports(localReportsList) {
       results.push({ id: report.id, ...row });
     }
 
-    await batch.commit();
+    if (results.length > 0) {
+      await withTimeout(batch.commit(), WRITE_TIMEOUT_MS, 'Saving reports');
+    }
 
     return results;
   }
@@ -190,11 +241,14 @@ export async function deleteReport(id) {
     // Firestore does not cascade — remove the photos subcollection first,
     // otherwise its documents are orphaned and keep consuming quota.
     try {
-      const snap = await getDocs(reportPhotosCollection(id));
+      invalidatePhotoCache(id);
+      const snap = await withTimeout(
+        getDocs(reportPhotosCollection(id)), READ_TIMEOUT_MS, 'Loading photos'
+      );
       for (let i = 0; i < snap.docs.length; i += 400) {
         const batch = writeBatch(db);
         snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
-        await batch.commit();
+        await withTimeout(batch.commit(), WRITE_TIMEOUT_MS, 'Deleting photos');
       }
     } catch (e) {
       console.warn('Photo subcollection cleanup:', e.message);
@@ -346,15 +400,32 @@ function _toFirestoreDoc(report) {
 }
 
 /**
- * Write every base64 photo of a report into its `photos` subcollection,
- * one document per image. Oversized images are skipped (and reported)
- * rather than silently replaced, so nothing is ever destroyed.
+ * Write a report's photos into its `photos` subcollection, one document per
+ * image.
+ *
+ * Three things this function must keep doing, each of them a fix for a real
+ * failure the user hit:
+ *
+ * 1. SKIP UNCHANGED PHOTOS. Every photo carries a fingerprint of its bytes.
+ *    A photo whose fingerprint matches what this device already uploaded is
+ *    not sent again, which is what turns a repeat sync from minutes into a
+ *    round trip.
+ * 2. WRITE ONE DOCUMENT AT A TIME, not one atomic `writeBatch`. Eight photos
+ *    in a single batch is one multi-megabyte request that cannot report
+ *    progress, cannot be resumed, and fails as a whole. Sequential writes are
+ *    observable and resumable — the fingerprint map is persisted after each
+ *    one, so an interrupted sync continues where it stopped.
+ * 3. NEVER BLOCK THE MAIN THREAD. Recompression is bounded by a timeout and
+ *    the loop yields between images so the browser keeps painting. The frozen
+ *    UI the user reported was not a slow network, it was this loop.
  */
 async function _pushPhotos(reportId, report) {
   if (!isFirebaseConfigured || !report?.items?.length) return { skipped: [] };
 
+  const uploaded = _readUploadedHashes(reportId);
   const writes = [];
   const skipped = [];
+  let unchanged = 0;
 
   for (const [itemIdx, item] of report.items.entries()) {
     const itemId = item.id || `item_${itemIdx}`;
@@ -363,13 +434,21 @@ async function _pushPhotos(reportId, report) {
     for (const [pIdx, p] of photos.entries()) {
       if (!p || !p.url || !p.url.startsWith('data:')) continue;
 
+      const key = photoKey(itemId, p.slot_index ?? pIdx);
+
+      // The fingerprint identifies what the USER has, so it is taken from the
+      // original bytes — before any recompression — and stays stable across
+      // saves that did not touch this photo.
+      const fingerprint = photoFingerprint(p.url);
+      if (uploaded[key] === fingerprint) { unchanged++; continue; }
+
       let url = p.url;
 
-      // Too big for a Firestore document — try to shrink it rather than
-      // silently dropping it. Only a photo that survives even aggressive
-      // recompression is reported as unsyncable.
+      // Photos are compressed at ingest now, so this is only reached by images
+      // that predate that change. Bounded, and it yields afterwards.
       if (url.length > PHOTO_MAX_BYTES) {
-        url = await _shrinkToFit(url, PHOTO_MAX_BYTES);
+        url = await compressDataUrl(url, { maxBytes: PHOTO_MAX_BYTES });
+        await yieldToBrowser();
       }
 
       if (!url || url.length > PHOTO_MAX_BYTES) {
@@ -383,7 +462,8 @@ async function _pushPhotos(reportId, report) {
       }
 
       writes.push({
-        key: photoKey(itemId, p.slot_index ?? pIdx),
+        key,
+        fingerprint,
         data: {
           url,
           filename: p.filename || '',
@@ -395,15 +475,26 @@ async function _pushPhotos(reportId, report) {
     }
   }
 
-  // Firestore batches cap at 500 operations.
-  for (let i = 0; i < writes.length; i += 400) {
-    const chunk = writes.slice(i, i + 400);
-    const batch = writeBatch(db);
-    chunk.forEach(({ key, data }) => {
-      batch.set(reportPhotoDoc(reportId, key), data);
-    });
-    await batch.commit();
+  const total = writes.length;
+  if (total > 0) _emitUploadProgress({ reportId, done: 0, total, phase: 'photos' });
+
+  let done = 0;
+  for (const { key, fingerprint, data } of writes) {
+    await withTimeout(
+      setDoc(reportPhotoDoc(reportId, key), data),
+      WRITE_TIMEOUT_MS,
+      `Uploading photo ${done + 1} of ${total}`
+    );
+    // Persisted per photo, not at the end: an upload interrupted halfway does
+    // not start over.
+    uploaded[key] = fingerprint;
+    _writeUploadedHashes(reportId, uploaded);
+    done++;
+    _emitUploadProgress({ reportId, done, total, phase: 'photos' });
+    await yieldToBrowser();
   }
+
+  if (total > 0) _emitUploadProgress({ reportId, done: total, total, phase: 'done' });
 
   // Tell the UI, so an unsyncable photo is visible to the user instead of
   // living only in the console.
@@ -413,7 +504,7 @@ async function _pushPhotos(reportId, report) {
     }));
   }
 
-  return { skipped };
+  return { skipped, uploaded: done, unchanged };
 }
 
 /**
@@ -467,7 +558,9 @@ async function _hydratePhotos(reportId, report) {
   let byKey = new Map();
   let hydrationOk = true;
   try {
-    const snap = await getDocs(reportPhotosCollection(reportId));
+    const snap = await withTimeout(
+      getDocs(reportPhotosCollection(reportId)), READ_TIMEOUT_MS, 'Loading photos'
+    );
     snap.docs.forEach((d) => byKey.set(d.id, d.data()));
   } catch (e) {
     console.warn('Photo hydration failed:', e.message);
@@ -502,6 +595,12 @@ async function _hydratePhotos(reportId, report) {
   // `_photosIncomplete` marks a cloud copy that must never be treated as the
   // authoritative version of this report's photos.
   const incomplete = !hydrationOk || missing > 0;
+
+  // The cloud does not hold what this device believed it uploaded, so the
+  // fingerprint cache is wrong. Drop it: the next push re-sends everything
+  // rather than skipping a photo that is not actually there.
+  if (missing > 0) invalidatePhotoCache(reportId);
+
   return { ...report, items, _photosIncomplete: incomplete };
 }
 
