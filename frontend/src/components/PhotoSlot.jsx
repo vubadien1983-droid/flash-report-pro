@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen } from 'lucide-react';
+import { compressForStorage, compressDataUrl } from '../services/imageCompression';
 
 export default function PhotoSlot({
   photo,
@@ -20,33 +21,33 @@ export default function PhotoSlot({
 
   const slotLabels = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4'];
 
+  /**
+   * THE single ingest point for a photo in this component.
+   *
+   * The image is resized and re-encoded HERE, before it reaches React state or
+   * IndexedDB. It used to be stored as the raw file — a phone JPEG or a pasted
+   * PNG screenshot, several megabytes each — which left the sync and share
+   * paths trying to recompress megabytes on the main thread and freezing the
+   * app. Any new way of adding a photo must go through compressForStorage too.
+   */
   const handleFile = async (file) => {
     if (!file) return;
     setSlotUploading(true);
     setShowOptionsModal(false);
 
     try {
-      // Normalize image to data URL
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const dataUrl = reader.result;
-        onPhotoChange({
-          id: `local_${Date.now()}_${slotIndex}`,
-          filename: file.name || `photo_${slotIndex + 1}.jpg`,
-          url: dataUrl,
-          slot_index: slotIndex
-        });
-        setSlotUploading(false);
-      };
-      reader.onerror = () => {
-        alert('Failed to read image file');
-        setSlotUploading(false);
-      };
-      reader.readAsDataURL(file);
+      const dataUrl = await compressForStorage(file);
+      onPhotoChange({
+        id: `local_${Date.now()}_${slotIndex}`,
+        filename: file.name || `photo_${slotIndex + 1}.jpg`,
+        url: dataUrl,
+        slot_index: slotIndex
+      });
     } catch (err) {
       console.error('Failed to process image:', err);
-      setSlotUploading(false);
+      alert('Failed to read image file');
     } finally {
+      setSlotUploading(false);
       if (cameraInputRef.current) cameraInputRef.current.value = '';
       if (galleryInputRef.current) galleryInputRef.current.value = '';
     }
@@ -102,12 +103,20 @@ export default function PhotoSlot({
           e.preventDefault();
           e.stopPropagation();
           if (img.src.startsWith('data:image')) {
-            onPhotoChange({
-              id: `local_${Date.now()}_${slotIndex}`,
-              filename: `zalo_paste_${Date.now()}.png`,
-              url: img.src,
-              slot_index: slotIndex
-            });
+            // Compressed like every other ingest path — a rich-text paste from
+            // Zalo carries a full-size PNG.
+            setSlotUploading(true);
+            try {
+              const url = await compressDataUrl(img.src);
+              onPhotoChange({
+                id: `local_${Date.now()}_${slotIndex}`,
+                filename: `zalo_paste_${Date.now()}.jpg`,
+                url,
+                slot_index: slotIndex
+              });
+            } finally {
+              setSlotUploading(false);
+            }
             return;
           } else if (img.src.startsWith('http') || img.src.startsWith('blob:')) {
             // Fetch remote / blob image

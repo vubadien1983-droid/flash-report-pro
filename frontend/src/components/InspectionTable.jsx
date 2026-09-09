@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus, CornerDownRight } from 'lucide-react';
 import PhotoSlot from './PhotoSlot';
+import { compressForStorage } from '../services/imageCompression';
 
 // Auto-growing textarea component with zero scrollbars and dynamic full expansion
 function AutoGrowingTextarea({
@@ -108,16 +109,17 @@ export default function InspectionTable({
             const blob = item.getAsFile();
             if (blob) {
               e.preventDefault();
-              const reader = new FileReader();
-              reader.onloadend = () => {
+              // Compress before the image reaches state. A pasted screenshot is
+              // a multi-megabyte PNG; storing it raw is what used to freeze the
+              // sync and share paths later on.
+              compressForStorage(blob).then((url) => {
                 handlePhotoChange(itemIndex, slotIndex, {
                   id: `local_${Date.now()}_${slotIndex}`,
-                  filename: `paste_${Date.now()}.png`,
-                  url: reader.result,
+                  filename: `paste_${Date.now()}.jpg`,
+                  url,
                   slot_index: slotIndex
                 });
-              };
-              reader.readAsDataURL(blob);
+              }).catch((err) => console.error('Paste compression failed:', err));
               return;
             }
           }
@@ -131,16 +133,14 @@ export default function InspectionTable({
           const file = files[i];
           if (file.type.startsWith('image/') || file.name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)) {
             e.preventDefault();
-            const reader = new FileReader();
-            reader.onloadend = () => {
+            compressForStorage(file).then((url) => {
               handlePhotoChange(itemIndex, slotIndex, {
                 id: `local_${Date.now()}_${slotIndex}`,
                 filename: file.name,
-                url: reader.result,
+                url,
                 slot_index: slotIndex
               });
-            };
-            reader.readAsDataURL(file);
+            }).catch((err) => console.error('Paste compression failed:', err));
             return;
           }
         }
