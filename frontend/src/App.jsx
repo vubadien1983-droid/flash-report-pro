@@ -237,28 +237,49 @@ export default function App() {
           if (r.title && r.title !== 'New Flash Report') {
             map.set(r.id, { ...r, _syncStatus: r._syncStatus || SyncStatus.PENDING });
           }
-        } else {
-          // In both → keep the newer version
-          const localTime = new Date(r._localModifiedAt || r.updated_at || 0).getTime();
-          const cloudTime = new Date(existing.updated_at || 0).getTime();
+          return;
+        }
 
-          if (localTime > cloudTime && r._syncStatus === SyncStatus.PENDING) {
-            // Local is newer and has unsent changes → keep local version
-            map.set(r.id, r);
-          } else {
-            // Cloud is newer or same → use cloud but preserve local sync metadata
-            map.set(r.id, {
-              ...existing,
-              _version: Math.max(r._version || 0, existing._version || 0),
-              _syncStatus: r._syncStatus === SyncStatus.PENDING ? SyncStatus.PENDING : SyncStatus.SYNCED,
-              _lastSyncedAt: existing._lastSyncedAt || r._lastSyncedAt,
-            });
-          }
+        // `fetchReports` is a LIST query: it returns report headers without
+        // the `items` array, because shipping every photo in the list would
+        // be enormous. A list row must therefore never be treated as a
+        // complete report — merging one over a local record erases its
+        // items and photos. See ERROR_LOG BUG-011.
+        const cloudHasItems = Array.isArray(existing.items);
+        const localItems = Array.isArray(r.items) ? r.items : [];
+
+        const localTime = new Date(r._localModifiedAt || r.updated_at || 0).getTime();
+        const cloudTime = new Date(existing.updated_at || 0).getTime();
+        const localIsNewer = localTime > cloudTime && r._syncStatus === SyncStatus.PENDING;
+
+        if (localIsNewer || !cloudHasItems) {
+          // Keep the local record whole. When the cloud row carries no items
+          // there is nothing there worth merging in — the full document is
+          // only fetched later, by loadSingleReport.
+          map.set(r.id, {
+            ...r,
+            _version: Math.max(r._version || 0, existing._version || 0),
+            _syncStatus: r._syncStatus || SyncStatus.SYNCED,
+            _lastSyncedAt: existing._lastSyncedAt || r._lastSyncedAt,
+          });
+        } else {
+          // Cloud is newer AND actually carries items → cloud wins, but never
+          // hand back fewer items than we already hold locally.
+          const merged = existing.items.length >= localItems.length ? existing.items : localItems;
+          map.set(r.id, {
+            ...existing,
+            items: merged,
+            _version: Math.max(r._version || 0, existing._version || 0),
+            _syncStatus: r._syncStatus === SyncStatus.PENDING ? SyncStatus.PENDING : SyncStatus.SYNCED,
+            _lastSyncedAt: existing._lastSyncedAt || r._lastSyncedAt,
+          });
         }
       });
 
-      // Save merged data back to IndexedDB
+      // Persist the merge — but only for records that carry an items array.
+      // Writing a header-only row here is what destroyed reports previously.
       for (const [, r] of map) {
+        if (!Array.isArray(r.items)) continue;
         saveLocalReport(r).catch(() => {});
       }
 
