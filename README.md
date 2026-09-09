@@ -62,3 +62,16 @@ A high-performance, responsive application for creating, managing, and exporting
 2. Tap the **Share / Options** menu.
 3. Select **"Add to Home Screen"** (*Thêm vào màn hình chính*).
 4. The Flash Report app will now open as a standalone fullscreen app with offline support!
+
+
+---
+
+## Live App
+
+https://flash-report.vercel.app
+
+Cloud backend: Firebase Firestore (Spark plan). Photos are stored one per
+document in a `photos` subcollection, so no Firebase Storage is required.
+Share links resolve against the public-read `shared_reports` collection —
+recipients open them without signing in, and the content refreshes on every
+save.
