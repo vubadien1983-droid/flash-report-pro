@@ -17,7 +17,7 @@ import { initializeApp } from 'firebase/app';
 import {
   getFirestore, collection, doc, getDoc, getDocs,
   setDoc, deleteDoc, writeBatch, query, orderBy, limit,
-  serverTimestamp
+  serverTimestamp, onSnapshot
 } from 'firebase/firestore';
 import {
   getStorage, ref, uploadBytes, getDownloadURL,
@@ -112,7 +112,7 @@ export function sharedPhotoDoc(shareId, key) {
 // Re-export Firestore functions for api.js to use
 export {
   getDoc, getDocs, setDoc, deleteDoc, writeBatch,
-  query, orderBy, limit, serverTimestamp,
+  query, orderBy, limit, serverTimestamp, onSnapshot,
   ref, uploadBytes, getDownloadURL, deleteObject, listAll
 };
 

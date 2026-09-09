@@ -27,6 +27,7 @@ import {
   publishReportForSharing, republishIfShared
 } from './services/shareService';
 import syncEngine, { SyncStatus } from './services/syncEngine';
+import realtimeSync from './services/realtimeSync';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -85,11 +86,19 @@ export default function App() {
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, id: null, title: '' });
   const [imageModalState, setImageModalState] = useState({ isOpen: false, url: '', title: '' });
   const [shareModalState, setShareModalState] = useState({ isOpen: false, shareUrl: '', reportTitle: '' });
-  const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [toast, setToast] = useState({ message: '', type: 'success', action: null });
   const [isExporting, setIsExporting] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
 
   const autoSaveTimerRef = useRef(null);
+  const undoDeleteRef = useRef(null);
+
+  // Realtime callbacks fire outside React's render cycle, so they read these
+  // refs rather than closing over possibly-stale state.
+  const hasUnsavedRef = useRef(false);
+  const activeReportIdRef = useRef(null);
+  useEffect(() => { hasUnsavedRef.current = hasUnsavedChanges; }, [hasUnsavedChanges]);
+  useEffect(() => { activeReportIdRef.current = activeReportId; }, [activeReportId]);
 
   // Listen to window resize
   useEffect(() => {
@@ -100,8 +109,8 @@ export default function App() {
 
   const isPhoneView = viewMode === 'phone' || (viewMode === 'auto' && windowWidth < 768);
 
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
+  const showToast = (message, type = 'success', action = null) => {
+    setToast({ message, type, action });
   };
 
   // ─── NEW: Initialize SyncEngine & Subscribe to Events ───────────
@@ -201,6 +210,124 @@ export default function App() {
       console.warn('Refresh reports list error:', e);
     }
   };
+
+  /**
+   * Merge a realtime LIST snapshot. Headers only — this must never touch
+   * `items`, or a remote list row would blank out photos this device holds
+   * (ERROR_LOG BUG-011).
+   */
+  const mergeRemoteHeaders = async (headers) => {
+    try {
+      const localList = await getLocalReports();
+      const localById = new Map(localList.map((r) => [r.id, r]));
+      const remoteIds = new Set(headers.map((h) => h.id));
+
+      for (const h of headers) {
+        const local = localById.get(h.id);
+
+        // Never clobber a report with local edits still waiting to be pushed.
+        if (local && local._syncStatus === SyncStatus.PENDING) continue;
+
+        if (local) {
+          const changed =
+            local.title !== h.title ||
+            local.system_tag !== h.system_tag ||
+            local.location !== h.location ||
+            local.inspection_date !== h.inspection_date ||
+            local.discipline !== h.discipline ||
+            local.updated_at !== h.updated_at;
+          if (!changed) continue;
+
+          // Spread local FIRST so its `items` survive the header overlay.
+          await saveLocalReport({
+            ...local, ...h,
+            items: local.items,
+            _syncStatus: SyncStatus.SYNCED,
+          });
+        } else {
+          // A report created on another device. Stored header-only; the full
+          // document (with photos) is fetched when the user opens it.
+          await saveLocalReport({ ...h, _syncStatus: SyncStatus.SYNCED });
+        }
+      }
+
+      // Reports deleted elsewhere. Only drop ones we know were synced —
+      // a local-only draft is absent from the cloud legitimately.
+      for (const local of localList) {
+        if (remoteIds.has(local.id)) continue;
+        if (local._syncStatus === SyncStatus.SYNCED) {
+          await deleteLocalReport(local.id);
+        }
+      }
+
+      await refreshReportsList();
+    } catch (e) {
+      console.warn('Remote header merge failed:', e);
+    }
+  };
+
+  // ─── Realtime: live updates across phone and laptop ──────────────
+  useEffect(() => {
+    if (isViewRoute) return;
+
+    realtimeSync.startList();
+
+    const unsub = realtimeSync.subscribe(async (ev) => {
+      switch (ev.type) {
+        case 'remote_list':
+          await mergeRemoteHeaders(ev.reports);
+          break;
+
+        case 'remote_report': {
+          // Only adopt a remote version of the report the user is looking at,
+          // and only while they have nothing unsaved (BUG-001).
+          if (ev.report.id !== activeReportIdRef.current) return;
+          if (hasUnsavedRef.current) return;
+          setCurrentReport(ev.report);
+          await saveLocalReport({ ...ev.report, _syncStatus: SyncStatus.SYNCED });
+          await refreshReportsList();
+          showToast('Updated from another device', 'info');
+          break;
+        }
+
+        case 'remote_deleted':
+          if (ev.reportId === activeReportIdRef.current) {
+            showToast('This report was deleted on another device', 'info');
+          }
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      unsub();
+      realtimeSync.stop();
+    };
+  }, [isViewRoute]);
+
+  // Follow the active report with a document listener.
+  useEffect(() => {
+    if (isViewRoute) return;
+    realtimeSync.watchReport(activeReportId);
+  }, [activeReportId, isViewRoute]);
+
+  // A photo that cannot be made to fit a Firestore document stays on this
+  // device only. That used to be a console warning nobody saw — surface it.
+  useEffect(() => {
+    const onSkipped = (e) => {
+      const list = e.detail?.skipped || [];
+      if (list.length === 0) return;
+      const slots = list.map((x) => `Photo ${x.slot}`).join(', ');
+      showToast(
+        `${slots} too large to sync — kept on this device only. Retake at a lower resolution to share ${list.length > 1 ? 'them' : 'it'}.`,
+        'error'
+      );
+    };
+    window.addEventListener('flashreport:photos-skipped', onSkipped);
+    return () => window.removeEventListener('flashreport:photos-skipped', onSkipped);
+  }, []);
 
   // Cloud-First Initial Loader & Synchronizer (Never Auto-Creates Blank Reports)
   const loadReportsList = async (preferredSelectId = null) => {
@@ -475,6 +602,7 @@ export default function App() {
     setIsSaving(true);
     try {
       // ─── NEW: Save via SyncEngine (handles version bump + cloud queue) ─
+      realtimeSync.suppress();
       const savedReport = await syncEngine.saveReport(reportToSave);
       setCurrentReport(savedReport);
       setHasUnsavedChanges(false);
@@ -602,36 +730,66 @@ export default function App() {
     if (!idToDelete) return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
+    // Optimistic delete: the row disappears at once and the cloud delete is
+    // held for UNDO_MS so it can be taken back. Nothing is destroyed until
+    // that window closes, which is why the snapshot is captured first.
+    const UNDO_MS = 6000;
+    let snapshot = null;
     try {
-      // 1. Delete from Cloud
+      snapshot = await getLocalReport(idToDelete);
+    } catch (e) {
+      console.warn('Could not snapshot report before delete:', e);
+    }
+
+    const remaining = reports.filter((r) => r.id !== idToDelete);
+    setReports(remaining);
+    setDeleteModalState({ isOpen: false, id: null, title: '' });
+
+    try {
+      await deleteLocalReport(idToDelete);
+    } catch (e) {
+      console.warn('Local delete note:', e);
+    }
+
+    if (activeReportId === idToDelete) {
+      if (remaining.length > 0) {
+        await loadSingleReport(remaining[0].id);
+      } else {
+        await handleNewReport();
+      }
+    }
+
+    const commitTimer = setTimeout(async () => {
+      undoDeleteRef.current = null;
       try {
         await deleteReport(idToDelete);
       } catch (e) {
         console.warn('Cloud delete note:', e);
       }
+    }, UNDO_MS);
 
-      // 2. Delete from Local IndexedDB
-      await deleteLocalReport(idToDelete);
+    undoDeleteRef.current = { id: idToDelete, snapshot, commitTimer };
 
-      // 3. Remove specifically idToDelete from state
-      const updatedList = reports.filter((r) => r.id !== idToDelete);
-      setReports(updatedList);
-      setDeleteModalState({ isOpen: false, id: null, title: '' });
-      showToast('Report deleted successfully', 'info');
+    showToast('Report deleted', 'info', {
+      label: 'Undo',
+      onClick: async () => {
+        const pending = undoDeleteRef.current;
+        if (!pending || pending.id !== idToDelete) return;
+        clearTimeout(pending.commitTimer);
+        undoDeleteRef.current = null;
 
-      // 4. Switch to remaining report or create new if 0 left
-      if (activeReportId === idToDelete) {
-        if (updatedList.length > 0) {
-          await loadSingleReport(updatedList[0].id);
-        } else {
-          await handleNewReport();
+        if (pending.snapshot) {
+          // Mark pending so the restored copy is pushed back to the cloud.
+          await saveLocalReport({ ...pending.snapshot, _syncStatus: SyncStatus.PENDING });
+          await refreshReportsList();
+          await loadSingleReport(idToDelete);
+          syncEngine.processQueue();
         }
-      }
-    } catch (err) {
-      console.error('Delete failed:', err);
-      showToast('Failed to delete report', 'error');
-    }
+        showToast('Delete undone', 'success');
+      },
+    });
   };
+
 
   // Share Link Handler
   const handleOpenShareModal = async () => {
@@ -987,7 +1145,9 @@ export default function App() {
       <Toast
         message={toast.message}
         type={toast.type}
-        onClose={() => setToast({ message: '', type: 'success' })}
+        action={toast.action}
+        duration={toast.action ? 6000 : 3000}
+        onClose={() => setToast({ message: '', type: 'success', action: null })}
       />
     </div>
   );

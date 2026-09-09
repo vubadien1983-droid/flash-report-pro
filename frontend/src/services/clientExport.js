@@ -1,6 +1,8 @@
-import ExcelJS from 'exceljs';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+/**
+ * exceljs, jspdf and jspdf-autotable together are ~1.4MB of the bundle, and
+ * none of them are needed until the user actually presses Export. They are
+ * loaded on demand below so the app's first paint on a phone stays fast.
+ */
 
 function sanitizeFilename(name) {
   return (name || 'Flash_Report').replace(/[\\/*?:"<>|]/g, '_').trim();
@@ -76,6 +78,7 @@ async function getImageData(url) {
 export async function exportExcelClient(report) {
   if (!report) throw new Error('No report data provided');
 
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Flash Report Pro';
   workbook.lastModifiedBy = 'Flash Report Pro';
@@ -352,6 +355,10 @@ export async function exportPdfClient(report) {
   if (!report) throw new Error('No report data provided');
 
   // A4 Landscape: 297mm x 210mm (841.89pt x 595.28pt)
+  const [{ default: jsPDF }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'pt',

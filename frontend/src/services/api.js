@@ -340,34 +340,49 @@ function _toFirestoreDoc(report) {
  * rather than silently replaced, so nothing is ever destroyed.
  */
 async function _pushPhotos(reportId, report) {
-  if (!isFirebaseConfigured || !report?.items?.length) return;
+  if (!isFirebaseConfigured || !report?.items?.length) return { skipped: [] };
 
   const writes = [];
-  report.items.forEach((item, itemIdx) => {
+  const skipped = [];
+
+  for (const [itemIdx, item] of report.items.entries()) {
     const itemId = item.id || `item_${itemIdx}`;
-    (item.photos || []).forEach((p, pIdx) => {
-      if (!p || !p.url || !p.url.startsWith('data:')) return;
-      if (p.url.length > PHOTO_MAX_BYTES) {
-        console.warn(
-          `Photo ${itemId}/${pIdx} is ${Math.round(p.url.length / 1024)}KB — ` +
-          'above the Firestore document limit, kept locally only.'
-        );
-        return;
+    const photos = item.photos || [];
+
+    for (const [pIdx, p] of photos.entries()) {
+      if (!p || !p.url || !p.url.startsWith('data:')) continue;
+
+      let url = p.url;
+
+      // Too big for a Firestore document — try to shrink it rather than
+      // silently dropping it. Only a photo that survives even aggressive
+      // recompression is reported as unsyncable.
+      if (url.length > PHOTO_MAX_BYTES) {
+        url = await _shrinkToFit(url, PHOTO_MAX_BYTES);
       }
+
+      if (!url || url.length > PHOTO_MAX_BYTES) {
+        skipped.push({
+          itemId,
+          slot: (p.slot_index ?? pIdx) + 1,
+          filename: p.filename || '',
+          kb: Math.round(p.url.length / 1024),
+        });
+        continue;
+      }
+
       writes.push({
         key: photoKey(itemId, p.slot_index ?? pIdx),
         data: {
-          url: p.url,
+          url,
           filename: p.filename || '',
           slot_index: p.slot_index ?? pIdx,
           item_id: itemId,
           updated_at: new Date().toISOString(),
         },
       });
-    });
-  });
-
-  if (writes.length === 0) return;
+    }
+  }
 
   // Firestore batches cap at 500 operations.
   for (let i = 0; i < writes.length; i += 400) {
@@ -378,6 +393,52 @@ async function _pushPhotos(reportId, report) {
     });
     await batch.commit();
   }
+
+  // Tell the UI, so an unsyncable photo is visible to the user instead of
+  // living only in the console.
+  if (skipped.length > 0 && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('flashreport:photos-skipped', {
+      detail: { reportId, skipped },
+    }));
+  }
+
+  return { skipped };
+}
+
+/**
+ * Recompress a base64 image until it fits `maxBytes`, stepping the longest
+ * edge and JPEG quality down together. Returns null if it cannot be made to
+ * fit, which the caller reports to the user rather than dropping silently.
+ */
+function _shrinkToFit(dataUrl, maxBytes) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const steps = [
+        [1600, 0.75], [1200, 0.7], [1000, 0.6], [800, 0.5], [640, 0.42],
+      ];
+      for (const [maxDim, quality] of steps) {
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+          else { w = Math.round((w * maxDim) / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const out = canvas.toDataURL('image/jpeg', quality);
+        if (out.length <= maxBytes) { resolve(out); return; }
+      }
+      resolve(null);
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
 }
 
 /**

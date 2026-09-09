@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import QRCode from 'qrcode';
 import {
   Link as LinkIcon, Copy, Check, ExternalLink, QrCode, X, Share2, Sparkles, Smartphone, Download, Globe
 } from 'lucide-react';
@@ -10,23 +9,34 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen && shareUrl && canvasRef.current) {
-      QRCode.toCanvas(
-        canvasRef.current,
-        shareUrl,
-        {
-          width: 140,
-          margin: 2,
-          color: {
-            dark: '#0f172a',
-            light: '#ffffff'
+    if (!isOpen || !shareUrl || !canvasRef.current) return;
+
+    let cancelled = false;
+
+    // qrcode is only needed once the share dialog is actually opened, so it
+    // is kept out of the main bundle.
+    import('qrcode')
+      .then(({ default: QRCode }) => {
+        if (cancelled || !canvasRef.current) return;
+        QRCode.toCanvas(
+          canvasRef.current,
+          shareUrl,
+          {
+            width: 140,
+            margin: 2,
+            color: {
+              dark: '#0f172a',
+              light: '#ffffff'
+            }
+          },
+          (error) => {
+            if (error) console.error('Local QR render error:', error);
           }
-        },
-        (error) => {
-          if (error) console.error('Local QR render error:', error);
-        }
-      );
-    }
+        );
+      })
+      .catch((e) => console.warn('QR library failed to load:', e.message));
+
+    return () => { cancelled = true; };
   }, [isOpen, shareUrl]);
 
   if (!isOpen || !shareUrl) return null;

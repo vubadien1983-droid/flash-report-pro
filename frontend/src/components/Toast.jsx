@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
-export default function Toast({ message, type = 'success', onClose, duration = 3000 }) {
+export default function Toast({ message, type = 'success', onClose, duration = 3000, action = null }) {
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(() => {
@@ -29,6 +29,14 @@ export default function Toast({ message, type = 'success', onClose, duration = 3
       <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border border-white/10 ${bgColors[type] || bgColors.info}`}>
         {icons[type] || icons.info}
         <span className="text-sm font-medium tracking-wide">{message}</span>
+        {action && (
+          <button
+            onClick={action.onClick}
+            className="px-2.5 py-1 text-xs font-bold uppercase tracking-wide bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+          >
+            {action.label}
+          </button>
+        )}
         <button
           onClick={onClose}
           className="p-1 hover:bg-white/20 rounded-lg transition-colors ml-2"

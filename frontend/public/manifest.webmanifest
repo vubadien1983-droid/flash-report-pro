@@ -1,0 +1,15 @@
+{
+  "name": "Flash Report Pro - Block B EPC#1",
+  "short_name": "Flash Report",
+  "description": "Field inspection flash reports with photos, offline capture and cloud sync.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#0284c7",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
