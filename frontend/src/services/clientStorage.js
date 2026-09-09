@@ -74,17 +74,36 @@ export async function saveLocalReport(report) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_REPORTS, 'readwrite');
     const store = tx.objectStore(STORE_REPORTS);
-    const updated = {
-      ...report,
-      updated_at: report.updated_at || new Date().toISOString(),
-      // Ensure sync fields have defaults
-      _version: report._version || 1,
-      _syncStatus: report._syncStatus || 'pending',
-    };
-    const request = store.put(updated);
 
-    request.onsuccess = () => resolve(updated);
-    request.onerror = () => reject(request.error);
+    // Last line of defence against BUG-011: a caller handing us a report
+    // with NO items array is passing a list-query header, not a full
+    // document. Overwriting a stored record with one would destroy its
+    // items and photos, so the existing items are carried across instead.
+    //
+    // An explicit empty array is left alone — that is the user deleting
+    // every row, which must still persist.
+    const existingReq = store.get(report.id);
+
+    existingReq.onsuccess = () => {
+      const existing = existingReq.result;
+      const updated = {
+        ...report,
+        updated_at: report.updated_at || new Date().toISOString(),
+        _version: report._version || 1,
+        _syncStatus: report._syncStatus || 'pending',
+      };
+
+      if (!Array.isArray(updated.items) && Array.isArray(existing?.items)) {
+        updated.items = existing.items;
+        updated.updated_at = existing.updated_at || updated.updated_at;
+      }
+
+      const putReq = store.put(updated);
+      putReq.onsuccess = () => resolve(updated);
+      putReq.onerror = () => reject(putReq.error);
+    };
+
+    existingReq.onerror = () => reject(existingReq.error);
   });
 }
 
