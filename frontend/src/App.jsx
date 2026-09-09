@@ -12,6 +12,7 @@ import ImageModal from './components/ImageModal';
 import ShareModal from './components/ShareModal';
 import ReportViewer from './components/ReportViewer';
 import Toast from './components/Toast';
+import { compactReportPhotos } from './services/imageCompression';
 import SyncStatusIndicator from './components/SyncStatusIndicator';
 import {
   fetchReports, fetchReport, createReport, saveReport,
@@ -70,6 +71,10 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [lastSyncResult, setLastSyncResult] = useState(null);
 
+  // Live "Uploading photo 3 of 8" feedback. Without it a large first sync is
+  // indistinguishable from a hang, which is exactly how the old build felt.
+  const [uploadProgress, setUploadProgress] = useState(null);
+
   // Responsive device view mode: 'auto' | 'laptop' | 'phone'
   const [viewMode, setViewMode] = useState('auto');
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -113,6 +118,73 @@ export default function App() {
     setToast({ message, type, action });
   };
 
+  // Last-resort watchdog. Every cloud call is individually bounded now, but a
+  // spinner that cannot be dismissed is bad enough that it gets a second net:
+  // after this long the UI unlocks no matter what, and the queue keeps working
+  // in the background.
+  useEffect(() => {
+    if (!isSyncing) return;
+    const timer = setTimeout(() => {
+      setIsSyncing(false);
+      setUploadProgress(null);
+      showToast('Sync is taking too long — it will keep retrying in the background.', 'info');
+    }, 180_000);
+    return () => clearTimeout(timer);
+  }, [isSyncing]);
+
+  // One-time compaction of reports created before ingest compression existed.
+  //
+  // Those reports hold multi-megabyte photos. Without this they would be
+  // recompressed on every sync and every share for the rest of their life, and
+  // the first sync after this update would still be slow. Compacting once, in
+  // the background, makes the report permanently light — and the smaller
+  // photos are then pushed up, replacing the oversized cloud documents.
+  const compactedRef = useRef(new Set());
+  useEffect(() => {
+    const id = currentReport?.id;
+    if (!id || isViewRoute) return;
+    if (compactedRef.current.has(id)) return;
+    if (hasUnsavedChanges) return; // never rewrite a report mid-edit
+    compactedRef.current.add(id);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { report: compacted, changed } = await compactReportPhotos(currentReport, {
+          onProgress: (done, total) =>
+            !cancelled && setUploadProgress({ done: done - 1, total, phase: 'compact' }),
+        });
+        if (cancelled) return;
+        setUploadProgress(null);
+        if (!changed) return;
+
+        const next = { ...compacted, _syncStatus: SyncStatus.PENDING };
+        setCurrentReport((prev) => (prev?.id === id ? next : prev));
+        await saveLocalReport(next);
+        syncEngine.processQueue();
+      } catch (e) {
+        if (!cancelled) setUploadProgress(null);
+        console.warn('Photo compaction skipped:', e.message);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [currentReport?.id, isViewRoute]);
+
+  // Photo upload progress, emitted by api.js and shareService.js.
+  useEffect(() => {
+    const onProgress = (e) => {
+      const { done, total, phase } = e.detail || {};
+      if (!total || phase === 'done' || done >= total) {
+        setUploadProgress(null);
+      } else {
+        setUploadProgress({ done, total, phase });
+      }
+    };
+    window.addEventListener('flashreport:upload-progress', onProgress);
+    return () => window.removeEventListener('flashreport:upload-progress', onProgress);
+  }, []);
+
   // ─── NEW: Initialize SyncEngine & Subscribe to Events ───────────
   useEffect(() => {
     if (isViewRoute) return;
@@ -128,6 +200,7 @@ export default function App() {
 
         case 'sync_end':
           setIsSyncing(false);
+          setUploadProgress(null);
           setLastSyncResult(event.result);
           setSyncStatus(syncEngine.getOverallStatus());
           setPendingCount(syncEngine.getPendingCount());
@@ -608,25 +681,36 @@ export default function App() {
   const handleSyncWithCloud = async () => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
-    // 1. Save current report locally first (if dirty)
-    if (currentReport && hasUnsavedChanges) {
-      await syncEngine.saveReport(currentReport);
-      setHasUnsavedChanges(false);
-    }
-
-    // 2. Full bidirectional sync
-    const result = await syncEngine.fullSync();
-
-    // 3. Reload active report if it was pulled
-    if (result.pulled > 0 && activeReportId) {
-      const freshLocal = await getLocalReport(activeReportId);
-      if (freshLocal) {
-        setCurrentReport(freshLocal);
+    try {
+      // 1. Save current report locally first (if dirty)
+      if (currentReport && hasUnsavedChanges) {
+        await syncEngine.saveReport(currentReport);
+        setHasUnsavedChanges(false);
       }
-    }
 
-    // 4. Refresh reports list
-    await refreshReportsList();
+      // 2. Full bidirectional sync
+      const result = await syncEngine.fullSync();
+
+      // 3. Reload active report if it was pulled
+      if (result.pulled > 0 && activeReportId) {
+        const freshLocal = await getLocalReport(activeReportId);
+        if (freshLocal) {
+          setCurrentReport(freshLocal);
+        }
+      }
+
+      // 4. Refresh reports list
+      await refreshReportsList();
+    } catch (err) {
+      // Nothing is lost: every edit is already in IndexedDB and the report
+      // stays PENDING, so the offline queue retries it. What must not happen
+      // is the spinner staying up, which is what the user saw before.
+      console.error('Sync failed:', err);
+      showToast(`Sync stopped: ${err.message}. Your data is saved on this device and will retry.`, 'error');
+    } finally {
+      setIsSyncing(false);
+      setUploadProgress(null);
+    }
   };
 
   useEffect(() => {
@@ -1216,6 +1300,30 @@ export default function App() {
         currentReport={currentReport}
         onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
       />
+
+      {/* Upload progress. A long first sync is normal; a long sync with no
+          sign of movement is what made the old build feel frozen. */}
+      {uploadProgress && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-xl bg-slate-900/92 text-white text-xs font-semibold shadow-xl flex items-center gap-3 backdrop-blur">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+          <div className="flex flex-col gap-1 min-w-[150px]">
+            <span>
+              {uploadProgress.phase === 'share'
+                ? 'Publishing photo'
+                : uploadProgress.phase === 'compact'
+                ? 'Optimising photo'
+                : 'Uploading photo'}{' '}
+              {uploadProgress.done + 1} / {uploadProgress.total}
+            </span>
+            <div className="h-1 w-full rounded-full bg-white/20 overflow-hidden">
+              <div
+                className="h-full bg-sky-400 transition-all duration-200"
+                style={{ width: `${Math.round((uploadProgress.done / uploadProgress.total) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notification */}
       <Toast
