@@ -30,6 +30,13 @@ service cloud.firestore {
       match /photos/{photoId} {
         allow read, write: if true;
       }
+
+      // File attachments (PDF, drawings, spreadsheets). Firebase Storage
+      // needs the paid Blaze plan, so a file is split into chunk documents
+      // here and reassembled on read.
+      match /files/{fileId} {
+        allow read, write: if true;
+      }
     }
 
     // ── Flash Report Pro: publicly shared reports ───────────────────
@@ -39,6 +46,14 @@ service cloud.firestore {
       allow read, write: if true;
 
       match /photos/{photoId} {
+        allow read, write: if true;
+      }
+
+      // Attachments of a shared report MUST stay world-readable: this is
+      // what lets an exported report's file link open with no sign-in. If
+      // the catch-all below is ever tightened, this block is what keeps
+      // that promise.
+      match /files/{fileId} {
         allow read, write: if true;
       }
     }
