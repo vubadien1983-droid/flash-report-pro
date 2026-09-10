@@ -10,9 +10,15 @@ import InspectionTable from './components/InspectionTable';
 import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
 import ShareModal from './components/ShareModal';
+import FileViewer from './components/FileViewer';
 import ReportViewer from './components/ReportViewer';
 import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
+import { fileKey } from './services/firebase';
+import {
+  putAttachment, getAttachmentBlob, deleteAttachment, openBlob, formatBytes,
+  collectAttachments,
+} from './services/fileAttachments';
 import SyncStatusIndicator from './components/SyncStatusIndicator';
 import {
   fetchReports, fetchReport, createReport, saveReport,
@@ -43,7 +49,13 @@ export default function App() {
   // Shared View Mode Detection
   const hash = currentHash || window.location.hash || '';
   const search = window.location.search || '';
-  const isViewRoute = hash.includes('/view') || hash.includes('view') || search.includes('view');
+
+  // Public attachment route: #/file/<shareId>/<key>. Checked first — it must
+  // not fall through to the (deliberately loose) shared-report test below.
+  const fileRouteMatch = hash.match(/#\/file\/([^/?]+)\/([^/?]+)/);
+
+  const isViewRoute = !fileRouteMatch &&
+    (hash.includes('/view') || hash.includes('view') || search.includes('view'));
 
   let sharedReportId = null;
   if (isViewRoute) {
@@ -89,7 +101,7 @@ export default function App() {
 
   // Modals state
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, id: null, title: '' });
-  const [imageModalState, setImageModalState] = useState({ isOpen: false, url: '', title: '' });
+  const [imageModalState, setImageModalState] = useState({ isOpen: false, index: 0 });
   const [shareModalState, setShareModalState] = useState({ isOpen: false, shareUrl: '', reportTitle: '' });
   const [toast, setToast] = useState({ message: '', type: 'success', action: null });
   const [isExporting, setIsExporting] = useState(false);
@@ -550,7 +562,8 @@ export default function App() {
       return {
         ...item,
         photos: item.photos.map((p, pIdx) => {
-          if (p && p.url) return p; // cloud has the image
+          if (p && p.kind === 'file') return p; // attachment, not an image
+          if (p && p.url) return p;             // cloud has the image
           const slot = p?.slot_index ?? pIdx;
           const localPhoto = (local.photos || []).find(
             (lp, li) => lp && lp.url && (lp.slot_index ?? li) === slot
@@ -570,6 +583,7 @@ export default function App() {
       const local = localById.get(item?.id || `item_${idx}`);
       if (!local || !Array.isArray(item?.photos)) return false;
       return item.photos.some((p, pIdx) => {
+        if (p && p.kind === 'file') return false; // attachment, not an image
         if (p && p.url) return false;
         const slot = p?.slot_index ?? pIdx;
         return (local.photos || []).some(
@@ -674,6 +688,76 @@ export default function App() {
     } catch (err) {
       console.error('Error loading report:', err);
       showToast('Failed to load report data', 'error');
+    }
+  };
+
+  /**
+   * Every image in the report, in reading order. The lightbox needs the whole
+   * set so the reviewer can move between photos instead of closing and
+   * reopening one at a time. File attachments are skipped — they are not
+   * images and have nothing to show in a gallery.
+   */
+  const galleryPhotos = React.useMemo(() => {
+    const out = [];
+    (currentReport?.items || []).forEach((item, i) => {
+      (item.photos || []).forEach((p, sIdx) => {
+        if (p && p.url && p.kind !== 'file') {
+          out.push({
+            url: p.url,
+            filename: p.filename || `Item ${i + 1} · Photo ${(p.slot_index ?? sIdx) + 1}`,
+          });
+        }
+      });
+    });
+    return out;
+  }, [currentReport]);
+
+  const openLightboxByUrl = (url) => {
+    const idx = galleryPhotos.findIndex((g) => g.url === url);
+    setImageModalState({ isOpen: true, index: idx >= 0 ? idx : 0 });
+  };
+
+  /** Attach a file to a photo slot. The bytes go to Firestore, not the report. */
+  const handleAttachFile = async (itemIndex, slotIndex, file) => {
+    if (!currentReport || !file) return;
+    const item = (currentReport.items || [])[itemIndex];
+    if (!item) return;
+    const itemId = item.id || `item_${itemIndex}`;
+    const key = fileKey(itemId, slotIndex);
+
+    try {
+      const descriptor = await putAttachment('report', currentReport.id, key, file);
+
+      const newItems = [...(currentReport.items || [])];
+      const photos = [...(newItems[itemIndex].photos || [])];
+      while (photos.length <= slotIndex) photos.push(null);
+      photos[slotIndex] = {
+        ...descriptor,
+        id: `file_${Date.now()}_${slotIndex}`,
+        slot_index: slotIndex,
+      };
+      newItems[itemIndex] = { ...newItems[itemIndex], photos };
+      handleItemsChange(newItems);
+
+      showToast(`Attached ${file.name} (${formatBytes(file.size)})`, 'success');
+    } catch (err) {
+      console.error('Attach failed:', err);
+      showToast(err.message || 'Could not attach that file', 'error');
+    }
+  };
+
+  const handleOpenAttachment = async (photo) => {
+    if (!photo?.file_ref || !currentReport) return;
+    showToast(`Opening ${photo.filename || 'file'}…`, 'info');
+    try {
+      const got = await getAttachmentBlob('report', currentReport.id, photo.file_ref);
+      if (!got) {
+        showToast('That file is not fully uploaded yet — try again in a moment.', 'error');
+        return;
+      }
+      openBlob(got.blob, got.meta.filename);
+    } catch (err) {
+      showToast(`Could not open the file: ${err.message}`, 'error');
     }
   };
 
@@ -956,7 +1040,18 @@ export default function App() {
     if (!currentReport) return;
     setIsPublishing(true);
     try {
-      const { shareUrl } = await publishReportForSharing(currentReport);
+      const { shareUrl, shareId } = await publishReportForSharing(currentReport);
+
+      // Keep the share id on the report in memory too. The standalone HTML
+      // export builds its attachment links from it, and without this it would
+      // write "share the report to activate this link" on a report that has
+      // just been shared.
+      if (shareId && currentReport.share_id !== shareId) {
+        const withShare = { ...currentReport, share_id: shareId, cloud_code: shareId };
+        setCurrentReport(withShare);
+        saveLocalReport(withShare).catch(() => {});
+      }
+
       setShareModalState({
         isOpen: true,
         shareUrl,
@@ -970,12 +1065,34 @@ export default function App() {
     }
   };
 
+  /**
+   * An exported report links its attachments to the app's PUBLIC attachment
+   * route, which reads from `shared_reports`. So a report that carries files
+   * has to be published before it is exported — otherwise the export would
+   * contain links that resolve to nothing.
+   */
+  const reportForExport = async (rep) => {
+    if (!rep) return rep;
+    if (collectAttachments(rep).length === 0) return rep;
+    if (rep.share_id || rep.cloud_code) {
+      // Already shared: refresh so the newest attachments are published too.
+      try { await publishReportForSharing(rep); } catch (e) { console.warn('Share refresh:', e.message); }
+      return rep;
+    }
+    showToast('Publishing attachments so the file links work…', 'info');
+    const { shareId } = await publishReportForSharing(rep);
+    const withShare = { ...rep, share_id: shareId, cloud_code: shareId };
+    setCurrentReport(withShare);
+    await saveLocalReport(withShare);
+    return withShare;
+  };
+
   // Client-Side Excel Export
   const handleExportExcel = async () => {
     if (!currentReport) return;
     setIsExporting(true);
     try {
-      await exportExcelClient(currentReport);
+      await exportExcelClient(await reportForExport(currentReport));
       showToast('Excel export successful', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
@@ -990,7 +1107,7 @@ export default function App() {
     if (!currentReport) return;
     setIsExporting(true);
     try {
-      await exportPdfClient(currentReport);
+      await exportPdfClient(await reportForExport(currentReport));
       showToast('PDF export successful', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
@@ -999,6 +1116,11 @@ export default function App() {
       setIsExporting(false);
     }
   };
+
+  // Public attachment link from an exported report — no sign-in required.
+  if (fileRouteMatch) {
+    return <FileViewer shareId={fileRouteMatch[1]} fileKey={fileRouteMatch[2]} />;
+  }
 
   // If user opens a shared presentation link e.g. #/view/:id
   if (isViewRoute && sharedReportId) {
@@ -1226,7 +1348,9 @@ export default function App() {
                 <InspectionTable
                   items={currentReport.items || []}
                   onItemsChange={handleItemsChange}
-                  onPhotoClick={(url) => setImageModalState({ isOpen: true, url, title: currentReport.title })}
+                  onPhotoClick={openLightboxByUrl}
+                  onAttachFile={handleAttachFile}
+                  onOpenAttachment={handleOpenAttachment}
                   isMobileMode={isPhoneView}
                 />
               </>
@@ -1287,9 +1411,11 @@ export default function App() {
       {/* Image Lightbox Modal */}
       <ImageModal
         isOpen={imageModalState.isOpen}
-        imageUrl={imageModalState.url}
-        title={imageModalState.title}
-        onClose={() => setImageModalState({ isOpen: false, url: '', title: '' })}
+        photos={galleryPhotos}
+        index={imageModalState.index}
+        onIndexChange={(i) => setImageModalState((st) => ({ ...st, index: i }))}
+        title={currentReport?.title}
+        onClose={() => setImageModalState({ isOpen: false, index: 0 })}
       />
 
       {/* Share Modal */}
