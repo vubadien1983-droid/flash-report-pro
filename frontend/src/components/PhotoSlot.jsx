@@ -140,12 +140,39 @@ export default function PhotoSlot({
     }
   };
 
+  const hasContent = Boolean(photo?.url || isFile);
+
+  /**
+   * Open whatever this slot holds.
+   *
+   * A photo is drawn with `object-contain`, so a landscape image inside a
+   * fixed-height cell leaves empty bands above and below it (and a portrait
+   * one leaves bands left and right). Those bands belong to the CONTAINER,
+   * not the <img>, so a click there used to fall through to "select this slot
+   * for paste" and nothing appeared to happen. The whole cell now opens.
+   */
+  const openContent = () => {
+    if (isFile) {
+      if (onOpenAttachment) onOpenAttachment(photo);
+    } else if (photo?.url && onPhotoClick) {
+      onPhotoClick(photo.url);
+    }
+  };
+
   const handleContainerClick = (e) => {
+    if (hasContent) {
+      // Still mark the slot as selected on laptop, so Ctrl+V keeps replacing
+      // the photo after the viewer is closed.
+      if (!isMobileView && onSelectSlot) onSelectSlot();
+      openContent();
+      return;
+    }
+
     if (isMobileView) {
-      // On phone, tap opens the Camera / Gallery sheet
+      // Empty slot on phone: tap opens the Camera / Gallery / File sheet
       setShowOptionsModal(true);
     } else {
-      // On Laptop, clicking the slot SELECTS it for paste (does NOT open file explorer)
+      // Empty slot on Laptop: clicking SELECTS it for paste (does NOT open file explorer)
       if (onSelectSlot) {
         onSelectSlot();
       }
@@ -179,7 +206,7 @@ export default function PhotoSlot({
           setIsDragOver(false);
           if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
         }}
-        className={`relative group w-full ${isMobileView ? 'h-32 sm:h-36' : 'h-32 lg:h-36 xl:h-40'} rounded-xl border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none cursor-pointer ${
+        className={`relative group w-full ${isMobileView ? 'h-32 sm:h-36' : 'h-32 lg:h-36 xl:h-40'} rounded-xl border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none ${hasContent ? 'cursor-zoom-in' : 'cursor-pointer'} ${
           isDragOver
             ? 'border-brand-500 bg-brand-50/80 ring-2 ring-brand-500/30'
             : isSelected && !isMobileView
@@ -221,6 +248,30 @@ export default function PhotoSlot({
           }}
           className="hidden"
         />
+
+        {/* Phone: a filled slot opens on tap, so Replace / Remove cannot hide
+            behind :hover — there is no hover on a touch screen. These stay
+            visible. */}
+        {isMobileView && hasContent && !slotUploading && (
+          <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowOptionsModal(true); }}
+              title="Replace"
+              className="w-7 h-7 flex items-center justify-center bg-white/95 text-slate-700 rounded-md shadow border border-slate-200 active:scale-95 transition-transform"
+            >
+              <Upload className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onPhotoDelete(); }}
+              title="Remove"
+              className="w-7 h-7 flex items-center justify-center bg-rose-500 text-white rounded-md shadow active:scale-95 transition-transform"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {slotUploading ? (
           <div className="flex flex-col items-center justify-center text-brand-600 gap-1">
@@ -398,7 +449,7 @@ export default function PhotoSlot({
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Camera className="w-4 h-4 text-brand-600" />
-                <h4 className="text-sm font-bold text-slate-800">Slot {slotIndex + 1}</h4>
+                <h4 className="text-sm font-bold text-slate-800">{hasContent ? `Replace slot ${slotIndex + 1}` : `Slot ${slotIndex + 1}`}</h4>
               </div>
               <button
                 onClick={() => setShowOptionsModal(false)}
