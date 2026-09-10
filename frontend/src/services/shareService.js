@@ -28,6 +28,7 @@ import {
 import {
   compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser,
 } from './imageCompression';
+import { collectAttachments, copyAttachmentToShare } from './fileAttachments';
 
 /** Leaves headroom under the 1 MiB per-document limit. */
 const PHOTO_MAX_BYTES = 900_000;
@@ -111,6 +112,9 @@ export async function publishReportForSharing(report) {
     const refs = [];
 
     for (const [pIdx, p] of photos.entries()) {
+      // A file attachment is not an image: it keeps its descriptor as-is and
+      // its bytes are copied separately below.
+      if (p && p.kind === 'file') { refs.push(p); continue; }
       if (!p || !p.url) { refs.push(null); continue; }
       const slot = p.slot_index ?? pIdx;
       const key = photoKey(itemId, slot);
@@ -171,6 +175,25 @@ export async function publishReportForSharing(report) {
     _writeShareHashes(shareId, uploaded);
     done++;
     _emitProgress({ reportId: report.id, done, total, phase: 'share' });
+    await yieldToBrowser();
+  }
+
+  // 2b. Copy file attachments into the share so the public link resolves
+  //     without ever touching the private `reports` collection. Same ordering
+  //     rule as the photos: bytes first, then the document that points at them.
+  const attachments = collectAttachments(report);
+  for (const att of attachments) {
+    const stamp = `${att.descriptor.updated_at || ''}_${att.descriptor.size || 0}`;
+    if (uploaded[`file:${att.key}`] === stamp) continue; // already published
+    try {
+      const ok = await copyAttachmentToShare(report.id, shareId, att.key);
+      if (ok) {
+        uploaded[`file:${att.key}`] = stamp;
+        _writeShareHashes(shareId, uploaded);
+      }
+    } catch (e) {
+      console.warn(`Could not publish attachment ${att.key}:`, e.message);
+    }
     await yieldToBrowser();
   }
 
@@ -237,7 +260,7 @@ export async function fetchSharedReport(shareId) {
     try {
       const snap = await withTimeout(getDoc(sharedDoc(cleanId)), READ_TIMEOUT_MS, 'Loading shared report');
       if (snap.exists()) {
-        const report = { id: cleanId, ...snap.data() };
+        const report = { id: cleanId, share_id: cleanId, ...snap.data() };
         return await hydrateSharedPhotos(cleanId, report);
       }
     } catch (e) {

@@ -91,6 +91,16 @@ function _isMissingImage(url) {
   return !url || url === LEGACY_TOMBSTONE;
 }
 
+/**
+ * A slot can hold a FILE attachment instead of an image. Those carry no
+ * `url` and no photo document, so every image code path must step over them —
+ * otherwise hydration counts each one as a missing photo, flags the report
+ * `_photosIncomplete` and re-uploads every real photo on each load.
+ */
+export function isFileSlot(p) {
+  return Boolean(p && p.kind === 'file');
+}
+
 const API_BASE = '/api';
 
 // ─── Report List ─────────────────────────────────────────────────
@@ -551,7 +561,7 @@ async function _hydratePhotos(reportId, report) {
   if (!isFirebaseConfigured || !report?.items?.length) return report;
 
   const needsHydration = report.items.some((item) =>
-    (item.photos || []).some((p) => p && _isMissingImage(p.url))
+    (item.photos || []).some((p) => p && !isFileSlot(p) && _isMissingImage(p.url))
   );
   if (!needsHydration) return report;
 
@@ -576,6 +586,7 @@ async function _hydratePhotos(reportId, report) {
       ...item,
       photos: item.photos.map((p, pIdx) => {
         if (!p) return p;
+        if (isFileSlot(p)) return p;           // attachment, not an image
         if (!_isMissingImage(p.url)) return p; // already has real data
         const key = p.photo_ref || photoKey(itemId, p.slot_index ?? pIdx);
         const stored = byKey.get(key);

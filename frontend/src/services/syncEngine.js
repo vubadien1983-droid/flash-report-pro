@@ -498,6 +498,7 @@ class SyncEngine {
       return {
         ...item,
         photos: item.photos.map((p, pIdx) => {
+          if (p && p.kind === 'file') return p; // attachment, not an image
           if (p && p.url) return p;
           const slot = p?.slot_index ?? pIdx;
           const localPhoto = (local.photos || []).find(

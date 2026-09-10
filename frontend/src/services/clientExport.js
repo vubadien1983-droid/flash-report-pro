@@ -75,6 +75,26 @@ async function getImageData(url) {
   });
 }
 
+/**
+ * Public URL that opens a slot's attached file with no sign-in.
+ *
+ * Exports are read by people who do not have the app, so a cell holding a file
+ * has to become a real hyperlink. That link points at the app's public
+ * attachment route, which reads from the world-readable `shared_reports`
+ * collection — which is why the caller must publish the report before
+ * exporting one that has attachments.
+ */
+function attachmentLink(report, photo) {
+  const shareId = report?.share_id || report?.cloud_code;
+  if (!shareId || !photo?.file_ref) return null;
+  const base = window.location.origin + window.location.pathname;
+  return `${base}#/file/${shareId}/${photo.file_ref}`;
+}
+
+function isFileSlot(p) {
+  return Boolean(p && p.kind === 'file');
+}
+
 export async function exportExcelClient(report) {
   if (!report) throw new Error('No report data provided');
 
@@ -286,6 +306,23 @@ export async function exportExcelClient(report) {
       cell.border = thinBorder;
 
       const photoObj = photos[p];
+
+      if (isFileSlot(photoObj)) {
+        // The cell becomes a clickable link to the attached file.
+        const href = attachmentLink(report, photoObj);
+        const name = photoObj.filename || 'Attachment';
+        if (href) {
+          cell.value = { text: name, hyperlink: href, tooltip: 'Open the attached file' };
+          cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0563C1' }, underline: true };
+        } else {
+          // Not published yet — say so rather than writing a dead link.
+          cell.value = `${name} (share the report to activate this link)`;
+          cell.font = { name: 'Arial', size: 8.5, italic: true, color: { argb: 'FF6B7280' } };
+        }
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        continue;
+      }
+
       if (photoObj && photoObj.url) {
         const imgData = await getImageData(photoObj.url);
         if (imgData && imgData.base64) {
@@ -416,22 +453,30 @@ export async function exportPdfClient(report) {
   let seqNo = 1;
   const tableRows = [];
   const photoMatrix = [];
+  const fileMatrix = [];
 
   for (const item of items) {
     const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
     const no = hasContent ? String(seqNo++) : '';
 
     const rowPhotos = [];
+    const rowFiles = [];
     for (let p = 0; p < 4; p++) {
       const pObj = item.photos?.[p];
-      if (pObj && pObj.url) {
+      if (isFileSlot(pObj)) {
+        rowPhotos.push(null);
+        rowFiles.push({ name: pObj.filename || 'Attachment', href: attachmentLink(report, pObj) });
+      } else if (pObj && pObj.url) {
         const img = await getImageData(pObj.url);
         rowPhotos.push(img || null);
+        rowFiles.push(null);
       } else {
         rowPhotos.push(null);
+        rowFiles.push(null);
       }
     }
     photoMatrix.push(rowPhotos);
+    fileMatrix.push(rowFiles);
 
     tableRows.push([
       no,
@@ -488,6 +533,26 @@ export async function exportPdfClient(report) {
     didDrawCell: function (data) {
       if (data.section === 'body' && data.column.index >= 4 && data.column.index <= 7) {
         const photoIdx = data.column.index - 4;
+
+        const fileObj = fileMatrix[data.row.index]?.[photoIdx];
+        if (fileObj) {
+          // A file slot: draw the name as a real, clickable PDF link.
+          const cx = data.cell.x + data.cell.width / 2;
+          const cy = data.cell.y + data.cell.height / 2;
+          doc.setFontSize(7.5);
+          doc.setFont('Helvetica', 'bold');
+          doc.setTextColor(fileObj.href ? 5 : 107, fileObj.href ? 99 : 114, fileObj.href ? 193 : 128);
+          const lines = doc.splitTextToSize(fileObj.name, data.cell.width - 8);
+          const lineH = 9;
+          const startY = cy - ((lines.length - 1) * lineH) / 2;
+          lines.forEach((ln, li) => doc.text(ln, cx, startY + li * lineH, { align: 'center' }));
+          if (fileObj.href) {
+            doc.link(data.cell.x + 2, data.cell.y + 2, data.cell.width - 4, data.cell.height - 4, { url: fileObj.href });
+          }
+          doc.setTextColor(31, 41, 55);
+          return;
+        }
+
         const imgObj = photoMatrix[data.row.index]?.[photoIdx];
         if (imgObj && imgObj.dataUrl) {
           const padding = 2;

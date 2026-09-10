@@ -36,6 +36,29 @@ export function exportStandaloneHtml(report) {
 
     const photoCellsHtml = [0, 1, 2, 3].map((slotIdx) => {
       const p = photos[slotIdx];
+
+      // A slot holding a FILE becomes a link that opens the attachment. The
+      // link resolves against the app's public attachment route, so whoever
+      // receives this HTML opens the file without signing in.
+      if (p && p.kind === 'file') {
+        const shareId = report.share_id || report.cloud_code;
+        const name = (p.filename || 'Attachment').replace(/</g, '&lt;');
+        const href = shareId && p.file_ref
+          ? `${(typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '')}#/file/${shareId}/${p.file_ref}`
+          : '';
+        const inner = href
+          ? `<a href="${href}" target="_blank" rel="noreferrer" style="color:#0563C1;font-weight:700;text-decoration:underline;font-size:11px;word-break:break-all;">${name}</a>`
+          : `<span style="color:#6b7280;font-style:italic;font-size:10.5px;">${name} (share the report to activate this link)</span>`;
+        return `
+          <td style="padding: 6px; width: 175px; text-align: center; vertical-align: middle; border: 1px solid #d1d5db; background: #ffffff;">
+            <div style="width: 165px; height: 125px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; padding: 6px;">
+              <div style="width:30px;height:30px;border-radius:8px;background:#0284c7;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">FILE</div>
+              ${inner}
+            </div>
+          </td>
+        `;
+      }
+
       if (p && p.url) {
         return `
           <td style="padding: 6px; width: 175px; text-align: center; vertical-align: middle; border: 1px solid #d1d5db; background: #ffffff;">

@@ -109,6 +109,37 @@ export function sharedPhotoDoc(shareId, key) {
   return doc(db, SHARED_COLLECTION, shareId, PHOTOS_SUBCOLLECTION, key);
 }
 
+// ─── File attachments ────────────────────────────────────────────
+//
+// A non-image attachment (PDF, drawing, spreadsheet, …) is stored the same
+// way photos are — inside Firestore, because Firebase Storage needs the paid
+// Blaze plan. A document caps at 1 MiB, so a file is split into chunk
+// documents next to its metadata document and reassembled on read.
+
+const FILES_SUBCOLLECTION = 'files';
+
+export function reportFilesCollection(reportId) {
+  return collection(db, REPORTS_COLLECTION, reportId, FILES_SUBCOLLECTION);
+}
+
+export function reportFileDoc(reportId, key) {
+  return doc(db, REPORTS_COLLECTION, reportId, FILES_SUBCOLLECTION, key);
+}
+
+export function sharedFilesCollection(shareId) {
+  return collection(db, SHARED_COLLECTION, shareId, FILES_SUBCOLLECTION);
+}
+
+export function sharedFileDoc(shareId, key) {
+  return doc(db, SHARED_COLLECTION, shareId, FILES_SUBCOLLECTION, key);
+}
+
+/** Deterministic key for an attachment slot, mirroring photoKey. */
+export function fileKey(itemId, slotIndex) {
+  const safeItem = String(itemId || 'item').replace(/[^A-Za-z0-9_-]/g, '_');
+  return `${safeItem}__f${slotIndex}`;
+}
+
 // Re-export Firestore functions for api.js to use
 export {
   getDoc, getDocs, setDoc, deleteDoc, writeBatch,
