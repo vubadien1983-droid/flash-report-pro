@@ -4,6 +4,8 @@
  * loaded on demand below so the app's first paint on a phone stays fast.
  */
 
+import { computeRowNumbers } from './reportNumbering';
+
 function sanitizeFilename(name) {
   return (name || 'Flash_Report').replace(/[\\/*?:"<>|]/g, '_').trim();
 }
@@ -243,29 +245,65 @@ export async function exportExcelClient(report) {
 
   // Data Rows
   const items = report.items || [];
+  const rowNumbers = computeRowNumbers(items);
   let currentRow = 6;
-  let seqNo = 1;
 
-  // Derive the photo cell's true aspect ratio from the values actually used
-  // above, rather than hard-coding it — a mismatch here is what stretches
-  // images out of proportion.
-  //   Excel column width unit → px:  width * 7 + 5
-  //   Row height points       → px:  points * 96/72
+  // ── Image placement (see the note below before changing any of this) ──
+  //
+  // ExcelJS's fractional anchor (`{ col: 4.05 }`) CANNOT be used to place an
+  // image accurately. Its Anchor class converts the fraction with
+  //     colWidth  = column.width * 10000     (lib/doc/anchor.js)
+  //     rowHeight = row.height   * 10000
+  // Neither is an EMU measurement. A column of width 22 is 159 px = 1_514_475
+  // EMU wide, but ExcelJS calls it 220_000 — about 6.9x too small — while a
+  // 92 pt row is 1_168_400 EMU and ExcelJS calls it 920_000, only 1.27x too
+  // small. The two errors differ, so a rectangle that is mathematically
+  // correct in fractions comes out squashed horizontally: measured on a real
+  // export, a 4:3 photo was drawn at an aspect ratio of 0.25 — a narrow
+  // vertical sliver. That is the distortion the user reported.
+  //
+  // So we bypass the fraction entirely and hand ExcelJS the native EMU
+  // offsets, which it writes through untouched.
   const PHOTO_COL_WIDTH = 22;   // must match worksheet.columns photo entries
   const PHOTO_ROW_HEIGHT = 92;  // must match row.height below
 
-  const cellWidthPx = PHOTO_COL_WIDTH * 7 + 5;      // ≈ 159px
-  const cellHeightPx = PHOTO_ROW_HEIGHT * (96 / 72); // ≈ 123px
-  const cellAspectRatio = cellWidthPx / cellHeightPx; // ≈ 1.30
+  const EMU_PER_PX = 9525;                            // 914400 EMU / 96 dpi
+  const cellWidthPx = PHOTO_COL_WIDTH * 7 + 5;        // Excel width unit -> px
+  const cellHeightPx = PHOTO_ROW_HEIGHT * (96 / 72);  // points -> px
+  const PHOTO_PAD = 0.92;                             // 4% margin on each side
 
-  for (const item of items) {
+  /**
+   * Letterbox an image inside one cell and return the exact EMU rectangle.
+   * Preserves the aspect ratio precisely: the image is scaled by the single
+   * factor that makes it fit, never by different factors per axis.
+   */
+  function photoAnchor(colIndex, rowIndex, aspectRatio) {
+    const ar = aspectRatio > 0 ? aspectRatio : 4 / 3;
+    const boxW = cellWidthPx * PHOTO_PAD;
+    const boxH = cellHeightPx * PHOTO_PAD;
+
+    let drawW = boxW;
+    let drawH = drawW / ar;
+    if (drawH > boxH) { drawH = boxH; drawW = drawH * ar; }
+
+    const offX = (cellWidthPx - drawW) / 2;
+    const offY = (cellHeightPx - drawH) / 2;
+    const emu = (px) => Math.round(px * EMU_PER_PX);
+
+    return {
+      tl: { nativeCol: colIndex, nativeColOff: emu(offX), nativeRow: rowIndex, nativeRowOff: emu(offY) },
+      br: { nativeCol: colIndex, nativeColOff: emu(offX + drawW), nativeRow: rowIndex, nativeRowOff: emu(offY + drawH) },
+      drawW, drawH,
+    };
+  }
+
+  for (const [itemIdx, item] of items.entries()) {
     const tag = (item.tag || '').trim();
     const desc = (item.description || '').trim();
     const note = (item.note || '').trim();
     const photos = item.photos || [];
 
-    const hasContent = Boolean(tag || desc);
-    const itemNo = hasContent ? seqNo++ : '';
+    const itemNo = rowNumbers[itemIdx];
 
     const row = worksheet.getRow(currentRow);
     row.height = PHOTO_ROW_HEIGHT;
@@ -332,31 +370,8 @@ export async function exportExcelClient(report) {
               extension: 'jpeg'
             });
 
-            // Letterbox the image inside the cell: scale the constraining
-            // axis to the full padded area, shrink the other by the aspect
-            // ratio, then centre both. Preserves proportions exactly.
-            const PAD = 0.90; // leaves a 5% margin on every side
-            const imgAR = imgData.aspectRatio || 1.33;
-
-            let colSpan = PAD;
-            let rowSpan = PAD;
-
-            if (imgAR < cellAspectRatio) {
-              // Taller than the cell → height fills, width shrinks
-              colSpan = PAD * (imgAR / cellAspectRatio);
-            } else {
-              // Wider than the cell → width fills, height shrinks
-              rowSpan = PAD * (cellAspectRatio / imgAR);
-            }
-
-            const colOffset = (1 - colSpan) / 2;
-            const rowOffset = (1 - rowSpan) / 2;
-
-            worksheet.addImage(imageId, {
-              tl: { col: 4 + p + colOffset, row: currentRow - 1 + rowOffset },
-              br: { col: 4 + p + colOffset + colSpan, row: currentRow - 1 + rowOffset + rowSpan },
-              editAs: 'oneCell'
-            });
+            const { tl, br } = photoAnchor(4 + p, currentRow - 1, imgData.aspectRatio);
+            worksheet.addImage(imageId, { tl, br, editAs: 'oneCell' });
           } catch (imgErr) {
             console.error('Error attaching image to worksheet:', imgErr);
           }
@@ -450,14 +465,13 @@ export async function exportPdfClient(report) {
 
   // Prepare table data and normalized images
   const items = report.items || [];
-  let seqNo = 1;
+  const rowNumbers = computeRowNumbers(items);
   const tableRows = [];
   const photoMatrix = [];
   const fileMatrix = [];
 
-  for (const item of items) {
-    const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
-    const no = hasContent ? String(seqNo++) : '';
+  for (const [itemIdx, item] of items.entries()) {
+    const no = String(rowNumbers[itemIdx] ?? '');
 
     const rowPhotos = [];
     const rowFiles = [];

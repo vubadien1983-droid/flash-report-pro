@@ -3,6 +3,8 @@
  * with left-aligned text, reduced text size, and enlarged photos for clear inspection viewing.
  */
 
+import { computeRowNumbers, countContentRows } from './reportNumbering';
+
 function sanitizeFilename(name) {
   return (name || 'Flash_Report').replace(/[\\/*?:"<>|]/g, '_').trim();
 }
@@ -11,7 +13,7 @@ export function exportStandaloneHtml(report) {
   if (!report) return;
 
   const items = report.items || [];
-  let seqCounter = 1;
+  const rowNumbers = computeRowNumbers(items);
 
   const title = report.title || 'Untitled Flash Report';
   const tag = report.system_tag || '-';
@@ -19,19 +21,11 @@ export function exportStandaloneHtml(report) {
   const date = report.inspection_date || '-';
   const discipline = report.discipline || '-';
 
-  const activeItemsCount = items.filter(
-    (item) =>
-      item.tag?.trim() ||
-      item.description?.trim() ||
-      item.note?.trim() ||
-      (item.photos && item.photos.some((p) => p?.url))
-  ).length;
-  const displayCount = activeItemsCount > 0 ? activeItemsCount : items.length;
+  const displayCount = countContentRows(items) || items.length;
 
   // Build rows HTML
   const rowsHtml = items.map((item, idx) => {
-    const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
-    const no = hasContent ? seqCounter++ : '';
+    const no = rowNumbers[idx];
     const photos = item.photos || [];
 
     const photoCellsHtml = [0, 1, 2, 3].map((slotIdx) => {
