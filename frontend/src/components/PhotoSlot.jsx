@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen } from 'lucide-react';
+import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen, Paperclip, FileText, ExternalLink } from 'lucide-react';
 import { compressForStorage, compressDataUrl } from '../services/imageCompression';
 
 export default function PhotoSlot({
@@ -10,8 +10,12 @@ export default function PhotoSlot({
   onPhotoChange,
   onPhotoDelete,
   onPhotoClick,
+  onFileSelected,      // (File) => void — parent uploads and stores the descriptor
+  onOpenAttachment,    // (photo)  => void — parent fetches and opens the file
   isMobileView = false
 }) {
+  const fileInputRef = useRef(null);
+  const isFile = photo?.kind === 'file';
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
   const slotRef = useRef(null);
@@ -180,7 +184,7 @@ export default function PhotoSlot({
             ? 'border-brand-500 bg-brand-50/80 ring-2 ring-brand-500/30'
             : isSelected && !isMobileView
             ? 'border-brand-500 bg-brand-50/50 ring-2 ring-brand-500/40 shadow-xs'
-            : photo?.url
+            : (photo?.url || isFile)
             ? 'border-slate-200 bg-slate-50'
             : 'border-dashed border-slate-300 hover:border-brand-400 bg-white hover:bg-slate-50'
         }`}
@@ -206,11 +210,73 @@ export default function PhotoSlot({
           className="hidden"
         />
 
+        {/* Hidden ATTACHMENT input — any file type, not just images */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f && onFileSelected) onFileSelected(f);
+          }}
+          className="hidden"
+        />
+
         {slotUploading ? (
           <div className="flex flex-col items-center justify-center text-brand-600 gap-1">
             <RefreshCw className="w-5 h-5 animate-spin" />
             <span className="text-[10px] font-medium">Processing...</span>
           </div>
+        ) : isFile ? (
+          /* ── Attached file ─────────────────────────────────────────────
+             The cell shows the file name, not a picture. Clicking it opens
+             the file; an exported report turns this cell into a link that
+             opens the same file with no sign-in. */
+          <>
+            <div
+              className="w-full h-full flex flex-col items-center justify-center gap-1.5 p-2 cursor-pointer text-center"
+              onClick={(e) => { e.stopPropagation(); if (onOpenAttachment) onOpenAttachment(photo); }}
+              title={`Open ${photo.filename || 'file'}`}
+            >
+              <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+                <FileText className="w-4.5 h-4.5" />
+              </div>
+              <span className="text-[10px] font-bold text-slate-800 leading-tight break-all line-clamp-3 px-0.5">
+                {photo.filename || 'attachment'}
+              </span>
+              <span className="text-[9px] text-slate-400 font-medium inline-flex items-center gap-1">
+                <ExternalLink className="w-2.5 h-2.5" />
+                Click to open
+              </span>
+            </div>
+
+            <div className="absolute inset-0 bg-slate-950/65 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 backdrop-blur-[1px]">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); if (onOpenAttachment) onOpenAttachment(photo); }}
+                title="Open file"
+                className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow hover:scale-105 transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                title="Replace file"
+                className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow hover:scale-105 transition-all"
+              >
+                <Upload className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onPhotoDelete(); }}
+                title="Remove file"
+                className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-md shadow hover:scale-105 transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </>
         ) : photo?.url ? (
           <>
             {/* Image Thumbnail */}
@@ -240,10 +306,18 @@ export default function PhotoSlot({
               <button
                 type="button"
                 onClick={handleBrowseButtonClick}
-                title={isMobileView ? "Replace photo" : "Replace file"}
+                title={isMobileView ? "Replace photo" : "Replace image"}
                 className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow hover:scale-105 transition-all"
               >
                 <Upload className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                title="Attach a file instead"
+                className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow hover:scale-105 transition-all"
+              >
+                <Paperclip className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
@@ -270,7 +344,7 @@ export default function PhotoSlot({
                 <span className="text-[11px] font-semibold text-slate-600 leading-tight">
                   {slotLabels[slotIndex]}
                 </span>
-                <span className="text-[10px] text-slate-400">Camera / Files</span>
+                <span className="text-[10px] text-slate-400">Camera / Photo / File</span>
               </div>
             ) : (
               /* Laptop View: Click slot = Select to Paste; Click '+' = Browse Folder */
@@ -291,15 +365,26 @@ export default function PhotoSlot({
                 </div>
 
                 {/* Explicit Browse Button (ONLY this button opens file picker) */}
-                <button
-                  type="button"
-                  onClick={handleBrowseButtonClick}
-                  title="Open folder to choose file"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-brand-500 hover:text-white border border-slate-200 hover:border-brand-500 rounded-md transition-all shadow-2xs"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>Browse</span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleBrowseButtonClick}
+                    title="Choose an image"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-brand-500 hover:text-white border border-slate-200 hover:border-brand-500 rounded-md transition-all shadow-2xs"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Image</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                    title="Attach a file (PDF, drawing, spreadsheet…)"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-700 hover:text-white border border-slate-200 hover:border-slate-700 rounded-md transition-all shadow-2xs"
+                  >
+                    <Paperclip className="w-3 h-3" />
+                    <span>File</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -313,7 +398,7 @@ export default function PhotoSlot({
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Camera className="w-4 h-4 text-brand-600" />
-                <h4 className="text-sm font-bold text-slate-800">Add Photo {slotIndex + 1}</h4>
+                <h4 className="text-sm font-bold text-slate-800">Slot {slotIndex + 1}</h4>
               </div>
               <button
                 onClick={() => setShowOptionsModal(false)}
@@ -355,6 +440,23 @@ export default function PhotoSlot({
                 <div>
                   <div className="text-slate-900 font-bold text-xs">Choose from Gallery / Files</div>
                   <div className="text-[11px] text-slate-500 font-normal">Select existing photo from phone</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  fileInputRef.current?.click();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-100 text-slate-800 rounded-xl font-semibold text-xs transition-colors text-left"
+              >
+                <div className="w-8 h-8 rounded-lg bg-slate-500 text-white flex items-center justify-center flex-shrink-0">
+                  <Paperclip className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-slate-900 font-bold text-xs">Attach a File</div>
+                  <div className="text-[11px] text-slate-500 font-normal">PDF, drawing, spreadsheet — opens as a link in exports</div>
                 </div>
               </button>
             </div>

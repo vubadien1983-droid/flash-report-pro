@@ -45,6 +45,8 @@ export default function InspectionTable({
   items,
   onItemsChange,
   onPhotoClick,
+  onAttachFile,        // (itemIndex, slotIndex, File) => void
+  onOpenAttachment,    // (photo) => void
   isMobileMode = false
 }) {
   // Selected slot for keyboard paste: { itemIndex, slotIndex } | null
@@ -378,6 +380,8 @@ export default function InspectionTable({
                         onPhotoChange={(photoData) => handlePhotoChange(idx, slotIdx, photoData)}
                         onPhotoDelete={() => handlePhotoDelete(idx, slotIdx)}
                         onPhotoClick={onPhotoClick}
+                        onFileSelected={(file) => onAttachFile && onAttachFile(idx, slotIdx, file)}
+                        onOpenAttachment={onOpenAttachment}
                         isMobileView={true}
                       />
                     ))}
@@ -480,6 +484,8 @@ export default function InspectionTable({
                           onPhotoChange={(photoData) => handlePhotoChange(idx, slotIdx, photoData)}
                           onPhotoDelete={() => handlePhotoDelete(idx, slotIdx)}
                           onPhotoClick={onPhotoClick}
+                          onFileSelected={(file) => onAttachFile && onAttachFile(idx, slotIdx, file)}
+                          onOpenAttachment={onOpenAttachment}
                           isMobileView={false}
                         />
                       </td>

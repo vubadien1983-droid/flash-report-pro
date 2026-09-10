@@ -8,12 +8,13 @@ import { fetchSharedReport } from '../services/shareService';
 import { exportExcelClient, exportPdfClient } from '../services/clientExport';
 import ImageModal from './ImageModal';
 import Toast from './Toast';
+import { getAttachmentBlob, openBlob, formatBytes } from '../services/fileAttachments';
 
 export default function ReportViewer({ reportId }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
-  const [activePhotoUrl, setActivePhotoUrl] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   // Responsive device view mode: 'auto' | 'laptop' | 'phone'
@@ -122,6 +123,54 @@ export default function ReportViewer({ reportId }) {
 
   const items = report.items || [];
   let seqCounter = 1;
+
+  // Every image in the shared report, so the lightbox can move between them.
+  const galleryPhotos = [];
+  items.forEach((item, i) => {
+    (item.photos || []).forEach((p, sIdx) => {
+      if (p && p.url && p.kind !== 'file') {
+        galleryPhotos.push({
+          url: p.url,
+          filename: p.filename || `Item ${i + 1} · Photo ${(p.slot_index ?? sIdx) + 1}`,
+        });
+      }
+    });
+  });
+
+  const openLightbox = (url) => {
+    const idx = galleryPhotos.findIndex((g) => g.url === url);
+    setLightboxIndex(idx >= 0 ? idx : 0);
+  };
+
+  const openAttachment = async (p) => {
+    if (!p?.file_ref) return;
+    showToast(`Opening ${p.filename || 'file'}…`, 'success');
+    try {
+      const got = await getAttachmentBlob('shared', reportId, p.file_ref);
+      if (!got) { showToast('That file is not available in this shared report.', 'error'); return; }
+      openBlob(got.blob, got.meta.filename);
+    } catch (e) {
+      showToast(`Could not open the file: ${e.message}`, 'error');
+    }
+  };
+
+  /** Card shown in a slot that holds a file rather than an image. */
+  const FileCell = ({ p }) => (
+    <button
+      type="button"
+      onClick={() => openAttachment(p)}
+      className="w-full h-full flex flex-col items-center justify-center gap-1.5 p-2 text-center hover:bg-brand-50/60 transition-colors"
+      title={`Open ${p.filename || 'file'}`}
+    >
+      <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+        <FileText className="w-4 h-4" />
+      </div>
+      <span className="text-[10px] font-bold text-brand-700 leading-tight break-all line-clamp-3 underline">
+        {p.filename || 'attachment'}
+      </span>
+      <span className="text-[9px] text-slate-400">{formatBytes(p.size)}</span>
+    </button>
+  );
 
   const activeItemsCount = items.filter(
     (item) =>
@@ -266,7 +315,7 @@ export default function ReportViewer({ reportId }) {
                 Detail of Inspection ({displayCount} {displayCount === 1 ? 'item' : 'items'})
               </h2>
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">Tap photo to zoom</span>
+            <span className="text-[11px] text-slate-500 font-medium">Tap a photo to zoom · swipe or ← → to browse</span>
           </div>
 
           {/* 1. Mobile Phone Touch Card View */}
@@ -329,9 +378,11 @@ export default function ReportViewer({ reportId }) {
                               key={slotIdx}
                               className="h-32 sm:h-36 rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center relative shadow-2xs"
                             >
-                              {p?.url ? (
+                              {p?.kind === 'file' ? (
+                                <FileCell p={p} />
+                              ) : p?.url ? (
                                 <div
-                                  onClick={() => setActivePhotoUrl(p.url)}
+                                  onClick={() => openLightbox(p.url)}
                                   className="w-full h-full cursor-pointer flex items-center justify-center p-1"
                                 >
                                   <img
@@ -395,9 +446,13 @@ export default function ReportViewer({ reportId }) {
                           const p = photos[slotIdx];
                           return (
                             <td key={slotIdx} className="px-1.5 py-2 align-middle w-36 md:w-44 lg:w-52 xl:w-60">
-                              {p?.url ? (
+                              {p?.kind === 'file' ? (
+                                <div className="h-32 lg:h-36 xl:h-40 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center">
+                                  <FileCell p={p} />
+                                </div>
+                              ) : p?.url ? (
                                 <div
-                                  onClick={() => setActivePhotoUrl(p.url)}
+                                  onClick={() => openLightbox(p.url)}
                                   className="relative group h-32 lg:h-36 xl:h-40 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer hover:border-brand-500 transition-all shadow-2xs flex items-center justify-center"
                                 >
                                   <img
@@ -469,10 +524,12 @@ export default function ReportViewer({ reportId }) {
 
       {/* Lightbox Zoom Modal */}
       <ImageModal
-        isOpen={Boolean(activePhotoUrl)}
-        imageUrl={activePhotoUrl}
+        isOpen={lightboxIndex !== null}
+        photos={galleryPhotos}
+        index={lightboxIndex ?? 0}
+        onIndexChange={setLightboxIndex}
         title={report.title}
-        onClose={() => setActivePhotoUrl(null)}
+        onClose={() => setLightboxIndex(null)}
       />
 
       {/* Toast Notification */}
