@@ -9,6 +9,7 @@ import { exportExcelClient, exportPdfClient } from '../services/clientExport';
 import ImageModal from './ImageModal';
 import Toast from './Toast';
 import { getAttachmentBlob, openBlob, formatBytes } from '../services/fileAttachments';
+import { computeRowNumbers, countContentRows } from '../services/reportNumbering';
 
 export default function ReportViewer({ reportId }) {
   const [report, setReport] = useState(null);
@@ -122,7 +123,7 @@ export default function ReportViewer({ reportId }) {
   }
 
   const items = report.items || [];
-  let seqCounter = 1;
+  const rowNumbers = computeRowNumbers(items);
 
   // Every image in the shared report, so the lightbox can move between them.
   const galleryPhotos = [];
@@ -172,14 +173,7 @@ export default function ReportViewer({ reportId }) {
     </button>
   );
 
-  const activeItemsCount = items.filter(
-    (item) =>
-      item.tag?.trim() ||
-      item.description?.trim() ||
-      item.note?.trim() ||
-      (item.photos && item.photos.some((p) => p?.url))
-  ).length;
-  const displayCount = activeItemsCount > 0 ? activeItemsCount : items.length;
+  const displayCount = countContentRows(items) || items.length;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans">
@@ -322,8 +316,7 @@ export default function ReportViewer({ reportId }) {
           {isPhoneView ? (
             <div className="p-2.5 sm:p-3 space-y-3.5">
               {items.map((item, idx) => {
-                const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
-                const no = hasContent ? seqCounter++ : '';
+                const no = rowNumbers[idx];
                 const photos = item.photos || [];
 
                 return (
@@ -418,8 +411,7 @@ export default function ReportViewer({ reportId }) {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {items.map((item, idx) => {
-                    const hasContent = Boolean(item.tag?.trim() || item.description?.trim());
-                    const no = hasContent ? seqCounter++ : '';
+                    const no = rowNumbers[idx];
                     const photos = item.photos || [];
 
                     return (

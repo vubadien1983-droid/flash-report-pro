@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus, CornerDownRight } from 'lucide-react';
 import PhotoSlot from './PhotoSlot';
 import { compressForStorage } from '../services/imageCompression';
+import { computeRowNumbers, countContentRows } from '../services/reportNumbering';
 
 // Auto-growing textarea component with zero scrollbars and dynamic full expansion
 function AutoGrowingTextarea({
@@ -206,37 +207,12 @@ export default function InspectionTable({
     onItemsChange(newItems);
   };
 
-  // Dynamic Row Numbering
-  let currentSeq = 0;
-  let lastSeenTag = '';
-  const computedNos = items.map((item) => {
-    const rawTag = (item.tag || '').trim();
-    const hasAnyContent = Boolean(rawTag || (item.description || '').trim() || (item.note || '').trim() || (item.photos && item.photos.some(Boolean)));
+  // Numbering and the item count come from ONE shared definition, so the
+  // screen, the PDF, the Excel file and the shared link can never disagree
+  // again. See services/reportNumbering.js.
+  const computedNos = computeRowNumbers(items);
+  const actualItemCount = countContentRows(items);
 
-    if (!hasAnyContent) return '';
-
-    if (rawTag && rawTag !== lastSeenTag) {
-      currentSeq += 1;
-      lastSeenTag = rawTag;
-      return currentSeq;
-    }
-
-    if (rawTag && rawTag === lastSeenTag) {
-      return '';
-    }
-
-    if (!rawTag) {
-      currentSeq += 1;
-      lastSeenTag = '';
-      return currentSeq;
-    }
-
-    return '';
-  });
-
-  const actualItemCount = items.filter(
-    (item) => Boolean((item.tag || '').trim() || (item.description || '').trim() || (item.note || '').trim() || (item.photos && item.photos.some(Boolean)))
-  ).length;
 
   return (
     <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
