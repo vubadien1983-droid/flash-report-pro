@@ -437,17 +437,23 @@ export default function MiniPlanTable({
     <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
       {header}
 
+      {/* The table carries a MIN WIDTH and the wrapper scrolls.
+          Without it `w-full` squeezes seven columns into whatever the pane is,
+          and at a laptop width of ~900px the Equipment column wraps one word
+          per line and the Note column becomes a vertical stack of letters.
+          A plan is read across the row, so the row must keep its shape and the
+          container must scroll instead. */}
       <div className="overflow-x-auto w-full">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full min-w-[1240px] text-left border-collapse table-fixed">
           <thead>
             <tr className="bg-slate-100/90 border-b border-slate-300 text-slate-800 text-xs font-bold">
               <th className="w-12 px-2 py-2.5 text-center">Item</th>
-              <th className="w-56 px-2.5 py-2.5 text-center">Equipment</th>
-              <th className="w-28 px-2 py-2.5 text-center">Schedule</th>
-              <th className="w-80 px-3 py-2.5 text-center">Activities</th>
-              <th className="w-28 px-2 py-2.5 text-center">Status</th>
-              <th className="w-44 px-2 py-2.5 text-center">Note</th>
-              <th className="px-2 py-2.5 text-center">Photo</th>
+              <th className="w-64 px-2.5 py-2.5 text-center">Equipment</th>
+              <th className="w-32 px-2 py-2.5 text-center">Schedule</th>
+              <th className="w-[22rem] px-3 py-2.5 text-center">Activities</th>
+              <th className="w-32 px-2 py-2.5 text-center">Status</th>
+              <th className="w-52 px-2 py-2.5 text-center">Note</th>
+              <th className="w-[19rem] px-2 py-2.5 text-center">Photo</th>
               <th className="w-14 px-1 py-2.5 text-center">Action</th>
             </tr>
           </thead>
@@ -554,7 +560,7 @@ export default function MiniPlanTable({
                     </td>
 
                     {/* Photo — ONE cell, many images */}
-                    <td className={`${cellBase} min-w-[16rem]`}>
+                    <td className={cellBase}>
                       <PhotoGalleryCell
                         photos={item.photos}
                         onPhotosChange={(ph) => setPhotos(index, ph)}
