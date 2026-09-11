@@ -114,6 +114,13 @@ export async function fetchReports() {
       return {
         id: d.id,
         title: data.title || 'Untitled Flash Report',
+        // Header fields the UI actually branches on. `report_type` picks the
+        // sidebar badge and the editor layout; `share_id` is what keeps
+        // `republishIfShared` working after a cold load. Both are single
+        // strings — this stays a HEADER query with no `items` (BUG-011).
+        report_type: data.report_type || '',
+        share_id: data.share_id || data.cloud_code || '',
+        cloud_code: data.cloud_code || data.share_id || '',
         system_tag: data.system_tag || '',
         location: data.location || '',
         inspection_date: data.inspection_date || '',
@@ -376,6 +383,17 @@ function _toFirestoreDoc(report) {
     // colour rules from this one field, so it has to survive the round trip
     // through Firestore like any other header value.
     report_type: report.report_type || '',
+    // The SHARE ID must survive the round trip.
+    //
+    // It used to live only in IndexedDB. `_toFirestoreDoc` dropped it, so the
+    // cloud copy never carried it - and the moment any cloud-adopt path wrote
+    // that copy over the local record (a realtime echo, a reload, another
+    // device), the id was gone. `republishIfShared` then silently did nothing
+    // on every later save, and the share link froze at whatever it held when
+    // it was created while the app kept reporting "Cloud Synced".
+    // A link the user believes is live but is not is worse than no link.
+    share_id: report.share_id || report.cloud_code || '',
+    cloud_code: report.cloud_code || report.share_id || '',
     system_tag: report.system_tag || '',
     location: report.location || '',
     inspection_date: report.inspection_date || '',

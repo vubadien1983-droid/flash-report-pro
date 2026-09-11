@@ -80,6 +80,8 @@ class RealtimeSync {
             id: d.id,
             title: data.title || 'Untitled Flash Report',
             report_type: data.report_type || '',
+            share_id: data.share_id || data.cloud_code || '',
+            cloud_code: data.cloud_code || data.share_id || '',
             system_tag: data.system_tag || '',
             location: data.location || '',
             inspection_date: data.inspection_date || '',
