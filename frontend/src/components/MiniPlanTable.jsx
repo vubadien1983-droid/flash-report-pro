@@ -41,7 +41,7 @@ function AutoGrowingTextarea({ value, onChange, placeholder, className = '', min
 function Chip({ state, count }) {
   const s = ROW_STATE_STYLE[state];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold ${s.tw} ${s.twText} border border-black/5`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold ${s.tw} ${s.twText} border border-black/5`}>
       <span className="w-2 h-2 rounded-sm" style={{ background: s.css }} />
       {s.label}
       {typeof count === 'number' && <strong className="tabular-nums">{count}</strong>}
@@ -211,10 +211,10 @@ export default function MiniPlanTable({
         value={st}
         disabled={readOnly}
         onChange={(e) => patchItem(index, { status: e.target.value })}
-        className={`w-full text-[11px] font-bold rounded-md border px-1.5 py-1.5 outline-none transition-colors cursor-pointer disabled:cursor-default ${s.tw}`}
+        className={`w-full text-[13px] font-bold rounded-md border px-1.5 py-1.5 outline-none transition-colors cursor-pointer disabled:cursor-default disabled:opacity-100 ${s.tw}`}
       >
         {STATUS_OPTIONS.map((o) => (
-          <option key={o || 'blank'} value={o} className="bg-white text-slate-800 font-semibold">
+          <option key={o || 'blank'} value={o} className="bg-white text-black font-semibold">
             {o || '— not started —'}
           </option>
         ))}
@@ -226,7 +226,7 @@ export default function MiniPlanTable({
     <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="w-2 h-2 rounded-full bg-brand-500" />
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+        <h3 className="text-[13px] font-bold uppercase tracking-wider text-black">
           Mini Plan ({stats.equipment} Equipment · {stats.total} activities)
         </h3>
         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
@@ -261,7 +261,7 @@ export default function MiniPlanTable({
   );
 
   const footer = (
-    <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
+    <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-200/80 flex items-center justify-between text-[12px] text-slate-600">
       <span className="flex items-center gap-1.5">
         <CalendarClock className="w-3.5 h-3.5 text-slate-400" />
         Colours follow Schedule vs today ({today})
@@ -300,7 +300,7 @@ export default function MiniPlanTable({
                   value={group.equipment}
                   onChange={(e) => setGroupEquipment(group.key, e.target.value)}
                   placeholder="Equipment name..."
-                  className="flex-1 text-xs font-bold text-white bg-transparent border border-transparent focus:border-white/40 rounded-md px-1.5 py-1 outline-none leading-snug whitespace-pre-wrap break-words placeholder:text-white/50"
+                  className="flex-1 text-[14px] font-bold text-white bg-transparent border border-transparent focus:border-white/40 rounded-md px-1.5 py-1 outline-none leading-snug whitespace-pre-wrap break-words placeholder:text-white/50"
                 />
                 {!readOnly && (
                   <button
@@ -323,7 +323,7 @@ export default function MiniPlanTable({
                       className={`rounded-lg border border-slate-200 p-2.5 space-y-2 ${s.tw}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                        <span className="text-[12px] font-bold text-slate-600 uppercase tracking-wide">
                           Activity {index - group.start + 1}
                         </span>
                         <div className="flex items-center gap-1">
@@ -347,28 +347,28 @@ export default function MiniPlanTable({
                         value={item.activity}
                         onChange={(e) => patchItem(index, { activity: e.target.value })}
                         placeholder="Activity to be carried out..."
-                        className="w-full text-xs text-slate-900 bg-white/85 border border-slate-200 rounded-lg p-2 focus:border-brand-500 outline-none leading-relaxed whitespace-pre-wrap break-words"
+                        className="w-full text-[14px] text-black bg-white/85 border border-slate-200 rounded-lg p-2 focus:border-brand-500 outline-none leading-relaxed whitespace-pre-wrap break-words disabled:text-black"
                       />
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] font-semibold text-slate-600 mb-1">Schedule</label>
+                          <label className="block text-[12px] font-semibold text-black mb-1">Schedule</label>
                           <input
                             type="date"
                             disabled={readOnly}
                             value={item.schedule || ''}
                             onChange={(e) => patchItem(index, { schedule: e.target.value })}
-                            className="w-full text-[11px] text-slate-800 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:border-brand-500 outline-none"
+                            className="w-full text-[14px] text-black bg-white border border-slate-200 rounded-lg px-2 py-2 focus:border-brand-500 outline-none disabled:text-black"
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-semibold text-slate-600 mb-1">Status</label>
+                          <label className="block text-[12px] font-semibold text-black mb-1">Status</label>
                           <StatusSelect index={index} value={item.status} />
                         </div>
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-semibold text-slate-600 mb-1">Note</label>
+                        <label className="block text-[12px] font-semibold text-black mb-1">Note</label>
                         <AutoGrowingTextarea
                           rows={1}
                           minHeight={36}
@@ -376,12 +376,12 @@ export default function MiniPlanTable({
                           value={item.note}
                           onChange={(e) => patchItem(index, { note: e.target.value })}
                           placeholder="Note..."
-                          className="w-full text-[11px] text-slate-700 bg-white/85 border border-slate-200 rounded-lg p-2 focus:border-brand-500 outline-none whitespace-pre-wrap break-words"
+                          className="w-full text-[14px] text-black bg-white/85 border border-slate-200 rounded-lg p-2 focus:border-brand-500 outline-none whitespace-pre-wrap break-words disabled:text-black"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                        <label className="block text-[12px] font-semibold text-black mb-1 flex items-center justify-between">
                           <span>Photo ({(item.photos || []).filter(Boolean).length})</span>
                           <span className="text-[9px] text-brand-600 font-medium">many photos per activity</span>
                         </label>
@@ -399,16 +399,19 @@ export default function MiniPlanTable({
                   );
                 })}
 
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={() => addRowToGroup(group)}
-                    className="w-full py-1.5 text-[11px] font-semibold text-brand-700 bg-white hover:bg-brand-50 border border-dashed border-brand-300 rounded-lg flex items-center justify-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add activity to this Equipment
-                  </button>
-                )}
+                {/* Visible when locked too — see the note on the laptop buttons. */}
+                <button
+                  type="button"
+                  onClick={() => (readOnly ? onRequestUnlock?.() : addRowToGroup(group))}
+                  className={`w-full py-2 text-[13px] font-bold border border-dashed rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
+                    readOnly
+                      ? 'text-slate-400 bg-white border-slate-300 hover:text-amber-700 hover:border-amber-400'
+                      : 'text-brand-700 bg-white hover:bg-brand-50 border-brand-300'
+                  }`}
+                >
+                  {readOnly ? <Lock className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  Add activity to this Equipment
+                </button>
               </div>
             </div>
           ))}
@@ -417,7 +420,7 @@ export default function MiniPlanTable({
             <button
               type="button"
               onClick={() => addEquipment()}
-              className="w-full py-2.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl flex items-center justify-center gap-1.5"
+              className="w-full py-3 text-[14px] font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl flex items-center justify-center gap-1.5"
             >
               <Layers className="w-4 h-4" />
               Add Equipment
@@ -444,9 +447,9 @@ export default function MiniPlanTable({
           A plan is read across the row, so the row must keep its shape and the
           container must scroll instead. */}
       <div className="overflow-x-auto w-full">
-        <table className="w-full min-w-[1240px] text-left border-collapse table-fixed">
+        <table className="w-full min-w-[1400px] text-left border-collapse table-fixed">
           <thead>
-            <tr className="bg-slate-100/90 border-b border-slate-300 text-slate-800 text-xs font-bold">
+            <tr className="bg-slate-100/90 border-b border-slate-300 text-black text-[13px] font-bold">
               <th className="w-12 px-2 py-2.5 text-center">Item</th>
               <th className="w-64 px-2.5 py-2.5 text-center">Equipment</th>
               <th className="w-32 px-2 py-2.5 text-center">Schedule</th>
@@ -471,7 +474,7 @@ export default function MiniPlanTable({
                     {isFirst && (
                       <>
                         <td rowSpan={group.count} className="px-2 py-2 text-center align-middle border-b border-slate-200 bg-white/60">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-800 text-white text-[11px] font-bold">
+                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-white text-[13px] font-bold">
                             {group.no || '-'}
                           </span>
                         </td>
@@ -483,36 +486,55 @@ export default function MiniPlanTable({
                             value={group.equipment}
                             onChange={(e) => setGroupEquipment(group.key, e.target.value)}
                             placeholder="Equipment name..."
-                            className="w-full text-[11px] font-bold text-slate-900 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none leading-snug whitespace-pre-wrap break-words"
+                            className="w-full text-[13px] font-bold text-black bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none leading-snug whitespace-pre-wrap break-words"
                           />
-                          {!readOnly && (
-                            <div className="flex items-center gap-1 mt-1 px-1">
-                              <button
-                                type="button"
-                                onClick={() => addRowToGroup(group)}
-                                title="Add an activity to this Equipment (Item and Equipment are filled in automatically)"
-                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-600 hover:text-white border border-brand-200 rounded-md transition-colors"
-                              >
-                                <Plus className="w-3 h-3" /> Row
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => addEquipment(group)}
-                                title="Insert a new Equipment below"
-                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-700 hover:text-white border border-slate-200 rounded-md transition-colors"
-                              >
-                                <Layers className="w-3 h-3" /> Equip
-                              </button>
+                          {/* These stay on screen when the plan is LOCKED, greyed
+                              but present, and a click asks for the password.
+                              Hiding them entirely was wrong: with nothing on
+                              screen there is no way to tell that adding a row to
+                              an Equipment is possible at all, so the feature
+                              reads as missing rather than as protected. */}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5 px-1">
+                            <button
+                              type="button"
+                              onClick={() => (readOnly ? onRequestUnlock?.() : addRowToGroup(group))}
+                              title={readOnly
+                                ? 'Enter the project password to add an activity'
+                                : 'Add an activity to this Equipment (Item and Equipment are filled in automatically)'}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-bold border rounded-md transition-colors ${
+                                readOnly
+                                  ? 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'
+                                  : 'text-brand-700 bg-brand-50 hover:bg-brand-600 hover:text-white border-brand-200'
+                              }`}
+                            >
+                              {readOnly ? <Lock className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                              Add row
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => (readOnly ? onRequestUnlock?.() : addEquipment(group))}
+                              title={readOnly
+                                ? 'Enter the project password to add an Equipment'
+                                : 'Insert a new Equipment below'}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-bold border rounded-md transition-colors ${
+                                readOnly
+                                  ? 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'
+                                  : 'text-slate-700 bg-slate-100 hover:bg-slate-700 hover:text-white border-slate-200'
+                              }`}
+                            >
+                              <Layers className="w-3.5 h-3.5" /> Equipment
+                            </button>
+                            {!readOnly && (
                               <button
                                 type="button"
                                 onClick={() => deleteGroup(group)}
                                 title="Delete this Equipment and all its activities"
                                 className="p-1 text-slate-400 hover:text-rose-600 rounded"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </td>
                       </>
                     )}
@@ -524,7 +546,7 @@ export default function MiniPlanTable({
                         disabled={readOnly}
                         value={item.schedule || ''}
                         onChange={(e) => patchItem(index, { schedule: e.target.value })}
-                        className="w-full text-[11px] text-slate-900 bg-white/85 border border-slate-200 rounded-md px-1.5 py-1 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent"
+                        className="w-full text-[13px] text-black bg-white/85 border border-slate-200 rounded-md px-1.5 py-1.5 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent disabled:text-black"
                       />
                     </td>
 
@@ -537,7 +559,7 @@ export default function MiniPlanTable({
                         value={item.activity}
                         onChange={(e) => patchItem(index, { activity: e.target.value })}
                         placeholder="Activity to be carried out..."
-                        className="w-full text-[11px] text-slate-900 bg-transparent hover:bg-white/90 focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none text-left leading-relaxed whitespace-pre-wrap break-words"
+                        className="w-full text-[13px] text-black bg-transparent hover:bg-white/90 focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none text-left leading-relaxed whitespace-pre-wrap break-words disabled:text-black"
                       />
                     </td>
 
@@ -555,7 +577,7 @@ export default function MiniPlanTable({
                         value={item.note}
                         onChange={(e) => patchItem(index, { note: e.target.value })}
                         placeholder="Note..."
-                        className="w-full text-[11px] text-slate-700 bg-transparent hover:bg-white/90 focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none text-left leading-relaxed whitespace-pre-wrap break-words"
+                        className="w-full text-[13px] text-black bg-transparent hover:bg-white/90 focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none text-left leading-relaxed whitespace-pre-wrap break-words disabled:text-black"
                       />
                     </td>
 

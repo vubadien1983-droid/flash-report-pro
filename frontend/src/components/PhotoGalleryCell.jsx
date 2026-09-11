@@ -282,14 +282,14 @@ export default function PhotoGalleryCell({
               className="flex-1 w-full flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-500 hover:bg-brand-50 text-slate-500 hover:text-brand-700 transition-colors"
             >
               <ImagePlus className="w-4 h-4" />
-              <span className="text-[9px] font-bold leading-none">Add</span>
+              <span className="text-[11px] font-bold leading-none">Add</span>
             </button>
             {isMobileView && (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click(); }}
                 title="Take a photo"
-                className="w-full py-1 flex items-center justify-center gap-1 rounded-lg bg-brand-600 text-white text-[9px] font-bold"
+                className="w-full py-1 flex items-center justify-center gap-1 rounded-lg bg-brand-600 text-white text-[11px] font-bold"
               >
                 <Camera className="w-3 h-3" />
                 Camera
@@ -299,21 +299,21 @@ export default function PhotoGalleryCell({
         )}
 
         {list.length === 0 && readOnly && (
-          <span className="text-[10px] text-slate-400 px-1 py-2">No photo</span>
+          <span className="text-[12px] text-slate-500 px-1 py-2">No photo</span>
         )}
       </div>
 
       {/* Per-image progress. Twelve photos take a while; silence is what made
           the old build feel frozen. */}
       {busy && (
-        <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-brand-700">
+        <div className="mt-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-brand-700">
           <RefreshCw className="w-3 h-3 animate-spin" />
           Processing {busy.done} / {busy.total}
         </div>
       )}
 
       {!readOnly && !busy && (
-        <div className="mt-1 px-0.5 text-[9px] text-slate-400 leading-tight">
+        <div className="mt-1 px-0.5 text-[11px] text-slate-500 leading-tight">
           {isSelected ? (
             <span className="font-bold text-brand-600">Ctrl + V to paste here</span>
           ) : (
