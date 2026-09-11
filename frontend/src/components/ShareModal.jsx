@@ -3,6 +3,7 @@ import {
   Link as LinkIcon, Copy, Check, ExternalLink, QrCode, X, Share2, Sparkles, Smartphone, Download, Globe
 } from 'lucide-react';
 import { exportStandaloneHtml } from '../services/htmlExporter';
+import { isMiniPlan, MINI_PLAN_LABEL } from '../services/miniPlan';
 
 export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
   const [copied, setCopied] = useState(false);
@@ -41,7 +42,12 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
 
   if (!isOpen || !shareUrl) return null;
 
-  const reportTitle = report?.title || 'Flash Inspection Report';
+  // A Mini Plan link is LIVE and password-locked; a Flash Report link is a
+  // snapshot that refreshes when the author saves. The dialog has to say which
+  // one the user is about to send, because the two promise different things to
+  // whoever receives them.
+  const plan = isMiniPlan(report);
+  const reportTitle = report?.title || (plan ? MINI_PLAN_LABEL : 'Flash Inspection Report');
 
   const handleCopy = async () => {
     try {
@@ -58,7 +64,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
       try {
         await navigator.share({
           title: reportTitle,
-          text: `Flash Inspection Report: ${reportTitle}`,
+          text: plan ? `Live plan: ${reportTitle}` : `Flash Inspection Report: ${reportTitle}`,
           url: shareUrl
         });
       } catch (err) {
@@ -83,8 +89,14 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
               <Share2 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm md:text-base font-bold text-slate-900">Share Flash Report</h3>
-              <p className="text-xs text-slate-500">Recipients can view the report and export Excel / PDF</p>
+              <h3 className="text-sm md:text-base font-bold text-slate-900">
+                {plan ? 'Share live plan' : 'Share Flash Report'}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {plan
+                  ? 'Recipients see the plan update live, and can export Excel / PDF'
+                  : 'Recipients can view the report and export Excel / PDF'}
+              </p>
             </div>
           </div>
           <button
@@ -98,17 +110,29 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
         {/* Report Title Badge */}
         <div className="mb-4 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center gap-2">
           <span className="px-2 py-0.5 bg-brand-100 text-brand-700 text-[10px] font-bold rounded-md uppercase">
-            Report
+            {plan ? 'Mini Plan' : 'Report'}
           </span>
           <span className="text-xs font-semibold text-slate-800 truncate">
             {reportTitle}
           </span>
         </div>
 
+        {/* What the recipient gets. Stated plainly so the sender knows what
+            they are handing over — a live document, editable only with the
+            project password. */}
+        {plan && (
+          <div className="mb-4 p-3 bg-emerald-50/70 border border-emerald-200/70 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
+            <strong className="font-bold">This link is live.</strong> Whoever opens it sees the
+            plan as it is right now, and it keeps updating on their screen as the plan changes —
+            no need to resend it. They can read it and export it, but{' '}
+            <strong className="font-bold">editing needs the project password</strong>.
+          </div>
+        )}
+
         {/* Share Link Input & Copy Button */}
         <div className="mb-4">
           <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-            <span>Shareable Online Link</span>
+            <span>{plan ? 'Live Plan Link' : 'Shareable Online Link'}</span>
             {copied && (
               <span className="text-emerald-600 text-xs font-medium flex items-center gap-1">
                 <Check className="w-3.5 h-3.5" /> Copied to clipboard!
