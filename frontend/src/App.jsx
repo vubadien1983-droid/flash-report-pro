@@ -356,11 +356,11 @@ export default function App() {
           if (!changed) continue;
 
           // Spread local FIRST so its `items` survive the header overlay.
-          await saveLocalReport({
+          await saveLocalReport(keepShareId({
             ...local, ...h,
             items: local.items,
             _syncStatus: SyncStatus.SYNCED,
-          });
+          }, local));
         } else {
           // A report created on another device. Stored header-only; the full
           // document (with photos) is fetched when the user opens it.
@@ -404,11 +404,11 @@ export default function App() {
           // Same protection as loadSingleReport: a remote copy whose photo
           // slots came back empty must not wipe images held only here.
           const localCopy = await getLocalReport(ev.report.id);
-          const safe = {
+          const safe = keepShareId({
             ...ev.report,
             items: mergePhotosPreferLocal(ev.report.items, localCopy?.items),
             _syncStatus: SyncStatus.SYNCED,
-          };
+          }, localCopy);
           delete safe._photosIncomplete;
 
           setCurrentReport(safe);
@@ -606,6 +606,20 @@ export default function App() {
     });
   };
 
+  /**
+   * Keep a share id the cloud copy does not have.
+   *
+   * Same shape of rule as the photo merge: an EMPTY field arriving from the
+   * cloud means "this copy predates the share" at least as often as it means
+   * "the share was withdrawn". Losing it breaks `republishIfShared` silently
+   * and freezes a link the user still believes is live.
+   */
+  const keepShareId = (incoming, local) => {
+    const id = incoming?.share_id || incoming?.cloud_code || local?.share_id || local?.cloud_code || '';
+    if (!id) return incoming;
+    return { ...incoming, share_id: id, cloud_code: id };
+  };
+
   /** True when this device holds at least one image the cloud copy is missing. */
   const localHasPhotoCloudLacks = (cloudItems, localItems) => {
     if (!Array.isArray(cloudItems) || !Array.isArray(localItems)) return false;
@@ -666,13 +680,13 @@ export default function App() {
           // simply because that read failed or the bytes were never written.
           // Overwriting a local image with an empty slot destroys the only
           // copy — which is exactly what used to happen (BUG-012).
-          const merged = {
+          const merged = keepShareId({
             ...cloudRep,
             items: mergePhotosPreferLocal(cloudRep.items, rep?.items),
             _version: Math.max(rep?._version || 0, cloudRep._version || 0),
             _syncStatus: SyncStatus.SYNCED,
             _lastSyncedAt: new Date().toISOString(),
-          };
+          }, rep);
           delete merged._photosIncomplete;
 
           setCurrentReport(merged);
