@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import {
   Plus, Search, FileSpreadsheet, Copy, Trash2, Calendar, Tag,
-  Clock, CheckCircle2, ChevronRight, Layers, FileText, X, RefreshCw
+  Clock, CheckCircle2, ChevronRight, Layers, FileText, X, RefreshCw,
+  CalendarRange, ChevronDown
 } from 'lucide-react';
 import { ReportSyncDot } from './SyncStatusIndicator';
+import { MINI_PLAN_TYPE, MINI_PLAN_LABEL } from '../services/miniPlan';
 
 export default function Sidebar({
   reports,
@@ -19,6 +21,9 @@ export default function Sidebar({
   onCloseMobileDrawer
 }) {
   const [searchTerm, setSearchTerm] = useState('');
+  // "New Report" now has to ask WHICH kind, so it opens a small menu instead
+  // of creating a Flash Report outright.
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
 
   const filteredReports = reports.filter((r) => {
     const term = searchTerm.toLowerCase();
@@ -35,6 +40,12 @@ export default function Sidebar({
       date.includes(term)
     );
   });
+
+  const startNew = (reportType) => {
+    setNewMenuOpen(false);
+    onNewReport(reportType);
+    if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+  };
 
   const handleSelect = (id) => {
     onSelectReport(id);
@@ -72,17 +83,49 @@ export default function Sidebar({
 
       {/* Action Buttons: New Report + Sync Cloud */}
       <div className="p-3 border-b border-slate-800/80 space-y-2">
-        <button
-          type="button"
-          onClick={() => {
-            onNewReport();
-            if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
-          }}
-          className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 rounded-xl shadow-md shadow-brand-600/30 hover:shadow-brand-600/50 transition-all active:scale-[0.98]"
-        >
-          <Plus className="w-4 h-4" />
-          New Report
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setNewMenuOpen((v) => !v)}
+            className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 rounded-xl shadow-md shadow-brand-600/30 hover:shadow-brand-600/50 transition-all active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4" />
+            New Report
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${newMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {newMenuOpen && (
+            <>
+              {/* Click-away layer. Without it the menu survives a click
+                  anywhere else and covers the report list. */}
+              <div className="fixed inset-0 z-10" onClick={() => setNewMenuOpen(false)} />
+              <div className="absolute left-0 right-0 mt-1.5 z-20 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => { startNew(''); }}
+                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-slate-700/80 transition-colors"
+                >
+                  <FileText className="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0" />
+                  <span>
+                    <span className="block text-xs font-bold text-white">Flash Report</span>
+                    <span className="block text-[10px] text-slate-400 leading-snug">Inspection log · 4 photo slots per row</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { startNew(MINI_PLAN_TYPE); }}
+                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-slate-700/80 transition-colors border-t border-slate-700/70"
+                >
+                  <CalendarRange className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                  <span>
+                    <span className="block text-xs font-bold text-white">{MINI_PLAN_LABEL}</span>
+                    <span className="block text-[10px] text-slate-400 leading-snug">Schedule · colour by status · many photos per row · live link</span>
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {onSyncCloud && (
           <button
@@ -171,6 +214,12 @@ export default function Sidebar({
 
                 {/* Sub info tags */}
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                  {report.report_type === MINI_PLAN_TYPE && (
+                    <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-bold inline-flex items-center gap-1">
+                      <CalendarRange className="w-2.5 h-2.5" />
+                      Mini Plan
+                    </span>
+                  )}
                   {report.inspection_date && (
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-slate-500" />
