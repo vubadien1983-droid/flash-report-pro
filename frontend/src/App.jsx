@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save, Download, FileSpreadsheet, FileText, Printer,
   Sparkles, Check, RefreshCw, AlertCircle, Share2, Menu,
-  Laptop, Smartphone, Sliders, ChevronDown, Link as LinkIcon
+  Laptop, Smartphone, Sliders, ChevronDown, Link as LinkIcon,
+  Lock, Unlock
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import HeaderForm from './components/HeaderForm';
@@ -11,7 +12,9 @@ import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
 import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
-import ReportViewer from './components/ReportViewer';
+import SharedViewRouter from './components/SharedViewRouter';
+import MiniPlanTable from './components/MiniPlanTable';
+import PasswordModal from './components/PasswordModal';
 import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
 import { fileKey } from './services/firebase';
@@ -35,6 +38,14 @@ import {
 } from './services/shareService';
 import syncEngine, { SyncStatus } from './services/syncEngine';
 import realtimeSync from './services/realtimeSync';
+import {
+  MINI_PLAN_TYPE, MINI_PLAN_LABEL, isMiniPlan,
+  normalizeMiniPlanItems, makeMiniPlanRow, makeGroupId,
+} from './services/miniPlan';
+import { MINI_PLAN_SEED, MINI_PLAN_DEFAULT_TITLE } from './services/miniPlanSeed';
+import {
+  isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
+} from './services/miniPlanAuth';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -106,6 +117,26 @@ export default function App() {
   const [toast, setToast] = useState({ message: '', type: 'success', action: null });
   const [isExporting, setIsExporting] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+
+  // Mini Plan edit lock. Held in sessionStorage by services/miniPlanAuth so a
+  // reload of the shared link re-locks; mirrored into state so the table, the
+  // header badge and the Share button all flip together.
+  const [miniPlanUnlocked, setMiniPlanUnlocked] = useState(isMiniPlanUnlocked());
+  const [passwordPrompt, setPasswordPrompt] = useState(null); // null | { then }
+
+  useEffect(() => onMiniPlanLockChange(setMiniPlanUnlocked), []);
+
+  // A Mini Plan is read-only until the project password is entered. Both
+  // editing and ISSUING THE SHARE LINK sit behind it - handing somebody a live
+  // link is as consequential as changing the plan, so it is gated the same way.
+  const isPlanReport = isMiniPlan(currentReport);
+  const planLocked = isPlanReport && !miniPlanUnlocked;
+
+  /** Run `action` now, or after the password is accepted. */
+  const requirePlanPassword = (action) => {
+    if (!planLocked) { action(); return; }
+    setPasswordPrompt({ then: action });
+  };
 
   const autoSaveTimerRef = useRef(null);
   const undoDeleteRef = useRef(null);
@@ -316,6 +347,7 @@ export default function App() {
         if (local) {
           const changed =
             local.title !== h.title ||
+            local.report_type !== h.report_type ||
             local.system_tag !== h.system_tag ||
             local.location !== h.location ||
             local.inspection_date !== h.inspection_date ||
@@ -872,6 +904,7 @@ export default function App() {
 
   const handleHeaderChange = (field, value) => {
     if (!currentReport) return;
+    if (planLocked) return;   // the inputs are disabled too; this is the backstop
     const updated = { ...currentReport, [field]: value };
     setCurrentReport(updated);
     triggerAutoSave(updated);
@@ -879,19 +912,59 @@ export default function App() {
 
   const handleItemsChange = (newItems) => {
     if (!currentReport) return;
+    if (planLocked) return;   // ditto - MiniPlanTable renders read-only when locked
     const updated = { ...currentReport, items: newItems };
     setCurrentReport(updated);
     triggerAutoSave(updated);
   };
 
-  const handleNewReport = async () => {
+  /**
+   * Build the rows a brand-new Mini Plan starts with.
+   *
+   * The plan as it stands (items 1-19) is copied in from services/
+   * miniPlanSeed.js, because an empty CPP Mechanical Mini Plan is of no use to
+   * anyone - the equipment list and its activities already exist. From this
+   * point the report in Firestore is the live document: editing the seed file
+   * later changes only what the NEXT new plan starts from, never this one.
+   */
+  const buildMiniPlanItems = () => {
+    const rows = [];
+    for (const group of MINI_PLAN_SEED) {
+      const gid = makeGroupId();
+      for (const r of group.rows) {
+        rows.push(makeMiniPlanRow(gid, group.equipment, {
+          schedule: r.schedule || '',
+          activity: r.activity || '',
+          status: r.status || '',
+          note: r.note || '',
+        }));
+      }
+    }
+    return normalizeMiniPlanItems(rows);
+  };
+
+  const handleNewReport = async (reportType = '') => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     try {
       setIsSaving(true);
       const newId = `rep_${Date.now()}`;
-      const defaultNew = {
+      const isPlan = reportType === MINI_PLAN_TYPE;
+
+      const defaultNew = isPlan ? {
+        id: newId,
+        title: MINI_PLAN_DEFAULT_TITLE,
+        report_type: MINI_PLAN_TYPE,
+        system_tag: '',
+        location: 'Block B CPP',
+        inspection_date: new Date().toISOString().split('T')[0],
+        discipline: 'Mechanical',
+        items: buildMiniPlanItems(),
+        _version: 1,
+        _syncStatus: SyncStatus.PENDING,
+      } : {
         id: newId,
         title: 'New Flash Report',
+        report_type: '',
         system_tag: '',
         location: '',
         inspection_date: new Date().toISOString().split('T')[0],
@@ -914,7 +987,10 @@ export default function App() {
       setActiveReportId(saved.id);
       localStorage.setItem('flash_report_last_active_id', saved.id);
       setHasUnsavedChanges(false);
-      showToast('New report created', 'success');
+      showToast(
+        isPlan ? `${MINI_PLAN_LABEL} created with ${MINI_PLAN_SEED.length} equipment items` : 'New report created',
+        'success'
+      );
     } catch (err) {
       console.error('Failed to create report:', err);
       showToast('Error creating report', 'error');
@@ -1038,6 +1114,11 @@ export default function App() {
   // Share Link Handler
   const handleOpenShareModal = async () => {
     if (!currentReport) return;
+    if (planLocked) {
+      // Ask for the password, then come back and publish.
+      setPasswordPrompt({ then: () => handleOpenShareModal() });
+      return;
+    }
     setIsPublishing(true);
     try {
       const { shareUrl, shareId } = await publishReportForSharing(currentReport);
@@ -1122,9 +1203,10 @@ export default function App() {
     return <FileViewer shareId={fileRouteMatch[1]} fileKey={fileRouteMatch[2]} />;
   }
 
-  // If user opens a shared presentation link e.g. #/view/:id
+  // A shared link e.g. #/view/:id. Which viewer it opens depends on the
+  // report's type, so the router probes that before mounting either.
   if (isViewRoute && sharedReportId) {
-    return <ReportViewer reportId={sharedReportId} />;
+    return <SharedViewRouter shareId={sharedReportId} />;
   }
 
   if (loading) {
@@ -1242,9 +1324,35 @@ export default function App() {
             title="Generate shareable web link with QR code"
           >
             {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 text-brand-600" />}
-            <span className="hidden sm:inline">Share Link</span>
+            <span className="hidden sm:inline">{isPlanReport ? 'Live Link' : 'Share Link'}</span>
             <span className="sm:hidden">Share</span>
           </button>
+
+          {/* Mini Plan lock. Only a plan has one, so it is not drawn for a
+              Flash Report, which has never been password protected. */}
+          {isPlanReport && (
+            planLocked ? (
+              <button
+                type="button"
+                onClick={() => setPasswordPrompt({ then: () => {} })}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors"
+                title="Enter the project password to edit or share this plan"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Locked</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { lockMiniPlan(); showToast('Plan locked', 'info'); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors"
+                title="Lock this plan again"
+              >
+                <Unlock className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Unlocked</span>
+              </button>
+            )
+          )}
 
           <button
             type="button"
@@ -1343,16 +1451,30 @@ export default function App() {
                 <HeaderForm
                   report={currentReport}
                   onChange={handleHeaderChange}
+                  variant={isPlanReport ? 'miniPlan' : 'flash'}
+                  readOnly={planLocked}
+                  onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}
                 />
 
-                <InspectionTable
-                  items={currentReport.items || []}
-                  onItemsChange={handleItemsChange}
-                  onPhotoClick={openLightboxByUrl}
-                  onAttachFile={handleAttachFile}
-                  onOpenAttachment={handleOpenAttachment}
-                  isMobileMode={isPhoneView}
-                />
+                {isPlanReport ? (
+                  <MiniPlanTable
+                    items={normalizeMiniPlanItems(currentReport.items)}
+                    onItemsChange={handleItemsChange}
+                    onPhotoClick={openLightboxByUrl}
+                    isMobileMode={isPhoneView}
+                    readOnly={planLocked}
+                    onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}
+                  />
+                ) : (
+                  <InspectionTable
+                    items={currentReport.items || []}
+                    onItemsChange={handleItemsChange}
+                    onPhotoClick={openLightboxByUrl}
+                    onAttachFile={handleAttachFile}
+                    onOpenAttachment={handleOpenAttachment}
+                    isMobileMode={isPhoneView}
+                  />
+                )}
               </>
             )}
           </div>
@@ -1418,13 +1540,35 @@ export default function App() {
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
       />
 
-      {/* Share Modal */}
+      {/* Share Modal.
+          `report` is the prop ShareModal actually reads - it was being passed
+          as `currentReport`, so the "Download standalone HTML" button inside
+          the dialog had nothing to export. */}
       <ShareModal
         isOpen={shareModalState.isOpen}
         shareUrl={shareModalState.shareUrl}
-        reportTitle={shareModalState.reportTitle}
-        currentReport={currentReport}
+        report={currentReport}
         onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
+      />
+
+      {/* Mini Plan password prompt. Opened by an edit attempt, by the lock
+          badge, or by pressing Share on a locked plan; whatever asked for it
+          runs once the password is accepted. */}
+      <PasswordModal
+        isOpen={Boolean(passwordPrompt)}
+        title={`Unlock ${MINI_PLAN_LABEL}`}
+        message="Editing this plan and issuing its live share link are password protected."
+        onSubmit={(pw) => {
+          const ok = unlockMiniPlan(pw);
+          if (ok) {
+            const next = passwordPrompt?.then;
+            setPasswordPrompt(null);
+            showToast('Editing unlocked for this session', 'success');
+            if (typeof next === 'function') setTimeout(next, 0);
+          }
+          return ok;
+        }}
+        onClose={() => setPasswordPrompt(null)}
       />
 
       {/* Upload progress. A long first sync is normal; a long sync with no
