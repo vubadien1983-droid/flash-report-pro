@@ -5,6 +5,8 @@
  */
 
 import { computeRowNumbers } from './reportNumbering';
+import { isMiniPlan } from './miniPlan';
+import { exportMiniPlanExcel, exportMiniPlanPdf } from './miniPlanExport';
 
 function sanitizeFilename(name) {
   return (name || 'Flash_Report').replace(/[\\/*?:"<>|]/g, '_').trim();
@@ -99,6 +101,11 @@ function isFileSlot(p) {
 
 export async function exportExcelClient(report) {
   if (!report) throw new Error('No report data provided');
+
+  // A Mini Plan is a different document - seven columns, merged Item and
+  // Equipment, one Photo cell holding many images - so it has its own
+  // exporter rather than a pile of branches in this one.
+  if (isMiniPlan(report)) return exportMiniPlanExcel(report);
 
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
@@ -405,6 +412,8 @@ export async function exportExcelClient(report) {
 
 export async function exportPdfClient(report) {
   if (!report) throw new Error('No report data provided');
+
+  if (isMiniPlan(report)) return exportMiniPlanPdf(report);
 
   // A4 Landscape: 297mm x 210mm (841.89pt x 595.28pt)
   const [{ default: jsPDF }] = await Promise.all([

@@ -79,6 +79,7 @@ class RealtimeSync {
           return {
             id: d.id,
             title: data.title || 'Untitled Flash Report',
+            report_type: data.report_type || '',
             system_tag: data.system_tag || '',
             location: data.location || '',
             inspection_date: data.inspection_date || '',

@@ -371,6 +371,11 @@ export async function migrateReportPhotosToStorage(report) {
 function _toFirestoreDoc(report) {
   const doc = {
     title: report.title || 'Untitled Flash Report',
+    // Which KIND of report this is ('' = Flash Report, the original and still
+    // the default). Every surface picks its layout, its exporter and its
+    // colour rules from this one field, so it has to survive the round trip
+    // through Firestore like any other header value.
+    report_type: report.report_type || '',
     system_tag: report.system_tag || '',
     location: report.location || '',
     inspection_date: report.inspection_date || '',

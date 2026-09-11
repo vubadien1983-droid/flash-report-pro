@@ -4,6 +4,8 @@
  */
 
 import { computeRowNumbers, countContentRows } from './reportNumbering';
+import { isMiniPlan } from './miniPlan';
+import { exportMiniPlanHtml } from './miniPlanHtml';
 
 function sanitizeFilename(name) {
   return (name || 'Flash_Report').replace(/[\\/*?:"<>|]/g, '_').trim();
@@ -11,6 +13,9 @@ function sanitizeFilename(name) {
 
 export function exportStandaloneHtml(report) {
   if (!report) return;
+
+  // The Mini Plan has its own single-file layout.
+  if (isMiniPlan(report)) return exportMiniPlanHtml(report);
 
   const items = report.items || [];
   const rowNumbers = computeRowNumbers(items);

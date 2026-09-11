@@ -198,8 +198,14 @@ export async function publishReportForSharing(report) {
   }
 
   // 3. Write the report document.
+  //
+  // `report_type` MUST travel with it. The public viewer decides which layout
+  // to render from this field alone — it has no other copy of the document —
+  // so a Mini Plan published without it opens as a four-photo Flash Report
+  // with every column empty.
   await withTimeout(setDoc(sharedDoc(shareId), {
     title: report.title || 'Untitled Flash Report',
+    report_type: report.report_type || '',
     system_tag: report.system_tag || '',
     location: report.location || '',
     inspection_date: report.inspection_date || '',
@@ -245,6 +251,33 @@ export async function republishIfShared(report) {
     console.warn('Share refresh failed:', e.message);
   } finally {
     _republishInFlight.delete(shareId);
+  }
+}
+
+/**
+ * Read ONLY the type of a shared report.
+ *
+ * The public route has to choose a layout before it loads anything: a Mini
+ * Plan opens a live listener and a seven-column table, a Flash Report a
+ * one-shot fetch and four photo slots. Doing that with a full
+ * `fetchSharedReport` would download every photo in the document just to read
+ * one string, and then throw the result away - on a plan with sixty images
+ * that is megabytes before the first paint. This reads the parent document
+ * only; its `items` carry pointers, not bytes.
+ *
+ * @returns {Promise<string>} the report_type, or '' for a Flash Report / an
+ *          unreadable link. Never throws - the caller falls back to the Flash
+ *          Report viewer, which has its own "not found" screen.
+ */
+export async function fetchSharedReportType(shareId) {
+  if (!isFirebaseConfigured || !shareId) return '';
+  const cleanId = String(shareId).split('?')[0].split('/')[0].trim();
+  try {
+    const snap = await withTimeout(getDoc(sharedDoc(cleanId)), READ_TIMEOUT_MS, 'Checking the shared link');
+    return snap.exists() ? (snap.data()?.report_type || '') : '';
+  } catch (e) {
+    console.warn('Shared report type probe failed:', e.message);
+    return '';
   }
 }
 
