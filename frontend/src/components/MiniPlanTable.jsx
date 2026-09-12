@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
-  CornerDownRight, Layers,
+  CornerDownRight, Layers, Search, X, CalendarRange, SearchX,
 } from 'lucide-react';
 import PhotoGalleryCell from './PhotoGalleryCell';
 import { compressForStorage, yieldToBrowser } from '../services/imageCompression';
@@ -9,6 +9,7 @@ import {
   STATUS_OPTIONS, STATUS_STYLE, ROW_STATE_LEGEND, ROW_STATE_STYLE,
   rowState, rowStyle, todayKey, groupMiniPlanItems, miniPlanStats,
   makeMiniPlanRow, makeGroupId, nextPhotoSlot, normalizeStatus,
+  filterMiniPlanGroups, weekRange,
 } from '../services/miniPlan';
 
 /** Auto-growing textarea — no scrollbars, grows to fit its content. */
@@ -74,12 +75,37 @@ export default function MiniPlanTable({
   onRequestUnlock,
 }) {
   const [selectedCell, setSelectedCell] = useState(null); // itemIndex | null
+
+  // Search box and the "this week" toggle. Deliberately NOT gated on
+  // `readOnly`: finding your equipment and seeing what is due this week is
+  // reading, not editing, so it works on the public link with no password.
+  const [search, setSearch] = useState('');
+  const [weekOnly, setWeekOnly] = useState(false);
+
   // Recomputed once per render; "today" only changes at midnight and a stale
   // value would silently mis-colour every row, so it is read fresh.
   const today = todayKey();
 
-  const groups = groupMiniPlanItems(items);
+  const allGroups = groupMiniPlanItems(items);
+  // Statistics describe the WHOLE plan, never the filtered view - a completion
+  // percentage that changed when you typed in a search box would be a lie.
   const stats = miniPlanStats(items, today);
+
+  const {
+    groups, matched, groupCount, rowCount, active: filterActive,
+  } = filterMiniPlanGroups(allGroups, { search, week: weekOnly, today });
+
+  const week = weekRange(today);
+  const clearFilters = () => { setSearch(''); setWeekOnly(false); };
+
+  /** Mark the rows that actually matched, so it is clear why a group is here.
+   *  An OUTLINE, not a fill: the row background already carries the schedule
+   *  status, and overwriting it would destroy the colour rule the plan is
+   *  read by. */
+  const matchClass = (index) =>
+    filterActive && matched.has(index)
+      ? 'ring-2 ring-inset ring-violet-500/70 bg-violet-50/40'
+      : '';
 
   // ── Mutations ──────────────────────────────────────────────────
   const patchItem = (index, patch) => {
@@ -260,6 +286,92 @@ export default function MiniPlanTable({
     </div>
   );
 
+  /**
+   * Search + "this week", available to EVERYONE including a viewer on the
+   * public link who has not entered the password. Reading the plan and
+   * finding your way around it is not editing.
+   */
+  const toolbar = (
+    <div className="px-4 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2">
+      <div className="relative flex-1 min-w-[220px] max-w-lg">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search anything - equipment, activity, note, status, date..."
+          className="w-full text-[13px] text-black bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            title="Clear the search"
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setWeekOnly((v) => !v)}
+        title={`Show only Equipment with an activity scheduled ${week.start} to ${week.end}`}
+        className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${
+          weekOnly
+            ? 'bg-violet-600 text-white border-violet-700 shadow-sm shadow-violet-600/30'
+            : 'bg-white text-black border-slate-300 hover:bg-slate-50'
+        }`}
+      >
+        <CalendarRange className="w-4 h-4" />
+        This week
+      </button>
+
+      {filterActive && (
+        <>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-bold text-violet-900 bg-violet-100 border border-violet-300 rounded-md">
+            {groupCount} Equipment · {rowCount} matching {rowCount === 1 ? 'activity' : 'activities'}
+          </span>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        </>
+      )}
+
+      {weekOnly && (
+        <span className="text-[12px] text-slate-500">
+          Week of {week.start} to {week.end}
+        </span>
+      )}
+    </div>
+  );
+
+  /* Shown instead of the table when a filter excludes everything, so an empty
+     screen is never mistaken for an empty plan. */
+  const emptyState = (
+    <div className="px-4 py-12 text-center">
+      <SearchX className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+      <p className="text-[14px] font-bold text-black">No Equipment matches</p>
+      <p className="text-[12px] text-slate-500 mt-1">
+        {weekOnly
+          ? `Nothing is scheduled between ${week.start} and ${week.end}${search ? ' for that search' : ''}.`
+          : 'Try a shorter search.'}
+      </p>
+      <button
+        type="button"
+        onClick={clearFilters}
+        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-lg"
+      >
+        <X className="w-4 h-4" /> Clear filters
+      </button>
+    </div>
+  );
+
   const footer = (
     <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-200/80 flex items-center justify-between text-[12px] text-slate-600">
       <span className="flex items-center gap-1.5">
@@ -284,6 +396,9 @@ export default function MiniPlanTable({
     return (
       <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
         {header}
+        {toolbar}
+
+        {filterActive && groups.length === 0 && emptyState}
 
         <div className="p-3 space-y-4 bg-slate-50/50">
           {groups.map((group) => (
@@ -320,7 +435,7 @@ export default function MiniPlanTable({
                   return (
                     <div
                       key={item.id || index}
-                      className={`rounded-lg border border-slate-200 p-2.5 space-y-2 ${s.tw}`}
+                      className={`rounded-lg border border-slate-200 p-2.5 space-y-2 ${s.tw} ${matchClass(index)}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[12px] font-bold text-slate-600 uppercase tracking-wide">
@@ -439,6 +554,9 @@ export default function MiniPlanTable({
   return (
     <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
       {header}
+      {toolbar}
+
+      {filterActive && groups.length === 0 && emptyState}
 
       {/* The table carries a MIN WIDTH and the wrapper scrolls.
           Without it `w-full` squeezes seven columns into whatever the pane is,
@@ -470,7 +588,7 @@ export default function MiniPlanTable({
                 const isFirst = rowIdx === 0;
 
                 return (
-                  <tr key={item.id || index} className={`${s.tw} hover:brightness-[0.985] transition-all`}>
+                  <tr key={item.id || index} className={`${s.tw} ${matchClass(index)} hover:brightness-[0.985] transition-all`}>
                     {isFirst && (
                       <>
                         <td rowSpan={group.count} className="px-2 py-2 text-center align-middle border-b border-slate-200 bg-white/60">
