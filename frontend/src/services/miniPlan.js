@@ -363,3 +363,127 @@ export function nextPhotoSlot(photos) {
   }
   return max + 1;
 }
+
+// --- Search and the "this week" filter ----------------------------
+//
+// Both are VIEW-ONLY. They never touch `items`, never reorder it and never
+// renumber anything: they decide which groups the table draws and which rows
+// it highlights, working from the ORIGINAL indices that `groupMiniPlanItems`
+// already carries. A filter that rewrote the array would break every edit
+// handler, because those address rows by their index in the real list.
+//
+// This lives here rather than in the component because the laptop table, the
+// phone cards and the public live link all have to agree on what "this week"
+// means and on what counts as a match - the same reason the colour rule is
+// here.
+
+/**
+ * Monday-to-Sunday week containing `today`, as {start, end} YYYY-MM-DD.
+ *
+ * Monday-start is the working convention on this project. `getDay()` returns
+ * 0 for Sunday, so Sunday has to fold back to the END of the week, not the
+ * start - otherwise every Sunday would show the week about to begin instead
+ * of the one just worked.
+ */
+export function weekRange(today = todayKey()) {
+  const [y, m, d] = today.split('-').map(Number);
+  const base = new Date(y, m - 1, d);
+  const dow = base.getDay();                 // 0 = Sunday
+  const backToMonday = dow === 0 ? 6 : dow - 1;
+
+  const start = new Date(base);
+  start.setDate(base.getDate() - backToMonday);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return { start: todayKey(start), end: todayKey(end) };
+}
+
+/** Is this row's Schedule inside the current week? A blank schedule is not. */
+export function isInCurrentWeek(schedule, today = todayKey()) {
+  const key = scheduleKey(schedule);
+  if (!key) return false;
+  const { start, end } = weekRange(today);
+  return key >= start && key <= end;
+}
+
+/**
+ * Fold text for searching: lower-cased and stripped of diacritics, so typing
+ * "kiem tra" finds "Kiem tra" written with accents, and "e-1302" finds
+ * "E-1302". Notes on this project are written in both English and Vietnamese,
+ * often without the accents.
+ */
+export function normalizeSearchText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+/** Human form of a schedule, so searching "14-Sep" matches what is on screen. */
+function scheduleLabel(schedule) {
+  const key = scheduleKey(schedule);
+  if (!key) return '';
+  const [y, m, d] = key.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${Number(d)}-${months[Number(m) - 1]}-${y.slice(2)} ${key}`;
+}
+
+/**
+ * Does this row match the typed text? Every field the user can see is
+ * searchable - equipment, activity, note, status, and the schedule in both
+ * the stored and the displayed spelling. Searching one column only would make
+ * the box feel broken the first time somebody types a date or a status.
+ */
+export function itemMatchesSearch(item, needle) {
+  if (!needle) return true;
+  const hay = normalizeSearchText([
+    item?.equipment,
+    item?.activity,
+    item?.note,
+    normalizeStatus(item?.status),
+    scheduleLabel(item?.schedule),
+  ].join(' ~ '));
+  return hay.includes(needle);
+}
+
+/**
+ * Apply the search box and the week toggle to grouped rows.
+ *
+ * THE GROUP IS THE UNIT. If ANY activity of an Equipment matches, the whole
+ * Equipment is kept with ALL of its activities - that is what makes the
+ * filter usable on a plan: to act on the one item that is due this week you
+ * need the rest of that equipment's work in front of you, not a row torn out
+ * of its context.
+ *
+ * The rows that actually matched come back in `matched` so the table can mark
+ * them; without that the user cannot tell WHY a group is on screen.
+ *
+ * @returns {{groups, matched:Set<number>, groupCount:number, rowCount:number, active:boolean}}
+ */
+export function filterMiniPlanGroups(groups, { search = '', week = false, today = todayKey() } = {}) {
+  const needle = normalizeSearchText(search).trim();
+  const active = Boolean(needle) || week;
+  if (!active) {
+    return { groups, matched: new Set(), groupCount: groups.length, rowCount: 0, active: false };
+  }
+
+  const matched = new Set();
+  const kept = [];
+
+  for (const group of groups) {
+    let hit = false;
+    for (const { item, index } of group.rows) {
+      const okSearch = itemMatchesSearch(item, needle);
+      const okWeek = !week || isInCurrentWeek(item?.schedule, today);
+      if (okSearch && okWeek) {
+        matched.add(index);
+        hit = true;
+      }
+    }
+    // Keep EVERY row of the group, not only the matching ones.
+    if (hit) kept.push(group);
+  }
+
+  return { groups: kept, matched, groupCount: kept.length, rowCount: matched.size, active: true };
+}
