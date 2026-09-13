@@ -10,6 +10,7 @@ import {
 import {
   STATUS_STYLE, ROW_STATE_STYLE, rowState, normalizeStatus, scheduleKey,
   todayKey, WEEK_MODE, FOCUS, EMPTY_FILTER, completedKey, isCompletedDateInferred,
+  needsPlanDate, NO_DATE_CELL,
 } from '../services/miniPlan';
 import {
   exportDashboardExcel, exportDashboardPdf,
@@ -334,8 +335,13 @@ export default function MiniPlanDashboard({
                     <td className="px-2 py-1.5 text-[12.5px] text-black align-top leading-snug whitespace-pre-wrap break-words">
                       {row.item.activity || <span className="text-slate-400 italic">—</span>}
                     </td>
-                    <td className="px-2 py-1.5 text-center text-[12px] text-black tabular-nums align-top whitespace-nowrap">
-                      {fmtDate(row.item.schedule)}
+                    {/* Only the empty Schedule box is marked, never the row. */}
+                    <td className="px-1.5 py-1.5 text-center text-[12px] text-black tabular-nums align-top whitespace-nowrap">
+                      <span className={`inline-block w-full px-1 py-0.5 ${
+                        needsPlanDate(row.item, today) ? NO_DATE_CELL.tw : ''
+                      }`}>
+                        {fmtDate(row.item.schedule) || <span className="text-slate-300">—</span>}
+                      </span>
                     </td>
                     <td className="px-2 py-1.5 text-center align-top">
                       <span

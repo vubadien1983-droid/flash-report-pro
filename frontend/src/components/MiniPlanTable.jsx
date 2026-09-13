@@ -13,6 +13,7 @@ import {
   rowStyle, todayKey, groupMiniPlanItems, miniPlanStats,
   makeMiniPlanRow, makeGroupId, nextPhotoSlot,
   filterMiniPlanGroups, statusChangePatch, isCompletedDateInferred,
+  needsPlanDate, NO_DATE_CELL,
   EMPTY_FILTER, normalizeFilter, weekRangeFor, weekModeLabel, WEEK_MODE, FOCUS,
 } from '../services/miniPlan';
 
@@ -543,7 +544,9 @@ export default function MiniPlanTable({
                             onEdit={() => beginEdit(index, 'schedule')}
                             onCommit={(v) => commitCell(index, { schedule: v })}
                             onCancel={cancelEdit}
-                            displayClassName="text-[14px] text-black bg-white/70 border border-slate-200"
+                            displayClassName={`text-[14px] text-black border border-slate-200 ${
+                              needsPlanDate(item, today) ? NO_DATE_CELL.tw : 'bg-white/70'
+                            }`}
                           />
                         </div>
                         <div>
@@ -756,7 +759,8 @@ export default function MiniPlanTable({
                       </>
                     )}
 
-                    {/* Schedule */}
+                    {/* Schedule — tinted when it is EMPTY, so the mark sits on
+                        the missing value instead of colouring the whole row. */}
                     <td className={`${cellBase} align-middle`}>
                       <DateCell
                         value={item.schedule}
@@ -765,7 +769,7 @@ export default function MiniPlanTable({
                         onEdit={() => beginEdit(index, 'schedule')}
                         onCommit={(v) => commitCell(index, { schedule: v })}
                         onCancel={cancelEdit}
-                        displayClassName="text-[13px] text-black"
+                        displayClassName={`text-[13px] text-black ${needsPlanDate(item, today) ? NO_DATE_CELL.tw : ''}`}
                       />
                     </td>
 
