@@ -44,6 +44,8 @@ export default function MiniPlanViewer({ shareId }) {
   const [askPassword, setAskPassword] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [subKey, setSubKey] = useState(0);     // bump to re-open the listener
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
@@ -97,7 +99,8 @@ export default function MiniPlanViewer({ shareId }) {
       unsub();
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     };
-  }, [shareId]);
+    // subKey re-opens the listener when the user presses Sync.
+  }, [shareId, subKey]);
 
   // ── Editing through the link ───────────────────────────────────
   const pushEdit = useCallback(async (items) => {
@@ -131,6 +134,32 @@ export default function MiniPlanViewer({ shareId }) {
     if (report?.items) pushEdit(report.items);
   };
 
+  /**
+   * Sync on demand.
+   *
+   * The link is live, so this is not normally needed — but "is what I am
+   * looking at current?" is a fair question to be able to answer on your own,
+   * especially on a phone that has just come back from sleep with a listener
+   * that quietly died. It sends anything unsent FIRST (losing an edit to a
+   * refresh would be unforgivable), then re-opens the listener from scratch.
+   */
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      if (dirtyRef.current && report?.items) {
+        if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+        await pushEdit(report.items);
+      }
+      dirtyRef.current = false;
+      setSubKey((k) => k + 1);
+      showToast('Synced with the live plan', 'success');
+    } catch (e) {
+      showToast(`Sync failed: ${e.message}`, 'error');
+    } finally {
+      setTimeout(() => setSyncing(false), 600);
+    }
+  };
+
   // Leaving with an unsent edit would lose it silently.
   useEffect(() => {
     const warn = (e) => {
@@ -146,13 +175,37 @@ export default function MiniPlanViewer({ shareId }) {
   // ── Gallery for the lightbox ───────────────────────────────────
   const galleryPhotos = React.useMemo(() => {
     const out = [];
-    for (const item of report?.items || []) {
-      for (const p of item.photos || []) {
-        if (p?.url) out.push({ url: p.url, caption: item.activity || item.equipment || '' });
-      }
-    }
+    (report?.items || []).forEach((item, i) => {
+      (item.photos || []).forEach((p, sIdx) => {
+        if (p?.url) {
+          out.push({
+            url: p.url,
+            filename: p.filename || item.activity || item.equipment || '',
+            caption: item.activity || item.equipment || '',
+            itemIndex: i,
+            photoIndex: sIdx,
+            slotIndex: p.slot_index ?? sIdx,
+          });
+        }
+      });
+    });
     return out;
   }, [report]);
+
+  /** Remove the photo currently open, addressed by item + slot, never by url. */
+  const deletePhoto = (photo) => {
+    if (!report || !photo || !unlocked) return;
+    const items = report.items || [];
+    const item = items[photo.itemIndex];
+    if (!item) return;
+    const photos = (item.photos || []).filter((p, idx) =>
+      !(p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex)
+    );
+    const next = items.map((it, i) => (i === photo.itemIndex ? { ...it, photos } : it));
+    handleItemsChange(next);
+    setLightboxIndex(null);
+    showToast('Photo deleted', 'success');
+  };
 
   const openLightbox = (url) => {
     const i = galleryPhotos.findIndex((p) => p.url === url);
@@ -248,6 +301,17 @@ export default function MiniPlanViewer({ shareId }) {
               <Smartphone className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={syncNow}
+            disabled={syncing}
+            title="Pull the latest version of this plan now"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Sync</span>
+          </button>
 
           {unlocked ? (
             <>
@@ -349,6 +413,7 @@ export default function MiniPlanViewer({ shareId }) {
         onIndexChange={setLightboxIndex}
         title={report.title}
         onClose={() => setLightboxIndex(null)}
+        onDelete={unlocked ? deletePhoto : undefined}
       />
 
       <Toast

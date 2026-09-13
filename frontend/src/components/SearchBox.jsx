@@ -23,6 +23,7 @@ export default function SearchBox({
   onChange,
   placeholder = 'Search anything - equipment, activity, note, status, date...',
   delay = 250,
+  disabled = false,
   className = '',
   inputClassName = 'w-full text-[13px] text-black bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400',
 }) {
@@ -60,11 +61,13 @@ export default function SearchBox({
       <input
         type="text"
         value={draft}
+        disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={placeholder}
+        title={disabled ? 'Filters are locked while a cell is open for editing' : undefined}
         className={inputClassName}
       />
-      {draft && (
+      {draft && !disabled && (
         <button
           type="button"
           onClick={clear}

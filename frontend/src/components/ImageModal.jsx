@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { X, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Trash2 } from 'lucide-react';
 
 /**
  * Full-screen photo lightbox with gallery navigation.
@@ -23,6 +23,7 @@ export default function ImageModal({
   onIndexChange,
   title,
   onClose,
+  onDelete,          // (photo) => void — only passed when the plan is unlocked
 }) {
   const list = Array.isArray(photos) && photos.length
     ? photos
@@ -30,11 +31,12 @@ export default function ImageModal({
 
   const [localIndex, setLocalIndex] = useState(index);
   const [zoomed, setZoomed] = useState(false);
+  const [askDelete, setAskDelete] = useState(false);
   const touchStart = useRef(null);
 
   // Follow the parent when it drives the index, but stay usable when it does not.
   useEffect(() => { setLocalIndex(index); }, [index, isOpen]);
-  useEffect(() => { setZoomed(false); }, [localIndex, isOpen]);
+  useEffect(() => { setZoomed(false); setAskDelete(false); }, [localIndex, isOpen]);
 
   const current = list[localIndex] || list[0] || null;
   const count = list.length;
@@ -119,6 +121,20 @@ export default function ImageModal({
           >
             <Download className="w-5 h-5" />
           </a>
+          {/* Deleting the photo you are LOOKING AT is the only way to be sure
+              you deleted the right one — which is the whole point when the
+              wrong image has just been pasted into a cell. Two steps, because
+              this one cannot be undone. */}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => setAskDelete((v) => !v)}
+              title="Delete this photo"
+              className={`p-2 rounded-lg transition-colors ${askDelete ? 'bg-rose-600 text-white' : 'hover:bg-white/10'}`}
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -129,6 +145,31 @@ export default function ImageModal({
           </button>
         </div>
       </div>
+
+      {/* The confirm bar sits over the image, so the picture being deleted is
+          in view while the question is answered. */}
+      {onDelete && askDelete && (
+        <div
+          className="mx-auto mb-1 px-4 py-2.5 rounded-xl bg-rose-600/95 text-white shadow-lg flex items-center gap-3 flex-shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-[13px] font-semibold">Delete this photo from the plan?</span>
+          <button
+            type="button"
+            onClick={() => { setAskDelete(false); onDelete(current); }}
+            className="px-3 py-1 text-[13px] font-bold bg-white text-rose-700 rounded-lg hover:bg-rose-50"
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => setAskDelete(false)}
+            className="px-3 py-1 text-[13px] font-semibold bg-rose-700/60 rounded-lg hover:bg-rose-700"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Image stage — fills everything the bars leave behind */}
       <div

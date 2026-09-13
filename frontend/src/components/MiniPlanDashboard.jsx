@@ -310,13 +310,17 @@ export default function MiniPlanDashboard({
                 const done = completedKey(row.item);
                 return (
                   <tr key={row.item.id || row.index} className={`${rs.tw} border-b border-slate-200`}>
-                    <td className="px-2 py-1.5 text-center text-[12px] font-bold text-black tabular-nums align-top">
+                    {/* Columns 1 and 2 are NOT bold: on a 500-row list the
+                        eye needs one thing to catch on, and that is the
+                        Activity and the row colour, not a running number and
+                        a name that repeats down the page. */}
+                    <td className="px-2 py-1.5 text-center text-[12px] text-black tabular-nums align-top">
                       {row.no}
                     </td>
                     {/* Deliberately NOT merged: every line carries its own
                         equipment so the preview can be read, sorted and
                         exported one row at a time. */}
-                    <td className="px-2 py-1.5 text-[12.5px] font-semibold text-black align-top leading-snug break-words">
+                    <td className="px-2 py-1.5 text-[12.5px] text-black align-top leading-snug break-words">
                       {row.equipment}
                     </td>
                     <td className="px-2 py-1.5 text-[12.5px] text-black align-top leading-snug whitespace-pre-wrap break-words">

@@ -1,67 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
-  CornerDownRight, Layers, X, CalendarRange, SearchX, CalendarCheck,
+  CornerDownRight, Layers, X, CalendarRange, SearchX, PencilLine,
 } from 'lucide-react';
 import PhotoGalleryCell from './PhotoGalleryCell';
 import SearchBox from './SearchBox';
+import ConfirmModal from './ConfirmModal';
+import { TextCell, DateCell, StatusCell, formatCellDate } from './PlanCell';
 import { compressForStorage, yieldToBrowser } from '../services/imageCompression';
 import {
-  STATUS_OPTIONS, STATUS_STYLE, ROW_STATE_LEGEND, ROW_STATE_STYLE,
-  rowState, rowStyle, todayKey, groupMiniPlanItems, miniPlanStats,
-  makeMiniPlanRow, makeGroupId, nextPhotoSlot, normalizeStatus,
+  ROW_STATE_LEGEND, ROW_STATE_STYLE,
+  rowStyle, todayKey, groupMiniPlanItems, miniPlanStats,
+  makeMiniPlanRow, makeGroupId, nextPhotoSlot,
   filterMiniPlanGroups, statusChangePatch, isCompletedDateInferred,
   EMPTY_FILTER, normalizeFilter, weekRangeFor, weekModeLabel, WEEK_MODE, FOCUS,
 } from '../services/miniPlan';
-
-/**
- * Auto-growing textarea - no scrollbars, grows to fit its content.
- *
- * The height comes from a MIRROR element sharing the same grid cell: the
- * hidden copy holds the same text with the same font and padding, so the
- * browser sizes the cell in its ordinary layout pass and the textarea
- * stretches to fill it. No JavaScript measurement at all.
- *
- * The previous version measured itself - set `height:'auto'`, read
- * `scrollHeight`, write back a pixel height - inside an effect that runs on
- * every mount. Each read is a FORCED SYNCHRONOUS LAYOUT. At 19 equipment
- * (~130 textareas) that was invisible. At 188 equipment the plan holds ~1,200
- * of them, and clearing a filter took a measured **15.3 seconds** of frozen
- * tab. That is BUG-013's lesson in a new place: work that is fine per item and
- * ruinous in bulk. Never measure layout per row in a table that can grow.
- */
-function AutoGrowingTextarea({ value, onChange, placeholder, className = '', minHeight = 40, disabled = false }) {
-  const cell = { gridArea: '1 / 1 / 2 / 2' };
-  // The trailing space keeps a final newline from being collapsed, so the box
-  // still grows when the user presses Enter at the end.
-  const mirror = `${value || placeholder || ''} `;
-
-  return (
-    <div className="grid w-full" style={{ minHeight }}>
-      <div
-        aria-hidden="true"
-        style={cell}
-        className={`${className} invisible whitespace-pre-wrap break-words pointer-events-none`}
-      >
-        {mirror}
-      </div>
-      <textarea
-        style={cell}
-        value={value || ''}
-        disabled={disabled}
-        onChange={onChange}
-        placeholder={placeholder}
-        className={`${className} overflow-hidden resize-none disabled:cursor-default`}
-      />
-    </div>
-  );
-}
 
 /** Small coloured chip used by the legend and the summary strip. */
 function Chip({ state, count }) {
   const s = ROW_STATE_STYLE[state];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold ${s.tw} ${s.twText} border border-black/5`}>
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold ${s.tw} ${s.twText} border border-black/5`}>
       <span className="w-2 h-2 rounded-sm" style={{ background: s.css }} />
       {s.label}
       {typeof count === 'number' && <strong className="tabular-nums">{count}</strong>}
@@ -70,20 +29,28 @@ function Chip({ state, count }) {
 }
 
 /**
- * CPP Mechanical Mini Plan — the editor.
+ * CPP Mechanical Mini Plan — the "Monitoring" tab.
  *
  * Layout differs from the Flash Report on purpose:
  *   - Item (A) and Equipment (B) are MERGED down the activities that belong to
  *     one piece of equipment, the way the source spreadsheet has them. A row
  *     added to a group inherits both automatically, which is the whole point
  *     of grouping: the user types the activity, nothing else.
- *   - Schedule (C) is a real date input, so the colour rule has something
- *     unambiguous to compare against.
- *   - Status (E) is a closed dropdown, coloured per value.
- *   - Photo (G) is ONE cell holding any number of images.
+ *   - Schedule (C) and Completed Date (F) are dates, so the colour rule has
+ *     something unambiguous to compare against.
+ *   - Status (E) is a closed vocabulary, coloured per value.
+ *   - Photo (H) is ONE cell holding any number of images.
+ *
+ * Three rules govern editing here, and all three exist because this is a LIVE
+ * document that people read during meetings while somebody types into it:
+ *   - a cell opens on DOUBLE-CLICK and on nothing else (components/PlanCell);
+ *   - while a cell is open the filters are FROZEN, so the row cannot slide
+ *     away under the cursor;
+ *   - adding or deleting a row, or deleting an equipment, asks first and names
+ *     the equipment in the question.
  *
  * The row colour is NOT computed here — it comes from services/miniPlan.js, the
- * same module the exports and the live link read. See the note in that file.
+ * same module the exports and the live link read.
  */
 export default function MiniPlanTable({
   items,
@@ -96,15 +63,12 @@ export default function MiniPlanTable({
   onFilterChange,
 }) {
   const [selectedCell, setSelectedCell] = useState(null); // itemIndex | null
+  const [editing, setEditing] = useState(null);           // {index, field} | null
+  const [confirm, setConfirm] = useState(null);           // {title,message,...} | null
 
   // The filter is CONTROLLED when the workspace passes one in, so the
-  // dashboard tab and this table select the same work — that is the whole
-  // point of the two tabs. Standalone (no workspace) it keeps its own state,
-  // which is what the v2.9 behaviour was.
-  //
-  // Deliberately NOT gated on `readOnly`: finding your equipment and seeing
-  // what is due this week is reading, not editing, so every control here
-  // works on the public link with no password.
+  // dashboard tab and this table select the same work. Standalone it keeps its
+  // own state, which is what the v2.9 behaviour was.
   const [ownFilter, setOwnFilter] = useState(EMPTY_FILTER);
   const filter = normalizeFilter(filterProp || ownFilter);
   const setFilter = (patch) => {
@@ -112,6 +76,8 @@ export default function MiniPlanTable({
     if (onFilterChange) onFilterChange(next);
     else setOwnFilter(next);
   };
+
+  const isEditingCell = editing !== null;
 
   // Recomputed once per render; "today" only changes at midnight and a stale
   // value would silently mis-colour every row, so it is read fresh.
@@ -128,30 +94,7 @@ export default function MiniPlanTable({
 
   const week = weekRangeFor(filter.week, today);
   const weekLabel = weekModeLabel(filter.week);
-  const search = filter.search;
   const clearFilters = () => setFilter({ ...EMPTY_FILTER });
-
-  /**
-   * A date cell. When the plan is LOCKED and the cell is empty, an em dash is
-   * drawn instead of the input: an empty `<input type=date>` renders the
-   * browser's "dd-mm-yyyy" skeleton, and 500 of those on a read-only public
-   * link is noise nobody can act on. Same reasoning as BUG-020 - a document
-   * that cannot be edited must still be easy to READ.
-   */
-  const DateCell = ({ index, field, value }) => {
-    if (readOnly && !value) {
-      return <span className="block text-center text-[13px] text-slate-400">—</span>;
-    }
-    return (
-      <input
-        type="date"
-        disabled={readOnly}
-        value={value || ''}
-        onChange={(e) => patchItem(index, { [field]: e.target.value })}
-        className="w-full text-[13px] text-black bg-white/85 border border-slate-200 rounded-md px-1.5 py-1.5 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent disabled:text-black"
-      />
-    );
-  };
 
   /** Mark the rows that actually matched, so it is clear why a group is here.
    *  An OUTLINE, not a fill: the row background already carries the schedule
@@ -162,6 +105,14 @@ export default function MiniPlanTable({
       ? 'ring-2 ring-inset ring-violet-500/70 bg-violet-50/40'
       : '';
 
+  // ── Editing ────────────────────────────────────────────────────
+  const beginEdit = (index, field) => {
+    if (readOnly) { onRequestUnlock?.(); return; }
+    setEditing({ index, field });
+  };
+  const cancelEdit = () => setEditing(null);
+  const isOpen = (index, field) => Boolean(editing && editing.index === index && editing.field === field);
+
   // ── Mutations ──────────────────────────────────────────────────
   const patchItem = (index, patch) => {
     if (readOnly) return;
@@ -170,17 +121,25 @@ export default function MiniPlanTable({
     onItemsChange(next);
   };
 
+  /** Commit one cell: close it first, then write. */
+  const commitCell = (index, patch) => {
+    setEditing(null);
+    const current = items[index] || {};
+    const changed = Object.keys(patch).some((k) => (current[k] ?? '') !== (patch[k] ?? ''));
+    if (changed) patchItem(index, patch);
+  };
+
   /** Editing the merged Equipment cell rewrites the name on every row of the
    *  group, so a single row still carries its equipment wherever it is read. */
-  const setGroupEquipment = (groupKey, equipment) => {
+  const commitEquipment = (groupKey, equipment) => {
+    setEditing(null);
     if (readOnly) return;
+    const changed = items.some((it) => it.group_id === groupKey && (it.equipment || '') !== equipment);
+    if (!changed) return;
     onItemsChange(items.map((it) => (it.group_id === groupKey ? { ...it, equipment } : it)));
   };
 
-  /** Add an activity row to an equipment. Item (A) and Equipment (B) are
-   *  filled in for it — the user only types the activity. */
   const addRowToGroup = (group, afterIndex = null) => {
-    if (readOnly) return;
     const at = afterIndex === null ? group.start + group.count - 1 : afterIndex;
     const row = makeMiniPlanRow(group.key, group.equipment);
     const next = [...items];
@@ -188,9 +147,7 @@ export default function MiniPlanTable({
     onItemsChange(next);
   };
 
-  /** A new Equipment: a new group with one blank activity row. */
   const addEquipment = (afterGroup = null) => {
-    if (readOnly) return;
     const gid = makeGroupId();
     const row = makeMiniPlanRow(gid, '');
     const next = [...items];
@@ -200,7 +157,6 @@ export default function MiniPlanTable({
   };
 
   const deleteRow = (index) => {
-    if (readOnly) return;
     if (items.length <= 1) {
       onItemsChange([makeMiniPlanRow(makeGroupId(), '')]);
       return;
@@ -209,7 +165,6 @@ export default function MiniPlanTable({
   };
 
   const deleteGroup = (group) => {
-    if (readOnly) return;
     const next = items.filter((it) => it.group_id !== group.key);
     onItemsChange(next.length ? next : [makeMiniPlanRow(makeGroupId(), '')]);
   };
@@ -227,6 +182,66 @@ export default function MiniPlanTable({
   };
 
   const setPhotos = (index, photos) => patchItem(index, { photos });
+
+  // ── Confirmations ──────────────────────────────────────────────
+  // The wording is the user's: the question always names the equipment,
+  // because "did I click the right row?" is the only thing worth asking here.
+  const equipName = (group) => group.equipment?.trim() || '(unnamed equipment)';
+
+  const askAddRow = (group, afterIndex = null) => {
+    if (readOnly) { onRequestUnlock?.(); return; }
+    setConfirm({
+      title: 'Add one row',
+      message: `Do you want to Add one row for the Equipment "${equipName(group)}"?`,
+      confirmLabel: 'Yes, add one row',
+      tone: 'brand',
+      onYes: () => addRowToGroup(group, afterIndex),
+    });
+  };
+
+  const askDeleteRow = (group, index) => {
+    if (readOnly) { onRequestUnlock?.(); return; }
+    const activity = (items[index]?.activity || '').trim();
+    setConfirm({
+      title: 'Delete one row',
+      message: `Do you want to Delete one row for the Equipment "${equipName(group)}"?`
+        + (activity ? `\n\nActivity: ${activity}` : ''),
+      confirmLabel: 'Yes, delete this row',
+      tone: 'danger',
+      onYes: () => deleteRow(index),
+    });
+  };
+
+  const askDeleteGroup = (group) => {
+    if (readOnly) { onRequestUnlock?.(); return; }
+    setConfirm({
+      title: 'Delete the Equipment',
+      message: `Do you want to Delete the Equipment "${equipName(group)}" and all `
+        + `${group.count} ${group.count === 1 ? 'row' : 'rows'} under it?`,
+      confirmLabel: 'Yes, delete the Equipment',
+      tone: 'danger',
+      onYes: () => deleteGroup(group),
+    });
+  };
+
+  const askAddEquipment = (afterGroup = null) => {
+    if (readOnly) { onRequestUnlock?.(); return; }
+    setConfirm({
+      title: 'Add one Equipment',
+      message: afterGroup
+        ? `Do you want to Add one new Equipment below the Equipment "${equipName(afterGroup)}"?`
+        : 'Do you want to Add one new Equipment at the end of the plan?',
+      confirmLabel: 'Yes, add the Equipment',
+      tone: 'brand',
+      onYes: () => addEquipment(afterGroup),
+    });
+  };
+
+  const runConfirm = () => {
+    const action = confirm?.onYes;
+    setConfirm(null);
+    if (action) action();
+  };
 
   // ── Global paste into the selected Photo cell ──────────────────
   useEffect(() => {
@@ -283,74 +298,12 @@ export default function MiniPlanTable({
     return () => window.removeEventListener('paste', onPaste);
   }, [selectedCell, items, readOnly]);
 
-  // ── Shared bits ────────────────────────────────────────────────
-  /** Changing Status also stamps or clears the Completed Date - the two
-   *  values are one fact and must never disagree (statusChangePatch). */
-  const StatusSelect = ({ index, item }) => {
-    const st = normalizeStatus(item?.status);
-    const s = STATUS_STYLE[st];
-    return (
-      <select
-        value={st}
-        disabled={readOnly}
-        onChange={(e) => patchItem(index, statusChangePatch(item, e.target.value, today))}
-        className={`w-full text-[13px] font-bold rounded-md border px-1.5 py-1.5 outline-none transition-colors cursor-pointer disabled:cursor-default disabled:opacity-100 ${s.tw}`}
-      >
-        {STATUS_OPTIONS.map((o) => (
-          <option key={o || 'blank'} value={o} className="bg-white text-black font-semibold">
-            {o || '— not started —'}
-          </option>
-        ))}
-      </select>
-    );
-  };
-
-  const header = (
-    <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="w-2 h-2 rounded-full bg-brand-500" />
-        <h3 className="text-[13px] font-bold uppercase tracking-wider text-black">
-          Mini Plan ({stats.equipment} Equipment · {stats.total} activities)
-        </h3>
-        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-          {stats.percent}% done
-        </span>
-        {readOnly ? (
-          <button
-            type="button"
-            onClick={onRequestUnlock}
-            className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-md hover:bg-amber-100 transition-colors"
-            title="Enter the project password to edit"
-          >
-            <Lock className="w-3 h-3" /> Read only — unlock to edit
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-md">
-            <Unlock className="w-3 h-3" /> Editing unlocked
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {ROW_STATE_LEGEND.map((s) => (
-          <Chip
-            key={s}
-            state={s}
-            count={s === 'done' ? stats.done : s === 'today' ? stats.today : s === 'overdue' ? stats.overdue : stats.missed}
-          />
-        ))}
-      </div>
-    </div>
-  );
-
-  /**
-   * Search + the two week buttons, available to EVERYONE including a viewer
-   * on the public link who has not entered the password. Reading the plan and
-   * finding your way around it is not editing.
-   *
-   * When the workspace owns the filter these controls move the SAME selection
-   * the dashboard tab shows, so switching tabs never loses your place.
-   */
+  // ── One-line header + toolbar ──────────────────────────────────
+  //
+  // Header and toolbar used to be two stacked bars above a 500-row table. On a
+  // laptop that is a third of the useful height spent on text that never
+  // changes, so everything the user actually operates lives on ONE wrapping
+  // line and the table gets the screen.
   const weekButton = (mode, label) => {
     const on = filter.week === mode;
     const r = weekRangeFor(mode, today);
@@ -358,26 +311,55 @@ export default function MiniPlanTable({
       <button
         key={mode}
         type="button"
+        disabled={isEditingCell}
         onClick={() => setFilter({ week: on ? WEEK_MODE.NONE : mode })}
-        title={`Show every Equipment with an activity scheduled ${r.start} to ${r.end}`}
-        className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${
+        title={isEditingCell
+          ? 'Filters are locked while a cell is open for editing'
+          : `Show every Equipment with an activity scheduled ${r.start} to ${r.end}`}
+        className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-[12.5px] font-bold rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
           on
             ? 'bg-violet-600 text-white border-violet-700 shadow-sm shadow-violet-600/30'
             : 'bg-white text-black border-slate-300 hover:bg-slate-50'
         }`}
       >
-        <CalendarRange className="w-4 h-4" />
+        <CalendarRange className="w-3.5 h-3.5" />
         {label}
       </button>
     );
   };
 
   const toolbar = (
-    <div className="px-4 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2">
+    <div className="px-3 py-2 bg-slate-50/90 border-b border-slate-200/80 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-black">
+        <span className="w-2 h-2 rounded-full bg-brand-500" />
+        {stats.equipment} EQ · {stats.total} act
+        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
+          {stats.percent}%
+        </span>
+      </span>
+
+      {readOnly ? (
+        <button
+          type="button"
+          onClick={onRequestUnlock}
+          className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded-md hover:bg-amber-100 transition-colors"
+          title="Enter the project password to edit"
+        >
+          <Lock className="w-3 h-3" /> Read only
+        </button>
+      ) : (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded-md">
+          <Unlock className="w-3 h-3" /> Unlocked · double-click a cell
+        </span>
+      )}
+
       <SearchBox
-        className="flex-1 min-w-[220px] max-w-lg"
-        value={search}
+        className="flex-1 min-w-[180px] max-w-sm"
+        value={filter.search}
         onChange={(v) => setFilter({ search: v })}
+        disabled={isEditingCell}
+        placeholder="Search anything..."
+        inputClassName="w-full text-[12.5px] text-black bg-white border border-slate-200 rounded-lg pl-8 pr-8 py-1.5 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400 disabled:bg-slate-100 disabled:cursor-not-allowed"
       />
 
       {weekButton(WEEK_MODE.THIS, 'This week')}
@@ -385,30 +367,42 @@ export default function MiniPlanTable({
 
       {filterActive && (
         <>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-bold text-violet-900 bg-violet-100 border border-violet-300 rounded-md">
-            {groupCount} Equipment · {rowCount} matching {rowCount === 1 ? 'activity' : 'activities'}
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11.5px] font-bold text-violet-900 bg-violet-100 border border-violet-300 rounded-md">
+            {groupCount} EQ · {rowCount} matching
           </span>
           <button
             type="button"
+            disabled={isEditingCell}
             onClick={clearFilters}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors"
+            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11.5px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors disabled:opacity-40"
           >
-            <X className="w-3.5 h-3.5" /> Clear
+            <X className="w-3 h-3" /> Clear
           </button>
         </>
       )}
 
-      {filter.focus !== FOCUS.ALL && (
-        <span className="text-[12px] font-semibold text-violet-700">
-          filtered from the dashboard
+      {/* The filters are frozen while a cell is open. Without that the row
+          being typed into can leave the view the moment its Status changes,
+          and the next keystroke lands somewhere else entirely. */}
+      {isEditingCell && (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11.5px] font-bold text-amber-900 bg-amber-100 border border-amber-300 rounded-md">
+          <PencilLine className="w-3 h-3" /> Editing — filters locked
         </span>
       )}
 
       {filter.week !== WEEK_MODE.NONE && (
-        <span className="text-[12px] text-slate-500">
-          {weekLabel}: {week.start} to {week.end}
-        </span>
+        <span className="text-[11.5px] text-slate-500">{weekLabel}: {week.start} → {week.end}</span>
       )}
+
+      <span className="ml-auto flex items-center gap-1 flex-wrap">
+        {ROW_STATE_LEGEND.map((s) => (
+          <Chip
+            key={s}
+            state={s}
+            count={s === 'done' ? stats.done : s === 'today' ? stats.today : s === 'overdue' ? stats.overdue : stats.missed}
+          />
+        ))}
+      </span>
     </div>
   );
 
@@ -420,7 +414,7 @@ export default function MiniPlanTable({
       <p className="text-[14px] font-bold text-black">No Equipment matches</p>
       <p className="text-[12px] text-slate-500 mt-1">
         {filter.week !== WEEK_MODE.NONE
-          ? `Nothing is scheduled between ${week.start} and ${week.end}${search ? ' for that search' : ''}.`
+          ? `Nothing is scheduled between ${week.start} and ${week.end}${filter.search ? ' for that search' : ''}.`
           : 'Try a shorter search, or clear the dashboard selection.'}
       </p>
       <button
@@ -434,59 +428,72 @@ export default function MiniPlanTable({
   );
 
   const footer = (
-    <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-200/80 flex items-center justify-between text-[12px] text-slate-600">
+    <div className="px-3 py-1.5 bg-slate-50/60 border-t border-slate-200/80 flex items-center justify-between text-[11.5px] text-slate-600">
       <span className="flex items-center gap-1.5">
         <CalendarClock className="w-3.5 h-3.5 text-slate-400" />
         Colours follow Schedule vs today ({today})
       </span>
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={() => addEquipment()}
-          className="text-xs font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-1 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Equipment
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => askAddEquipment(null)}
+        className="text-[11.5px] font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-1 transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Add Equipment
+      </button>
     </div>
+  );
+
+  const confirmModal = (
+    <ConfirmModal
+      isOpen={Boolean(confirm)}
+      title={confirm?.title}
+      message={confirm?.message || ''}
+      confirmLabel={confirm?.confirmLabel}
+      tone={confirm?.tone}
+      onConfirm={runConfirm}
+      onCancel={() => setConfirm(null)}
+    />
   );
 
   // ── Phone: cards grouped by equipment ──────────────────────────
   if (isMobileMode) {
     return (
       <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
-        {header}
         {toolbar}
+        {confirmModal}
 
         {filterActive && groups.length === 0 && emptyState}
 
-        <div className="p-3 space-y-4 bg-slate-50/50">
+        <div className="p-2.5 space-y-3 bg-slate-50/50">
           {groups.map((group) => (
             <div key={group.key} className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               {/* Equipment header = merged columns A + B */}
-              <div className="px-3 py-2.5 bg-slate-800 text-white flex items-start gap-2">
+              <div className="px-3 py-2 bg-slate-800 text-white flex items-start gap-2">
                 <span className="w-6 h-6 rounded-full bg-white/15 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
                   {group.no || '-'}
                 </span>
-                <AutoGrowingTextarea
-                  minHeight={28}
-                  disabled={readOnly}
-                  value={group.equipment}
-                  onChange={(e) => setGroupEquipment(group.key, e.target.value)}
-                  placeholder="Equipment name..."
-                  className="flex-1 text-[14px] font-bold text-white bg-transparent border border-transparent focus:border-white/40 rounded-md px-1.5 py-1 outline-none leading-snug whitespace-pre-wrap break-words placeholder:text-white/50"
-                />
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={() => deleteGroup(group)}
-                    title="Delete this equipment and all its activities"
-                    className="p-1 text-white/60 hover:text-rose-300 flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                <div className="flex-1 min-w-0">
+                  <TextCell
+                    value={group.equipment}
+                    placeholder="Equipment name..."
+                    readOnly={readOnly}
+                    isEditing={isOpen(group.start, 'equipment')}
+                    onEdit={() => beginEdit(group.start, 'equipment')}
+                    onCommit={(v) => commitEquipment(group.key, v)}
+                    onCancel={cancelEdit}
+                    displayClassName="text-[14px] font-bold text-white leading-snug"
+                    inputClassName="w-full text-[14px] font-bold text-black bg-white rounded-md px-1.5 py-1 leading-snug"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => askDeleteGroup(group)}
+                  title="Delete this equipment and all its activities"
+                  className="p-1 text-white/60 hover:text-rose-300 flex-shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
 
               <div className="p-2.5 space-y-2.5">
@@ -502,76 +509,87 @@ export default function MiniPlanTable({
                           Activity {index - group.start + 1}
                         </span>
                         <div className="flex items-center gap-1">
-                          {!readOnly && (
-                            <>
-                              <button type="button" onClick={() => moveRow(group, index, -1)} disabled={index === group.start}
-                                className="p-1 text-slate-400 disabled:opacity-25"><ChevronUp className="w-4 h-4" /></button>
-                              <button type="button" onClick={() => moveRow(group, index, 1)} disabled={index === group.start + group.count - 1}
-                                className="p-1 text-slate-400 disabled:opacity-25"><ChevronDown className="w-4 h-4" /></button>
-                              <button type="button" onClick={() => deleteRow(index)}
-                                className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button>
-                            </>
-                          )}
+                          <button type="button" onClick={() => moveRow(group, index, -1)} disabled={index === group.start}
+                            className="p-1 text-slate-400 disabled:opacity-25"><ChevronUp className="w-4 h-4" /></button>
+                          <button type="button" onClick={() => moveRow(group, index, 1)} disabled={index === group.start + group.count - 1}
+                            className="p-1 text-slate-400 disabled:opacity-25"><ChevronDown className="w-4 h-4" /></button>
+                          <button type="button" onClick={() => askDeleteRow(group, index)}
+                            className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </div>
 
-                      <AutoGrowingTextarea
-                        minHeight={52}
-                        disabled={readOnly}
+                      <TextCell
                         value={item.activity}
-                        onChange={(e) => patchItem(index, { activity: e.target.value })}
                         placeholder="Activity to be carried out..."
-                        className="w-full text-[14px] text-black bg-white/85 border border-slate-200 rounded-lg p-2 focus:border-brand-500 outline-none leading-relaxed whitespace-pre-wrap break-words disabled:text-black"
+                        readOnly={readOnly}
+                        isEditing={isOpen(index, 'activity')}
+                        onEdit={() => beginEdit(index, 'activity')}
+                        onCommit={(v) => commitCell(index, { activity: v })}
+                        onCancel={cancelEdit}
+                        displayClassName="text-[14px] text-black bg-white/70 border border-slate-200 leading-relaxed"
+                        inputClassName="w-full text-[14px] text-black bg-white border border-slate-200 rounded-lg p-2 leading-relaxed"
                       />
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[12px] font-semibold text-black mb-1">Schedule</label>
-                          <input
-                            type="date"
-                            disabled={readOnly}
-                            value={item.schedule || ''}
-                            onChange={(e) => patchItem(index, { schedule: e.target.value })}
-                            className="w-full text-[14px] text-black bg-white border border-slate-200 rounded-lg px-2 py-2 focus:border-brand-500 outline-none disabled:text-black"
+                          <label className="block text-[11.5px] font-semibold text-black mb-0.5">Schedule</label>
+                          <DateCell
+                            value={item.schedule}
+                            readOnly={readOnly}
+                            isEditing={isOpen(index, 'schedule')}
+                            onEdit={() => beginEdit(index, 'schedule')}
+                            onCommit={(v) => commitCell(index, { schedule: v })}
+                            onCancel={cancelEdit}
+                            displayClassName="text-[14px] text-black bg-white/70 border border-slate-200"
                           />
                         </div>
                         <div>
-                          <label className="block text-[12px] font-semibold text-black mb-1">Status</label>
-                          <StatusSelect index={index} item={item} />
+                          <label className="block text-[11.5px] font-semibold text-black mb-0.5">Status</label>
+                          <StatusCell
+                            value={item.status}
+                            readOnly={readOnly}
+                            isEditing={isOpen(index, 'status')}
+                            onEdit={() => beginEdit(index, 'status')}
+                            onCommit={(v) => commitCell(index, statusChangePatch(item, v, today))}
+                            onCancel={cancelEdit}
+                          />
                         </div>
                         <div className="col-span-2">
-                          <label className="text-[12px] font-semibold text-black mb-1 flex items-center gap-1">
-                            <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" /> Completed date
+                          <label className="text-[11.5px] font-semibold text-black mb-0.5 flex items-center gap-1">
+                            Completed date
                             {isCompletedDateInferred(item) && (
-                              <span className="text-[10px] font-medium text-slate-500 italic">
-                                (counted from the plan date)
-                              </span>
+                              <span className="text-[10px] font-medium text-slate-500 italic">(from plan date)</span>
                             )}
                           </label>
-                          <input
-                            type="date"
-                            disabled={readOnly}
-                            value={item.completed_date || ''}
-                            onChange={(e) => patchItem(index, { completed_date: e.target.value })}
-                            className="w-full text-[14px] text-black bg-white border border-slate-200 rounded-lg px-2 py-2 focus:border-brand-500 outline-none disabled:text-black"
+                          <DateCell
+                            value={item.completed_date}
+                            readOnly={readOnly}
+                            isEditing={isOpen(index, 'completed_date')}
+                            onEdit={() => beginEdit(index, 'completed_date')}
+                            onCommit={(v) => commitCell(index, { completed_date: v })}
+                            onCancel={cancelEdit}
+                            displayClassName="text-[14px] text-black bg-white/70 border border-slate-200"
                           />
                         </div>
                       </div>
 
                       <div>
-                        <label className="block text-[12px] font-semibold text-black mb-1">Note</label>
-                        <AutoGrowingTextarea
-                          minHeight={36}
-                          disabled={readOnly}
+                        <label className="block text-[11.5px] font-semibold text-black mb-0.5">Note</label>
+                        <TextCell
                           value={item.note}
-                          onChange={(e) => patchItem(index, { note: e.target.value })}
                           placeholder="Note..."
-                          className="w-full text-[14px] text-black bg-white/85 border border-slate-200 rounded-lg p-2 focus:border-brand-500 outline-none whitespace-pre-wrap break-words disabled:text-black"
+                          readOnly={readOnly}
+                          isEditing={isOpen(index, 'note')}
+                          onEdit={() => beginEdit(index, 'note')}
+                          onCommit={(v) => commitCell(index, { note: v })}
+                          onCancel={cancelEdit}
+                          displayClassName="text-[14px] text-black bg-white/70 border border-slate-200"
+                          inputClassName="w-full text-[14px] text-black bg-white border border-slate-200 rounded-lg p-2"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[12px] font-semibold text-black mb-1 flex items-center justify-between">
+                        <label className="block text-[11.5px] font-semibold text-black mb-0.5 flex items-center justify-between">
                           <span>Photo ({(item.photos || []).filter(Boolean).length})</span>
                           <span className="text-[9px] text-brand-600 font-medium">many photos per activity</span>
                         </label>
@@ -592,7 +610,7 @@ export default function MiniPlanTable({
                 {/* Visible when locked too — see the note on the laptop buttons. */}
                 <button
                   type="button"
-                  onClick={() => (readOnly ? onRequestUnlock?.() : addRowToGroup(group))}
+                  onClick={() => askAddRow(group)}
                   className={`w-full py-2 text-[13px] font-bold border border-dashed rounded-lg flex items-center justify-center gap-1.5 transition-colors ${
                     readOnly
                       ? 'text-slate-400 bg-white border-slate-300 hover:text-amber-700 hover:border-amber-400'
@@ -606,16 +624,14 @@ export default function MiniPlanTable({
             </div>
           ))}
 
-          {!readOnly && (
-            <button
-              type="button"
-              onClick={() => addEquipment()}
-              className="w-full py-3 text-[14px] font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl flex items-center justify-center gap-1.5"
-            >
-              <Layers className="w-4 h-4" />
-              Add Equipment
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => askAddEquipment(null)}
+            className="w-full py-2.5 text-[14px] font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl flex items-center justify-center gap-1.5"
+          >
+            <Layers className="w-4 h-4" />
+            Add Equipment
+          </button>
         </div>
 
         {footer}
@@ -623,35 +639,35 @@ export default function MiniPlanTable({
     );
   }
 
-  // ── Laptop: the 7-column plan table with merged A + B ──────────
-  const cellBase = 'px-2 py-2 align-top border-b border-slate-200';
+  // ── Laptop: the plan table with merged A + B ───────────────────
+  const cellBase = 'px-1.5 py-1 align-top border-b border-slate-200';
+  const headCls = 'sticky top-0 z-20 bg-slate-100 border-b border-slate-300 px-2 py-2 text-center text-[12.5px] font-bold text-black shadow-[0_1px_0_0_rgba(148,163,184,0.6)]';
 
   return (
     <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
-      {header}
       {toolbar}
+      {confirmModal}
 
       {filterActive && groups.length === 0 && emptyState}
 
-      {/* The table carries a MIN WIDTH and the wrapper scrolls.
-          Without it `w-full` squeezes seven columns into whatever the pane is,
-          and at a laptop width of ~900px the Equipment column wraps one word
-          per line and the Note column becomes a vertical stack of letters.
-          A plan is read across the row, so the row must keep its shape and the
-          container must scroll instead. */}
-      <div className="overflow-x-auto w-full">
-        <table className="w-full min-w-[1560px] text-left border-collapse table-fixed">
+      {/* The table scrolls INSIDE this box, both ways, and the header row is
+          sticky to its top — on a 500-row plan the column titles have to stay
+          on screen or the table cannot be read at all. The min-width keeps the
+          row's shape: a plan is read across the row, so the box scrolls
+          sideways rather than squeezing eight columns into the pane. */}
+      <div className="overflow-auto w-full max-h-[calc(100vh-215px)] min-h-[320px]">
+        <table className="w-full min-w-[1480px] text-left border-collapse table-fixed">
           <thead>
-            <tr className="bg-slate-100/90 border-b border-slate-300 text-black text-[13px] font-bold">
-              <th className="w-12 px-2 py-2.5 text-center">Item</th>
-              <th className="w-64 px-2.5 py-2.5 text-center">Equipment</th>
-              <th className="w-32 px-2 py-2.5 text-center">Schedule</th>
-              <th className="w-[22rem] px-3 py-2.5 text-center">Activities</th>
-              <th className="w-32 px-2 py-2.5 text-center">Status</th>
-              <th className="w-36 px-2 py-2.5 text-center">Completed Date</th>
-              <th className="w-52 px-2 py-2.5 text-center">Note</th>
-              <th className="w-[19rem] px-2 py-2.5 text-center">Photo</th>
-              <th className="w-14 px-1 py-2.5 text-center">Action</th>
+            <tr>
+              <th className={`${headCls} w-12`}>Item</th>
+              <th className={`${headCls} w-60`}>Equipment</th>
+              <th className={`${headCls} w-28`}>Schedule</th>
+              <th className={`${headCls} w-[21rem]`}>Activities</th>
+              <th className={`${headCls} w-32`}>Status</th>
+              <th className={`${headCls} w-28`}>Completed</th>
+              <th className={`${headCls} w-48`}>Note</th>
+              <th className={`${headCls} w-[18rem]`}>Photo</th>
+              <th className={`${headCls} w-12`}>Act.</th>
             </tr>
           </thead>
 
@@ -667,19 +683,22 @@ export default function MiniPlanTable({
                   <tr key={item.id || index} className={`${s.tw} ${matchClass(index)} hover:brightness-[0.985] transition-all`}>
                     {isFirst && (
                       <>
-                        <td rowSpan={group.count} className="px-2 py-2 text-center align-middle border-b border-slate-200 bg-white/60">
-                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-800 text-white text-[13px] font-bold">
+                        <td rowSpan={group.count} className="px-1.5 py-1.5 text-center align-middle border-b border-slate-200 bg-white/60">
+                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-800 text-white text-[12.5px] font-bold">
                             {group.no || '-'}
                           </span>
                         </td>
-                        <td rowSpan={group.count} className="px-2 py-2 align-top border-b border-slate-200 bg-white/60">
-                          <AutoGrowingTextarea
-                            minHeight={56}
-                            disabled={readOnly}
+                        <td rowSpan={group.count} className="px-1.5 py-1.5 align-top border-b border-slate-200 bg-white/60">
+                          <TextCell
                             value={group.equipment}
-                            onChange={(e) => setGroupEquipment(group.key, e.target.value)}
                             placeholder="Equipment name..."
-                            className="w-full text-[13px] font-bold text-black bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none leading-snug whitespace-pre-wrap break-words"
+                            readOnly={readOnly}
+                            isEditing={isOpen(group.start, 'equipment')}
+                            onEdit={() => beginEdit(group.start, 'equipment')}
+                            onCommit={(v) => commitEquipment(group.key, v)}
+                            onCancel={cancelEdit}
+                            displayClassName="text-[13px] font-bold text-black leading-snug"
+                            inputClassName="w-full text-[13px] font-bold text-black bg-white border border-slate-200 rounded-md px-2 py-1.5 leading-snug"
                           />
                           {/* These stay on screen when the plan is LOCKED, greyed
                               but present, and a click asks for the password.
@@ -687,46 +706,44 @@ export default function MiniPlanTable({
                               screen there is no way to tell that adding a row to
                               an Equipment is possible at all, so the feature
                               reads as missing rather than as protected. */}
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5 px-1">
+                          <div className="flex flex-wrap items-center gap-1 mt-1 px-1">
                             <button
                               type="button"
-                              onClick={() => (readOnly ? onRequestUnlock?.() : addRowToGroup(group))}
+                              onClick={() => askAddRow(group)}
                               title={readOnly
                                 ? 'Enter the project password to add an activity'
-                                : 'Add an activity to this Equipment (Item and Equipment are filled in automatically)'}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-bold border rounded-md transition-colors ${
+                                : 'Add an activity to this Equipment'}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11.5px] font-bold border rounded-md transition-colors ${
                                 readOnly
                                   ? 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'
                                   : 'text-brand-700 bg-brand-50 hover:bg-brand-600 hover:text-white border-brand-200'
                               }`}
                             >
-                              {readOnly ? <Lock className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                              {readOnly ? <Lock className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                               Add row
                             </button>
                             <button
                               type="button"
-                              onClick={() => (readOnly ? onRequestUnlock?.() : addEquipment(group))}
+                              onClick={() => askAddEquipment(group)}
                               title={readOnly
                                 ? 'Enter the project password to add an Equipment'
                                 : 'Insert a new Equipment below'}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-bold border rounded-md transition-colors ${
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11.5px] font-bold border rounded-md transition-colors ${
                                 readOnly
                                   ? 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300'
                                   : 'text-slate-700 bg-slate-100 hover:bg-slate-700 hover:text-white border-slate-200'
                               }`}
                             >
-                              <Layers className="w-3.5 h-3.5" /> Equipment
+                              <Layers className="w-3 h-3" /> Equip.
                             </button>
-                            {!readOnly && (
-                              <button
-                                type="button"
-                                onClick={() => deleteGroup(group)}
-                                title="Delete this Equipment and all its activities"
-                                className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => askDeleteGroup(group)}
+                              title="Delete this Equipment and all its activities"
+                              className="p-0.5 text-slate-400 hover:text-rose-600 rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </td>
                       </>
@@ -734,50 +751,79 @@ export default function MiniPlanTable({
 
                     {/* Schedule */}
                     <td className={`${cellBase} align-middle`}>
-                      <DateCell index={index} field="schedule" value={item.schedule} />
+                      <DateCell
+                        value={item.schedule}
+                        readOnly={readOnly}
+                        isEditing={isOpen(index, 'schedule')}
+                        onEdit={() => beginEdit(index, 'schedule')}
+                        onCommit={(v) => commitCell(index, { schedule: v })}
+                        onCancel={cancelEdit}
+                        displayClassName="text-[13px] text-black"
+                      />
                     </td>
 
                     {/* Activities */}
                     <td className={cellBase}>
-                      <AutoGrowingTextarea
-                        minHeight={54}
-                        disabled={readOnly}
+                      <TextCell
                         value={item.activity}
-                        onChange={(e) => patchItem(index, { activity: e.target.value })}
                         placeholder="Activity to be carried out..."
-                        className="w-full text-[13px] text-black bg-transparent hover:bg-white/90 focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none text-left leading-relaxed whitespace-pre-wrap break-words disabled:text-black"
+                        readOnly={readOnly}
+                        isEditing={isOpen(index, 'activity')}
+                        onEdit={() => beginEdit(index, 'activity')}
+                        onCommit={(v) => commitCell(index, { activity: v })}
+                        onCancel={cancelEdit}
+                        displayClassName="text-[13px] text-black leading-relaxed"
+                        inputClassName="w-full text-[13px] text-black bg-white border border-slate-200 rounded-md px-2 py-1.5 leading-relaxed"
                       />
                     </td>
 
                     {/* Status */}
                     <td className={`${cellBase} align-middle`}>
-                      <StatusSelect index={index} item={item} />
+                      <StatusCell
+                        value={item.status}
+                        readOnly={readOnly}
+                        isEditing={isOpen(index, 'status')}
+                        onEdit={() => beginEdit(index, 'status')}
+                        onCommit={(v) => commitCell(index, statusChangePatch(item, v, today))}
+                        onCancel={cancelEdit}
+                      />
                     </td>
 
                     {/* Completed Date — when the work was actually finished,
                         which is what the dashboard's weekly figures count.
                         Stamped automatically the moment Status becomes Done. */}
                     <td className={`${cellBase} align-middle`}>
-                      <DateCell index={index} field="completed_date" value={item.completed_date} />
-                      {isCompletedDateInferred(item) && (
-                        <span
-                          title="No completed date was recorded for this Done activity, so the dashboard counts its plan date."
-                          className="block text-[10px] text-slate-600 italic text-center mt-0.5"
-                        >
-                          from plan date
-                        </span>
-                      )}
+                      <DateCell
+                        value={item.completed_date}
+                        readOnly={readOnly}
+                        isEditing={isOpen(index, 'completed_date')}
+                        onEdit={() => beginEdit(index, 'completed_date')}
+                        onCommit={(v) => commitCell(index, { completed_date: v })}
+                        onCancel={cancelEdit}
+                        displayClassName="text-[13px] text-black"
+                        note={isCompletedDateInferred(item) ? (
+                          <span
+                            title="No completed date was recorded for this Done activity, so the dashboard counts its plan date."
+                            className="block text-[10px] text-slate-600 italic"
+                          >
+                            {formatCellDate(item.schedule)} (plan)
+                          </span>
+                        ) : null}
+                      />
                     </td>
 
                     {/* Note */}
                     <td className={cellBase}>
-                      <AutoGrowingTextarea
-                        minHeight={54}
-                        disabled={readOnly}
+                      <TextCell
                         value={item.note}
-                        onChange={(e) => patchItem(index, { note: e.target.value })}
                         placeholder="Note..."
-                        className="w-full text-[13px] text-black bg-transparent hover:bg-white/90 focus:bg-white border border-transparent hover:border-slate-200 focus:border-brand-500 rounded-md px-2 py-1.5 outline-none text-left leading-relaxed whitespace-pre-wrap break-words disabled:text-black"
+                        readOnly={readOnly}
+                        isEditing={isOpen(index, 'note')}
+                        onEdit={() => beginEdit(index, 'note')}
+                        onCommit={(v) => commitCell(index, { note: v })}
+                        onCancel={cancelEdit}
+                        displayClassName="text-[13px] text-black leading-relaxed"
+                        inputClassName="w-full text-[13px] text-black bg-white border border-slate-200 rounded-md px-2 py-1.5 leading-relaxed"
                       />
                     </td>
 
@@ -796,26 +842,24 @@ export default function MiniPlanTable({
 
                     {/* Row actions */}
                     <td className={`${cellBase} text-center align-middle`}>
-                      {!readOnly && (
-                        <div className="flex flex-col items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => addRowToGroup(group, index)}
-                            title="Insert an activity below (same Item / Equipment)"
-                            className="w-6 h-6 flex items-center justify-center bg-white hover:bg-brand-600 text-brand-600 hover:text-white border border-brand-200 rounded-md transition-all"
-                          >
-                            <CornerDownRight className="w-3 h-3" />
-                          </button>
-                          <div className="flex items-center">
-                            <button type="button" onClick={() => moveRow(group, index, -1)} disabled={index === group.start}
-                              className="p-0.5 text-slate-500 hover:bg-white/70 rounded disabled:opacity-20"><ChevronUp className="w-3.5 h-3.5" /></button>
-                            <button type="button" onClick={() => moveRow(group, index, 1)} disabled={index === group.start + group.count - 1}
-                              className="p-0.5 text-slate-500 hover:bg-white/70 rounded disabled:opacity-20"><ChevronDown className="w-3.5 h-3.5" /></button>
-                          </div>
-                          <button type="button" onClick={() => deleteRow(index)} title="Delete this activity"
-                            className="p-0.5 text-slate-400 hover:text-rose-600 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => askAddRow(group, index)}
+                          title="Insert an activity below (same Item / Equipment)"
+                          className="w-6 h-6 flex items-center justify-center bg-white hover:bg-brand-600 text-brand-600 hover:text-white border border-brand-200 rounded-md transition-all"
+                        >
+                          <CornerDownRight className="w-3 h-3" />
+                        </button>
+                        <div className="flex items-center">
+                          <button type="button" onClick={() => moveRow(group, index, -1)} disabled={index === group.start}
+                            className="p-0.5 text-slate-500 hover:bg-white/70 rounded disabled:opacity-20"><ChevronUp className="w-3.5 h-3.5" /></button>
+                          <button type="button" onClick={() => moveRow(group, index, 1)} disabled={index === group.start + group.count - 1}
+                            className="p-0.5 text-slate-500 hover:bg-white/70 rounded disabled:opacity-20"><ChevronDown className="w-3.5 h-3.5" /></button>
                         </div>
-                      )}
+                        <button type="button" onClick={() => askDeleteRow(group, index)} title="Delete this activity"
+                          className="p-0.5 text-slate-400 hover:text-rose-600 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
                     </td>
                   </tr>
                 );
