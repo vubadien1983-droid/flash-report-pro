@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
-  Search, X, CalendarRange, FileSpreadsheet, FileText, RefreshCw,
+  X, CalendarRange, FileSpreadsheet, FileText, RefreshCw,
   Layers, SearchX, ArrowUpRight,
 } from 'lucide-react';
+import SearchBox from './SearchBox';
 import {
   dashboardView, summaryTiles, describeFilter,
 } from '../services/miniPlanDashboard';
@@ -164,22 +165,13 @@ export default function MiniPlanDashboard({
   const summary = (
     <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden">
       <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={view.filter.search}
-            onChange={(e) => setFilter({ search: e.target.value })}
-            placeholder="Search anything - equipment, activity, status, date..."
-            className="w-full text-[13px] text-black bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
-          />
-          {view.filter.search && (
-            <button type="button" onClick={() => setFilter({ search: '' })}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded">
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        <SearchBox
+          className="flex-1 min-w-[200px] max-w-md"
+          value={view.filter.search}
+          onChange={(v) => setFilter({ search: v })}
+          placeholder="Search anything - equipment, activity, status, date..."
+          inputClassName="w-full text-[13px] text-black bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
+        />
 
         {weekButton(WEEK_MODE.THIS, 'This week')}
         {weekButton(WEEK_MODE.NEXT, 'Next week')}

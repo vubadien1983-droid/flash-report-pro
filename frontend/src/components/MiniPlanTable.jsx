@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
-  CornerDownRight, Layers, Search, X, CalendarRange, SearchX, CalendarCheck,
+  CornerDownRight, Layers, X, CalendarRange, SearchX, CalendarCheck,
 } from 'lucide-react';
 import PhotoGalleryCell from './PhotoGalleryCell';
+import SearchBox from './SearchBox';
 import { compressForStorage, yieldToBrowser } from '../services/imageCompression';
 import {
   STATUS_OPTIONS, STATUS_STYLE, ROW_STATE_LEGEND, ROW_STATE_STYLE,
@@ -373,26 +374,11 @@ export default function MiniPlanTable({
 
   const toolbar = (
     <div className="px-4 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2">
-      <div className="relative flex-1 min-w-[220px] max-w-lg">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setFilter({ search: e.target.value })}
-          placeholder="Search anything - equipment, activity, note, status, date..."
-          className="w-full text-[13px] text-black bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setFilter({ search: '' })}
-            title="Clear the search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
+      <SearchBox
+        className="flex-1 min-w-[220px] max-w-lg"
+        value={search}
+        onChange={(v) => setFilter({ search: v })}
+      />
 
       {weekButton(WEEK_MODE.THIS, 'This week')}
       {weekButton(WEEK_MODE.NEXT, 'Next week')}
