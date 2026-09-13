@@ -74,7 +74,14 @@ export default function MiniPlanViewer({ shareId }) {
   // ── Live subscription ──────────────────────────────────────────
   useEffect(() => {
     if (!shareId) return undefined;
-    setLoading(true);
+    // ONLY the first load shows the loading screen.
+    //
+    // Pressing Sync re-opens the listener, and setting `loading` here used to
+    // swap the whole page for "Connecting to the live plan…" — which unmounts
+    // the workspace, so it came back on its default tab with the filter and
+    // the scroll position gone. The user was on Monitoring, pressed Sync, and
+    // landed on the dashboard. A refresh must never move the user (BUG-026).
+    if (!report) setLoading(true);
 
     const unsub = subscribeSharedMiniPlan(
       shareId,
@@ -99,7 +106,10 @@ export default function MiniPlanViewer({ shareId }) {
       unsub();
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     };
-    // subKey re-opens the listener when the user presses Sync.
+    // subKey re-opens the listener when the user presses Sync. `report` is
+    // deliberately NOT a dependency - it is read once, to decide whether this
+    // is the first load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareId, subKey]);
 
   // ── Editing through the link ───────────────────────────────────
@@ -238,7 +248,7 @@ export default function MiniPlanViewer({ shareId }) {
   };
 
   // ── States ─────────────────────────────────────────────────────
-  if (loading) {
+  if (loading && !report) {
     return (
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3 p-4">
         <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />

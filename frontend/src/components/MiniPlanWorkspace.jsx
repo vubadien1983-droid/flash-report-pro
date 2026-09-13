@@ -10,6 +10,41 @@ export const TAB_DASHBOARD = 'status';
 export const TAB_MONITORING = 'monitoring';
 
 /**
+ * The view the user chose SURVIVES a remount.
+ *
+ * Which tab is open, and what is filtered, is the user's place in the
+ * document — not application state to be reset by a refresh. It used to live
+ * only in this component's `useState`, so anything that unmounted the tree
+ * (a re-subscribe on the share link, a route flip, a report reloaded from
+ * disk) quietly put the user back on the dashboard with their filter gone
+ * (BUG-026). It is kept in sessionStorage instead: per browser tab, dropped
+ * when that tab closes, so a link opened fresh still starts on the dashboard.
+ *
+ * Storage can throw (private mode, blocked cookies) - every access is guarded
+ * and simply falls back to the default, exactly as the unlock flag does.
+ */
+const TAB_KEY = 'fr_miniplan_tab';
+const FILTER_KEY = 'fr_miniplan_filter';
+
+function readStoredTab() {
+  try {
+    const v = sessionStorage.getItem(TAB_KEY);
+    return v === TAB_MONITORING || v === TAB_DASHBOARD ? v : null;
+  } catch { return null; }
+}
+
+function readStoredFilter() {
+  try {
+    const raw = sessionStorage.getItem(FILTER_KEY);
+    return raw ? normalizeFilter(JSON.parse(raw)) : null;
+  } catch { return null; }
+}
+
+function store(key, value) {
+  try { sessionStorage.setItem(key, value); } catch { /* nothing is lost but the memory of it */ }
+}
+
+/**
  * The CPP Mechanical Mini Plan, as TWO TABS over ONE document.
  *
  *   "Equipment installation status" - the dashboard: progress per equipment,
@@ -40,8 +75,14 @@ export default function MiniPlanWorkspace({
   initialTab = TAB_DASHBOARD,
   fullScreen = false,
 }) {
-  const [tab, setTab] = useState(initialTab);
-  const [filter, setFilter] = useState(EMPTY_FILTER);
+  const [tab, setTabState] = useState(() => readStoredTab() || initialTab);
+  const [filter, setFilterState] = useState(() => readStoredFilter() || EMPTY_FILTER);
+
+  const setTab = (next) => { setTabState(next); store(TAB_KEY, next); };
+  const setFilter = (next) => {
+    setFilterState(next);
+    store(FILTER_KEY, JSON.stringify(normalizeFilter(next)));
+  };
 
   const active = isFilterActive(filter);
   const safeFilter = normalizeFilter(filter);
