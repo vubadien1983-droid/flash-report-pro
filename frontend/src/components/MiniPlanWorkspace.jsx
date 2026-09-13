@@ -38,6 +38,7 @@ export default function MiniPlanWorkspace({
   onRequestUnlock,
   title = MINI_PLAN_LABEL,
   initialTab = TAB_DASHBOARD,
+  fullScreen = false,
 }) {
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState(EMPTY_FILTER);
@@ -64,7 +65,7 @@ export default function MiniPlanWorkspace({
   };
 
   return (
-    <div className="mb-6">
+    <div className={fullScreen ? 'h-full flex flex-col min-h-0' : 'mb-6'}>
       <div className="flex flex-wrap items-end gap-1.5 px-1">
         {tabButton(TAB_DASHBOARD, 'Equipment installation status', LayoutDashboard)}
         {tabButton(TAB_MONITORING, 'Monitoring', Table2)}
@@ -88,7 +89,9 @@ export default function MiniPlanWorkspace({
       </div>
 
       {tab === TAB_DASHBOARD ? (
-        <div className="bg-slate-100/60 rounded-xl rounded-tl-none p-2 border border-slate-200/80">
+        <div className={`bg-slate-100/60 rounded-xl rounded-tl-none p-2 border border-slate-200/80 ${
+          fullScreen ? 'flex-1 min-h-0 overflow-auto' : ''
+        }`}>
           <MiniPlanDashboard
             items={items}
             title={title}
@@ -96,6 +99,7 @@ export default function MiniPlanWorkspace({
             onFilterChange={setFilter}
             isMobileMode={isMobileMode}
             onOpenMonitoring={() => setTab(TAB_MONITORING)}
+            fullScreen={fullScreen}
           />
         </div>
       ) : (
@@ -108,6 +112,7 @@ export default function MiniPlanWorkspace({
           onRequestUnlock={onRequestUnlock}
           filter={safeFilter}
           onFilterChange={setFilter}
+          fullScreen={fullScreen}
         />
       )}
     </div>

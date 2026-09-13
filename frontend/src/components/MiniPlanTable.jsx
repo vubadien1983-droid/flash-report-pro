@@ -61,6 +61,7 @@ export default function MiniPlanTable({
   onRequestUnlock,
   filter: filterProp,
   onFilterChange,
+  fullScreen = false,
 }) {
   const [selectedCell, setSelectedCell] = useState(null); // itemIndex | null
   const [editing, setEditing] = useState(null);           // {index, field} | null
@@ -427,7 +428,10 @@ export default function MiniPlanTable({
     </div>
   );
 
-  const footer = (
+  /* App chrome — hidden on the share link, where the screen belongs to the
+     plan. The colour legend it explains is already in the toolbar, and "Add
+     Equipment" is on every equipment block. */
+  const footer = fullScreen ? null : (
     <div className="px-3 py-1.5 bg-slate-50/60 border-t border-slate-200/80 flex items-center justify-between text-[11.5px] text-slate-600">
       <span className="flex items-center gap-1.5">
         <CalendarClock className="w-3.5 h-3.5 text-slate-400" />
@@ -459,13 +463,15 @@ export default function MiniPlanTable({
   // ── Phone: cards grouped by equipment ──────────────────────────
   if (isMobileMode) {
     return (
-      <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
+      <div className={`bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden ${
+        fullScreen ? 'h-full flex flex-col min-h-0' : 'mb-6'
+      }`}>
         {toolbar}
         {confirmModal}
 
         {filterActive && groups.length === 0 && emptyState}
 
-        <div className="p-2.5 space-y-3 bg-slate-50/50">
+        <div className={`p-2.5 space-y-3 bg-slate-50/50 ${fullScreen ? 'flex-1 min-h-0 overflow-auto' : ''}`}>
           {groups.map((group) => (
             <div key={group.key} className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               {/* Equipment header = merged columns A + B */}
@@ -644,7 +650,9 @@ export default function MiniPlanTable({
   const headCls = 'sticky top-0 z-20 bg-slate-100 border-b border-slate-300 px-2 py-2 text-center text-[12.5px] font-bold text-black shadow-[0_1px_0_0_rgba(148,163,184,0.6)]';
 
   return (
-    <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden mb-6">
+    <div className={`bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden ${
+      fullScreen ? 'h-full flex flex-col min-h-0' : 'mb-6'
+    }`}>
       {toolbar}
       {confirmModal}
 
@@ -655,7 +663,9 @@ export default function MiniPlanTable({
           on screen or the table cannot be read at all. The min-width keeps the
           row's shape: a plan is read across the row, so the box scrolls
           sideways rather than squeezing eight columns into the pane. */}
-      <div className="overflow-auto w-full max-h-[calc(100vh-215px)] min-h-[320px]">
+      <div className={`overflow-auto w-full ${
+        fullScreen ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-215px)] min-h-[320px]'
+      }`}>
         <table className="w-full min-w-[1480px] text-left border-collapse table-fixed">
           <thead>
             <tr>

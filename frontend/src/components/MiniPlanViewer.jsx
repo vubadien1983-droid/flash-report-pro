@@ -267,7 +267,10 @@ export default function MiniPlanViewer({ shareId }) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-slate-100 flex flex-col">
+    /* h-screen, not min-h-screen: the page is exactly the viewport and only the
+       table scrolls inside it, so the header stays put and nothing below the
+       plan can push it off screen. */
+    <div className="h-screen w-full bg-slate-100 flex flex-col overflow-hidden">
       <header className="px-3 sm:px-5 py-2.5 bg-white border-b border-slate-200/90 flex items-center justify-between gap-2 sticky top-0 z-30 shadow-2xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-sky-400 flex items-center justify-center text-white shadow-md flex-shrink-0">
@@ -371,10 +374,11 @@ export default function MiniPlanViewer({ shareId }) {
         </div>
       </header>
 
-      <main className="flex-1 w-full p-3 md:p-4">
-        {/* Both tabs on the public link. The dashboard is read-only by
-            construction, so it needs no password; Monitoring stays locked
-            until the project password is entered, exactly as before. */}
+      {/* FULL SCREEN on the share link: no page padding, no footer line, and
+          the workspace stretches to whatever the header leaves. Somebody who
+          opens this link came to read the plan, not the app's own captions -
+          every pixel spent on chrome is a row they cannot see. */}
+      <main className="flex-1 min-h-0 w-full px-1 pb-1 sm:px-2 sm:pb-2">
         <MiniPlanWorkspace
           items={normalizeMiniPlanItems(report.items)}
           onItemsChange={handleItemsChange}
@@ -383,12 +387,8 @@ export default function MiniPlanViewer({ shareId }) {
           readOnly={!unlocked}
           onRequestUnlock={() => setAskPassword(true)}
           title={report.title}
+          fullScreen
         />
-
-        <p className="text-center text-[11px] text-slate-500 pb-6">
-          Live shared plan · Block B - EPC#1 ·{' '}
-          <a href="#/" className="text-brand-600 hover:underline font-medium">Open the app</a>
-        </p>
       </main>
 
       <PasswordModal

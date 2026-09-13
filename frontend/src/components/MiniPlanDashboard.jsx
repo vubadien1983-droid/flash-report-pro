@@ -61,6 +61,7 @@ export default function MiniPlanDashboard({
   onFilterChange,
   isMobileMode = false,
   onOpenMonitoring,
+  fullScreen = false,
 }) {
   const [busy, setBusy] = useState('');
   const today = todayKey();
@@ -133,7 +134,9 @@ export default function MiniPlanDashboard({
         <span>Task</span>
       </div>
 
-      <div className={`overflow-y-auto ${isMobileMode ? 'max-h-[360px]' : 'max-h-[calc(100vh-260px)]'}`}>
+      <div className={`overflow-y-auto ${
+        isMobileMode ? 'max-h-[360px]' : (fullScreen ? 'max-h-[calc(100vh-190px)]' : 'max-h-[calc(100vh-260px)]')
+      }`}>
         {equipmentRows.length === 0 && (
           <p className="px-3 py-6 text-center text-[12px] text-slate-500">No Equipment in view.</p>
         )}
@@ -299,7 +302,9 @@ export default function MiniPlanDashboard({
       ) : (
         // The header row is sticky and the BODY scrolls: on a 500-row plan the
         // column titles have to stay on screen or the table is unreadable.
-        <div className={`overflow-auto ${isMobileMode ? 'max-h-[60vh]' : 'max-h-[calc(100vh-420px)] min-h-[300px]'}`}>
+        <div className={`overflow-auto ${
+          isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-355px)] min-h-[300px]' : 'max-h-[calc(100vh-420px)] min-h-[300px]')
+        }`}>
           <table className="w-full min-w-[900px] text-left border-collapse">
             <thead>{previewHead}</thead>
             <tbody>
