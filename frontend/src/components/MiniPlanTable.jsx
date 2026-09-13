@@ -130,6 +130,28 @@ export default function MiniPlanTable({
   const search = filter.search;
   const clearFilters = () => setFilter({ ...EMPTY_FILTER });
 
+  /**
+   * A date cell. When the plan is LOCKED and the cell is empty, an em dash is
+   * drawn instead of the input: an empty `<input type=date>` renders the
+   * browser's "dd-mm-yyyy" skeleton, and 500 of those on a read-only public
+   * link is noise nobody can act on. Same reasoning as BUG-020 - a document
+   * that cannot be edited must still be easy to READ.
+   */
+  const DateCell = ({ index, field, value }) => {
+    if (readOnly && !value) {
+      return <span className="block text-center text-[13px] text-slate-400">—</span>;
+    }
+    return (
+      <input
+        type="date"
+        disabled={readOnly}
+        value={value || ''}
+        onChange={(e) => patchItem(index, { [field]: e.target.value })}
+        className="w-full text-[13px] text-black bg-white/85 border border-slate-200 rounded-md px-1.5 py-1.5 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent disabled:text-black"
+      />
+    );
+  };
+
   /** Mark the rows that actually matched, so it is clear why a group is here.
    *  An OUTLINE, not a fill: the row background already carries the schedule
    *  status, and overwriting it would destroy the colour rule the plan is
@@ -726,13 +748,7 @@ export default function MiniPlanTable({
 
                     {/* Schedule */}
                     <td className={`${cellBase} align-middle`}>
-                      <input
-                        type="date"
-                        disabled={readOnly}
-                        value={item.schedule || ''}
-                        onChange={(e) => patchItem(index, { schedule: e.target.value })}
-                        className="w-full text-[13px] text-black bg-white/85 border border-slate-200 rounded-md px-1.5 py-1.5 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent disabled:text-black"
-                      />
+                      <DateCell index={index} field="schedule" value={item.schedule} />
                     </td>
 
                     {/* Activities */}
@@ -756,13 +772,7 @@ export default function MiniPlanTable({
                         which is what the dashboard's weekly figures count.
                         Stamped automatically the moment Status becomes Done. */}
                     <td className={`${cellBase} align-middle`}>
-                      <input
-                        type="date"
-                        disabled={readOnly}
-                        value={item.completed_date || ''}
-                        onChange={(e) => patchItem(index, { completed_date: e.target.value })}
-                        className="w-full text-[13px] text-black bg-white/85 border border-slate-200 rounded-md px-1.5 py-1.5 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent disabled:text-black"
-                      />
+                      <DateCell index={index} field="completed_date" value={item.completed_date} />
                       {isCompletedDateInferred(item) && (
                         <span
                           title="No completed date was recorded for this Done activity, so the dashboard counts its plan date."
