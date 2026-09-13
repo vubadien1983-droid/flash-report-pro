@@ -13,7 +13,7 @@
 
 import {
   groupMiniPlanItems, miniPlanStats, rowState, ROW_STATE_STYLE, ROW_STATE_LEGEND,
-  STATUS_STYLE, normalizeStatus, scheduleKey, todayKey, MINI_PLAN_LABEL,
+  STATUS_STYLE, normalizeStatus, scheduleKey, todayKey, MINI_PLAN_LABEL, completedKey,
 } from './miniPlan';
 import { sanitizeFilename, downloadBlob } from './exportImage';
 
@@ -62,6 +62,7 @@ export function renderMiniPlanHtml(report) {
       <td class="c-sched">${esc(formatDate(item.schedule))}</td>
       <td class="c-act">${esc(item.activity)}</td>
       <td class="c-status"><span class="badge" style="background:${ss.css};color:${ss.cssText};border-color:${status ? ss.css : '#cbd5e1'}">${esc(status || '—')}</span></td>
+      <td class="c-sched">${esc(formatDate(completedKey(item)))}</td>
       <td class="c-note">${esc(item.note)}</td>
       <td class="c-photo">${photoCell}</td>
     </tr>`;
@@ -124,7 +125,7 @@ export function renderMiniPlanHtml(report) {
   <div class="tw">
     <table>
       <thead><tr>
-        <th>Item</th><th>Equipment</th><th>Schedule</th><th>Activities</th><th>Status</th><th>Note</th><th>Photo</th>
+        <th>Item</th><th>Equipment</th><th>Schedule</th><th>Activities</th><th>Status</th><th>Completed</th><th>Note</th><th>Photo</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>

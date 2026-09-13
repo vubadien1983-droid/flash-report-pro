@@ -19,6 +19,7 @@ import {
 import {
   groupMiniPlanItems, miniPlanStats, rowState, ROW_STATE_STYLE, ROW_STATE_LEGEND,
   STATUS_STYLE, normalizeStatus, scheduleKey, todayKey, MINI_PLAN_LABEL,
+  completedKey,
 } from './miniPlan';
 
 // --- Column geometry, shared by both exporters --------------------
@@ -31,11 +32,15 @@ const COLS = {
   schedule: 13,
   activities: 50,
   status: 13,
+  completed: 14,
   note: 30,
   photo: 46,
 };
 
-const PHOTO_COL_INDEX = 6;              // 0-based: G
+// 0-based, and it moved from G to H when Completed Date was inserted after
+// Status. This constant is the ONLY place the photo column's position is
+// stated; the EMU anchors are derived from it (BUG-015).
+const PHOTO_COL_INDEX = 7;              // 0-based: H
 const MIN_ROW_POINTS = 30;
 const LINE_POINTS = 12.5;
 
@@ -92,6 +97,7 @@ export async function exportMiniPlanExcel(report) {
     { key: 'schedule', width: COLS.schedule },
     { key: 'activities', width: COLS.activities },
     { key: 'status', width: COLS.status },
+    { key: 'completed', width: COLS.completed },
     { key: 'note', width: COLS.note },
     { key: 'photo', width: COLS.photo },
   ];
@@ -102,14 +108,14 @@ export async function exportMiniPlanExcel(report) {
   const stats = miniPlanStats(items, today);
 
   // ── Title block ──────────────────────────────────────────────
-  ws.mergeCells('A1:G1');
+  ws.mergeCells('A1:H1');
   const t = ws.getCell('A1');
   t.value = report.title || MINI_PLAN_LABEL;
   t.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF0F172A' } };
   t.alignment = { horizontal: 'left', vertical: 'middle' };
   ws.getRow(1).height = 26;
 
-  ws.mergeCells('A2:G2');
+  ws.mergeCells('A2:H2');
   const sub = ws.getCell('A2');
   sub.value =
     `Block B - EPC#1   |   Exported ${formatDate(today)}   |   ` +
@@ -136,7 +142,7 @@ export async function exportMiniPlanExcel(report) {
   });
 
   // ── Column headers ───────────────────────────────────────────
-  const headers = ['Item', 'Equipment', 'Schedule', 'Activities', 'Status', 'Note', 'Photo'];
+  const headers = ['Item', 'Equipment', 'Schedule', 'Activities', 'Status', 'Completed Date', 'Note', 'Photo'];
   const headRow = ws.getRow(4);
   headRow.height = 24;
   headers.forEach((text, i) => {
@@ -222,20 +228,35 @@ export async function exportMiniPlanExcel(report) {
       cellE.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: sStyle.fg } };
       cellE.alignment = { horizontal: 'center', vertical: 'middle' };
 
-      // Note (F)
+      // Completed Date (F) — a real date value, like Schedule. Blank unless
+      // the activity is Done; completedKey() also supplies the plan date for
+      // rows ticked Done before this column existed.
       const cellF = ws.getCell(excelRow, 6);
-      cellF.value = item.note || '';
-      cellF.font = { name: 'Arial', size: 9, color: { argb: 'FF374151' } };
-      cellF.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      const doneOn = completedKey(item);
+      if (doneOn) {
+        const [cy, cm, cd] = doneOn.split('-').map(Number);
+        cellF.value = new Date(cy, cm - 1, cd);
+        cellF.numFmt = 'd-mmm-yy';
+      } else {
+        cellF.value = '';
+      }
+      cellF.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };
+      cellF.alignment = { horizontal: 'center', vertical: 'middle' };
 
-      // Photo (G)
+      // Note (G)
       const cellG = ws.getCell(excelRow, 7);
-      cellG.alignment = { horizontal: 'center', vertical: 'middle' };
+      cellG.value = item.note || '';
+      cellG.font = { name: 'Arial', size: 9, color: { argb: 'FF374151' } };
+      cellG.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
-      // Fill C..G with the row colour. A and B are left neutral: they are
+      // Photo (H)
+      const cellH = ws.getCell(excelRow, 8);
+      cellH.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Fill C..H with the row colour. A and B are left neutral: they are
       // merged across several activities that may each be in a different
       // state, so colouring them would have to pick one and mislead.
-      for (let c = 3; c <= 7; c++) {
+      for (let c = 3; c <= 8; c++) {
         const cell = ws.getCell(excelRow, c);
         cell.border = thin();
         if (c === 5 && sStyle.argb) {
@@ -276,7 +297,7 @@ export async function exportMiniPlanExcel(report) {
     }
   }
 
-  ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: Math.max(4, excelRow - 1), column: 7 } };
+  ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: Math.max(4, excelRow - 1), column: 8 } };
 
   const buffer = await wb.xlsx.writeBuffer();
   downloadBlob(
@@ -343,9 +364,9 @@ export async function exportMiniPlanPdf(report) {
   const stateMatrix = [];   // body row index -> row state
   const statusMatrix = [];
 
-  const PHOTO_COL_WIDTH = 190;
+  const PHOTO_COL_WIDTH = 186;
   const STATUS_COL = 4;   // table column index of Status
-  const PHOTO_COL = 6;    // table column index of Photo
+  const PHOTO_COL = 7;    // table column index of Photo (Completed Date is 5)
 
   for (const group of groups) {
     for (const [i, { item }] of group.rows.entries()) {
@@ -381,6 +402,7 @@ export async function exportMiniPlanPdf(report) {
       cells.push(formatDate(item.schedule));
       cells.push(item.activity || '');
       cells.push(status || '');
+      cells.push(formatDate(completedKey(item)));
       cells.push(item.note || '');
       cells.push('');                       // Photo cell — drawn in didDrawCell
 
@@ -391,7 +413,7 @@ export async function exportMiniPlanPdf(report) {
   doc.autoTable({
     startY: 74,
     margin: { left: 24, right: 24, bottom: 34 },
-    head: [['Item', 'Equipment', 'Schedule', 'Activities', 'Status', 'Note', 'Photo']],
+    head: [['Item', 'Equipment', 'Schedule', 'Activities', 'Status', 'Completed', 'Note', 'Photo']],
     body,
     theme: 'grid',
     // An engineering plan must not tear a row - or the photos drawn in it -
@@ -414,14 +436,19 @@ export async function exportMiniPlanPdf(report) {
       halign: 'center',
       fontSize: 8,
     },
+    // 26+130+50+176+50+52+108+186 = 778pt, inside the 793.89pt of printable
+    // width an A4 landscape page has after the 24pt margins. Adding a column
+    // without re-checking this total is how a table silently overflows the
+    // page and autoTable starts shrinking the text instead.
     columnStyles: {
-      0: { cellWidth: 28, halign: 'center' },
-      1: { cellWidth: 138 },
-      2: { cellWidth: 54, halign: 'center' },
-      3: { cellWidth: 196 },
-      4: { cellWidth: 54, halign: 'center', fontStyle: 'bold' },
-      5: { cellWidth: 122 },
-      6: { cellWidth: PHOTO_COL_WIDTH },
+      0: { cellWidth: 26, halign: 'center' },
+      1: { cellWidth: 130 },
+      2: { cellWidth: 50, halign: 'center' },
+      3: { cellWidth: 176 },
+      4: { cellWidth: 50, halign: 'center', fontStyle: 'bold' },
+      5: { cellWidth: 52, halign: 'center' },
+      6: { cellWidth: 108 },
+      7: { cellWidth: PHOTO_COL_WIDTH },
     },
 
     didParseCell: (data) => {
@@ -437,9 +464,9 @@ export async function exportMiniPlanPdf(report) {
 
       // The Status cell always wears its own colour.
       //
-      // `data.column.index` is the TABLE column (0..6), not a position in the
+      // `data.column.index` is the TABLE column (0..7), not a position in the
       // raw array: autoTable accounts for the cells a rowSpan swallowed when
-      // it maps an array row onto columns. So 4 is Status and 6 is Photo on
+      // it maps an array row onto columns. So 4 is Status and 7 is Photo on
       // every row, whether that row carries the merged Item/Equipment cells
       // or not — do not try to correct for the shorter raw array.
       if (data.column.index === STATUS_COL) {
@@ -463,7 +490,7 @@ export async function exportMiniPlanPdf(report) {
     didDrawCell: (data) => {
       if (data.section !== 'body') return;
       // The Photo column is the LAST cell of the row whichever shape the row
-      // has (7 cells on a group's first row, 5 on the others).
+      // has (8 cells on a group's first row, 6 on the others).
       if (data.column.index !== PHOTO_COL) return;
 
       const images = photoMatrix[data.row.index] || [];

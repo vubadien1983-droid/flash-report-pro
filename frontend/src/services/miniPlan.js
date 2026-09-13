@@ -186,6 +186,7 @@ export function makeMiniPlanRow(groupId, equipment = '', overrides = {}) {
     schedule: '',
     activity: '',
     status: STATUS_BLANK,
+    completed_date: '',
     note: '',
     photos: [],
     ...overrides,
@@ -210,6 +211,7 @@ export function miniActivityHasContent(item) {
   if ((item.activity || '').trim()) return true;
   if ((item.note || '').trim()) return true;
   if (scheduleKey(item.schedule)) return true;
+  if (scheduleKey(item.completed_date)) return true;
   if (normalizeStatus(item.status)) return true;
   return (item.photos || []).some((p) => p && (p.url || p.kind === 'file'));
 }
@@ -336,6 +338,7 @@ export function normalizeMiniPlanItems(items) {
     if (!item.equipment) item.equipment = lastEquip;
     item.schedule = scheduleKey(item.schedule);
     item.status = normalizeStatus(item.status);
+    item.completed_date = scheduleKey(item.completed_date);
     if (!Array.isArray(item.photos)) item.photos = [];
     return item;
   });
@@ -443,27 +446,209 @@ export function itemMatchesSearch(item, needle) {
     item?.note,
     normalizeStatus(item?.status),
     scheduleLabel(item?.schedule),
+    scheduleLabel(item?.completed_date),
   ].join(' ~ '));
   return hay.includes(needle);
 }
 
+
+// --- Completed Date -----------------------------------------------
+//
+// Added in v3.1. The Schedule column says when an activity was PLANNED; this
+// one says when it was actually finished, which is the only way to answer
+// "how much of this week's plan did we actually deliver?".
+
 /**
- * Apply the search box and the week toggle to grouped rows.
+ * The date this activity was completed, as YYYY-MM-DD, or ''.
+ *
+ * A Done row entered before this column existed has no completed date at all.
+ * Rather than report those 35 rows as "never completed", the row's own
+ * Schedule stands in for them - the plan's own statement of when the work was
+ * meant to happen, on a row somebody has since ticked as Done. That inference
+ * is visible on screen (the value is shown greyed and marked "planned"), and
+ * the moment anyone types a real date it wins.
+ *
+ * A row that is NOT Done never has a completed date, whatever is stored.
+ */
+export function completedKey(item) {
+  // A date stored on a row that is not Done is a contradiction the plan
+  // cannot support - Status is what says whether the work is finished - so it
+  // is never counted. statusChangePatch() clears it on the way out of Done;
+  // this guard covers a date typed directly into a row nobody has ticked.
+  if (normalizeStatus(item?.status) !== STATUS_DONE) return '';
+  return scheduleKey(item?.completed_date) || scheduleKey(item?.schedule);
+}
+
+/** True when completedKey() fell back to the Schedule instead of a real entry. */
+export function isCompletedDateInferred(item) {
+  if (normalizeStatus(item?.status) !== STATUS_DONE) return false;
+  return !scheduleKey(item?.completed_date) && Boolean(scheduleKey(item?.schedule));
+}
+
+/**
+ * The patch to apply when the user changes Status, so Status and Completed
+ * Date can never disagree.
+ *
+ *   -> Done      : stamp today, unless a date is already recorded.
+ *   -> not Done  : clear it. A date on a row that is not finished is a claim
+ *                  the plan cannot support, and it would be counted by the
+ *                  weekly "completed" figure.
+ */
+export function statusChangePatch(item, nextStatus, today = todayKey()) {
+  const status = normalizeStatus(nextStatus);
+  if (status !== STATUS_DONE) return { status, completed_date: '' };
+  return { status, completed_date: scheduleKey(item?.completed_date) || today };
+}
+
+// --- Week modes ---------------------------------------------------
+
+export const WEEK_MODE = { NONE: 'none', THIS: 'this', NEXT: 'next' };
+
+/** Monday-to-Sunday week AFTER the one containing `today`. */
+export function nextWeekRange(today = todayKey()) {
+  const { end } = weekRange(today);                 // Sunday of this week
+  const [y, m, d] = end.split('-').map(Number);
+  const start = new Date(y, m - 1, d);
+  start.setDate(start.getDate() + 1);               // the following Monday
+  const finish = new Date(start);
+  finish.setDate(start.getDate() + 6);
+  return { start: todayKey(start), end: todayKey(finish) };
+}
+
+/** The week a mode refers to. NONE still reports the current week, because
+ *  the weekly figures on the dashboard always describe SOME week. */
+export function weekRangeFor(mode, today = todayKey()) {
+  return mode === WEEK_MODE.NEXT ? nextWeekRange(today) : weekRange(today);
+}
+
+export function weekModeLabel(mode) {
+  return mode === WEEK_MODE.NEXT ? 'Next week' : 'This week';
+}
+
+/** Is a YYYY-MM-DD key inside {start,end}? Both ends inclusive; '' is never. */
+export function inRange(key, range) {
+  if (!key || !range) return false;
+  return key >= range.start && key <= range.end;
+}
+
+// --- The filter, shared by both tabs ------------------------------
+//
+// ONE filter object drives the dashboard AND the monitoring table. That is the
+// whole point of the two tabs: clicking "12 completed this week" on the
+// dashboard has to leave the Monitoring tab showing the same work, or the two
+// views become two different truths about one plan (BUG-014's rule applied to
+// a selection instead of a colour).
+//
+//   search    - free text, matched against every visible field
+//   week      - WEEK_MODE: none / this / next, matched against SCHEDULE
+//   focus     - which summary tile is selected (see FOCUS)
+//   equipment - a single group_id, set by clicking a row in the left panel
+//
+// `search`, `week` and `equipment` are the SCOPE: the dashboard's summary
+// figures are counted over exactly those rows, which is what makes the tiles
+// re-count when the user types. `focus` is applied on top, to the preview
+// table and to the Monitoring tab, so selecting a tile narrows the list
+// WITHOUT changing the numbers the tiles themselves show - otherwise every
+// click would rewrite the very figure that was clicked.
+
+export const FOCUS = {
+  ALL: 'all',
+  DONE: 'done',
+  OPEN: 'open',
+  PLAN_WEEK: 'planWeek',
+  DONE_WEEK: 'doneWeek',
+  VAR: 'var',
+};
+
+export const EMPTY_FILTER = {
+  search: '',
+  week: WEEK_MODE.NONE,
+  focus: FOCUS.ALL,
+  equipment: '',
+};
+
+/** Accepts the v2.9 shape (`week: true/false`) as well as the current one. */
+export function normalizeFilter(filter) {
+  const f = filter || {};
+  let week = f.week;
+  if (week === true) week = WEEK_MODE.THIS;
+  if (week !== WEEK_MODE.THIS && week !== WEEK_MODE.NEXT) week = WEEK_MODE.NONE;
+  return {
+    search: String(f.search ?? ''),
+    week,
+    focus: f.focus || FOCUS.ALL,
+    equipment: f.equipment || '',
+  };
+}
+
+export function isFilterActive(filter) {
+  const f = normalizeFilter(filter);
+  return Boolean(normalizeSearchText(f.search).trim())
+    || f.week !== WEEK_MODE.NONE
+    || f.focus !== FOCUS.ALL
+    || Boolean(f.equipment);
+}
+
+/** Search + week + equipment. This is what the summary figures count. */
+export function itemInScope(item, filter, today = todayKey()) {
+  const f = normalizeFilter(filter);
+  const needle = normalizeSearchText(f.search).trim();
+  if (needle && !itemMatchesSearch(item, needle)) return false;
+  if (f.equipment && (item?.group_id || '') !== f.equipment) return false;
+  if (f.week !== WEEK_MODE.NONE) {
+    if (!inRange(scheduleKey(item?.schedule), weekRangeFor(f.week, today))) return false;
+  }
+  return true;
+}
+
+/** The selected summary tile, applied on top of the scope. */
+export function itemInFocus(item, filter, today = todayKey()) {
+  const f = normalizeFilter(filter);
+  const range = weekRangeFor(f.week, today);
+  const status = normalizeStatus(item?.status);
+
+  switch (f.focus) {
+    case FOCUS.DONE:      return status === STATUS_DONE;
+    case FOCUS.OPEN:      return status !== STATUS_DONE;
+    case FOCUS.PLAN_WEEK: return inRange(scheduleKey(item?.schedule), range);
+    case FOCUS.DONE_WEEK: return inRange(completedKey(item), range);
+    // The variance IS the gap: planned inside the week and not completed
+    // inside it. Clicking Var should hand the user the work that slipped,
+    // not a number they then have to find by eye.
+    case FOCUS.VAR:
+      return inRange(scheduleKey(item?.schedule), range) && !inRange(completedKey(item), range);
+    default: return true;
+  }
+}
+
+export function itemMatchesFilter(item, filter, today = todayKey()) {
+  return itemInScope(item, filter, today) && itemInFocus(item, filter, today);
+}
+
+/**
+ * Apply the filter to grouped rows.
  *
  * THE GROUP IS THE UNIT. If ANY activity of an Equipment matches, the whole
  * Equipment is kept with ALL of its activities - that is what makes the
  * filter usable on a plan: to act on the one item that is due this week you
  * need the rest of that equipment's work in front of you, not a row torn out
- * of its context.
+ * of its context. It is also exactly what the user asked for when the
+ * dashboard drives the Monitoring tab.
  *
  * The rows that actually matched come back in `matched` so the table can mark
  * them; without that the user cannot tell WHY a group is on screen.
  *
+ * VIEW-ONLY: the groups handed back carry their ORIGINAL row indices, so item
+ * numbers never shift and every edit handler - all of which address rows by
+ * their index in the real `items` array - keeps working.
+ *
  * @returns {{groups, matched:Set<number>, groupCount:number, rowCount:number, active:boolean}}
  */
-export function filterMiniPlanGroups(groups, { search = '', week = false, today = todayKey() } = {}) {
-  const needle = normalizeSearchText(search).trim();
-  const active = Boolean(needle) || week;
+export function filterMiniPlanGroups(groups, options = {}) {
+  const today = options.today || todayKey();
+  const filter = normalizeFilter(options);
+  const active = isFilterActive(filter);
+
   if (!active) {
     return { groups, matched: new Set(), groupCount: groups.length, rowCount: 0, active: false };
   }
@@ -474,9 +659,7 @@ export function filterMiniPlanGroups(groups, { search = '', week = false, today 
   for (const group of groups) {
     let hit = false;
     for (const { item, index } of group.rows) {
-      const okSearch = itemMatchesSearch(item, needle);
-      const okWeek = !week || isInCurrentWeek(item?.schedule, today);
-      if (okSearch && okWeek) {
+      if (itemMatchesFilter(item, filter, today)) {
         matched.add(index);
         hit = true;
       }
