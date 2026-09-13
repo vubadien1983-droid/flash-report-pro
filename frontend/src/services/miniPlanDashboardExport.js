@@ -16,7 +16,7 @@
  * No photos here. This tab is the plain data table.
  */
 
-import { sanitizeFilename, downloadBlob } from './exportImage';
+import { sanitizeFilename, downloadBlob, excelDate } from './exportImage';
 import { summaryTiles, describeFilter } from './miniPlanDashboard';
 import {
   ROW_STATE_STYLE, rowState, STATUS_STYLE, normalizeStatus,
@@ -178,8 +178,7 @@ export async function exportDashboardExcel({ title, view }) {
       const cell = ws.getCell(r, col);
       const k = scheduleKey(key);
       if (k) {
-        const [y, m, d] = k.split('-').map(Number);
-        cell.value = new Date(y, m - 1, d);
+        cell.value = excelDate(k);
         cell.numFmt = 'd-mmm-yy';
       }
       cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };

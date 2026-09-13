@@ -13,7 +13,7 @@
  */
 
 import {
-  getImageData, sanitizeFilename, downloadBlob,
+  getImageData, sanitizeFilename, downloadBlob, excelDate,
   colWidthToPx, rowPointsToPx, pxToPoints, imageAnchor, photoGrid, tileBox,
 } from './exportImage';
 import {
@@ -206,8 +206,7 @@ export async function exportMiniPlanExcel(report) {
       const cellC = ws.getCell(excelRow, 3);
       const sched = scheduleKey(item.schedule);
       if (sched) {
-        const [y, m, d] = sched.split('-').map(Number);
-        cellC.value = new Date(y, m - 1, d);
+        cellC.value = excelDate(sched);
         cellC.numFmt = 'd-mmm-yy';
       } else {
         cellC.value = '';
@@ -234,8 +233,7 @@ export async function exportMiniPlanExcel(report) {
       const cellF = ws.getCell(excelRow, 6);
       const doneOn = completedKey(item);
       if (doneOn) {
-        const [cy, cm, cd] = doneOn.split('-').map(Number);
-        cellF.value = new Date(cy, cm - 1, cd);
+        cellF.value = excelDate(doneOn);
         cellF.numFmt = 'd-mmm-yy';
       } else {
         cellF.value = '';

@@ -153,3 +153,27 @@ export function downloadBlob(blob, fileName) {
     URL.revokeObjectURL(link.href);
   }, 100);
 }
+
+/**
+ * A date as an Excel DATE VALUE, built at UTC midnight.
+ *
+ * BUG-022: `new Date(y, m-1, d)` is LOCAL midnight, and ExcelJS derives a
+ * serial number from the Date's UTC instant. In UTC+7 — where this plan is
+ * written — local midnight is 17:00 the PREVIOUS day in UTC, so 12-Sep-26
+ * was written as 46276.708; Excel shows the integer part under a `d-mmm-yy`
+ * format and the column read 11-Sep-26. Every date in every exported sheet
+ * was a day early, silently, for every user east of Greenwich.
+ *
+ * Date.UTC gives a whole-number serial, which is what a date-only column is.
+ * It lives here, with the other export arithmetic, so there is ONE copy —
+ * a second copy is how BUG-015's units went wrong the first time.
+ *
+ * @param {string} key YYYY-MM-DD (already normalised by scheduleKey)
+ * @returns {Date|null}
+ */
+export function excelDate(key) {
+  if (!key) return null;
+  const [y, m, d] = String(key).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(Date.UTC(y, m - 1, d));
+}
