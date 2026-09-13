@@ -61,7 +61,9 @@ export const ROW_TINT = {
   today:     'FFE4EEFB',
   overdue:   'FFFBF0DC',
   missed:    'FFFBE4E4',
-  unplanned: 'FFFFFBEB',
+  // No ROW tint for unplanned — the empty Schedule CELL is marked instead
+  // (NO_DATE_CELL in services/miniPlan.js). BUG-027.
+  unplanned: null,
   none:      null,
 };
 

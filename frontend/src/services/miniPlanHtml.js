@@ -14,6 +14,7 @@
 import {
   groupMiniPlanItems, miniPlanStats, rowState, ROW_STATE_STYLE, ROW_STATE_LEGEND,
   STATUS_STYLE, normalizeStatus, scheduleKey, todayKey, MINI_PLAN_LABEL, completedKey,
+  needsPlanDate, NO_DATE_CELL,
 } from './miniPlan';
 import { sanitizeFilename, downloadBlob } from './exportImage';
 
@@ -59,7 +60,7 @@ export function renderMiniPlanHtml(report) {
 
     return `<tr style="background:${st.css}">
       ${lead}
-      <td class="c-sched">${esc(formatDate(item.schedule))}</td>
+      <td class="c-sched"${needsPlanDate(item, today) ? ` style="background:${NO_DATE_CELL.css}"` : ''}>${esc(formatDate(item.schedule))}</td>
       <td class="c-act">${esc(item.activity)}</td>
       <td class="c-status"><span class="badge" style="background:${ss.css};color:${ss.cssText};border-color:${status ? ss.css : '#cbd5e1'}">${esc(status || '—')}</span></td>
       <td class="c-sched">${esc(formatDate(completedKey(item)))}</td>

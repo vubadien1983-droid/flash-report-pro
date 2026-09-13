@@ -19,7 +19,7 @@ import {
 import {
   groupMiniPlanItems, miniPlanStats, rowState, ROW_STATE_STYLE, ROW_STATE_LEGEND,
   STATUS_STYLE, normalizeStatus, scheduleKey, todayKey, MINI_PLAN_LABEL,
-  completedKey, miniActivityHasContent, weekRange,
+  completedKey, miniActivityHasContent, weekRange, needsPlanDate, NO_DATE_CELL,
 } from './miniPlan';
 import { writeOverviewSheet } from './miniPlanReportSheets';
 import { INK, PAPER } from './excelTheme';
@@ -240,6 +240,10 @@ export async function exportMiniPlanExcel(report) {
       }
       cellC.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F3A5F' } };
       cellC.alignment = { horizontal: 'center', vertical: 'middle' };
+      // An EMPTY Schedule is marked in its own cell, not by colouring the row:
+      // the colour has to sit on the missing value or the reader asks what is
+      // wrong with the activity (BUG-027).
+      const noDate = needsPlanDate(item, today);
 
       // Activities (D)
       const cellD = ws.getCell(excelRow, 4);
@@ -284,7 +288,9 @@ export async function exportMiniPlanExcel(report) {
       for (let c = 3; c <= 8; c++) {
         const cell = ws.getCell(excelRow, c);
         cell.border = thin();
-        if (c === 5 && sStyle.argb) {
+        if (c === 3 && noDate) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NO_DATE_CELL.argb } };
+        } else if (c === 5 && sStyle.argb) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sStyle.argb } };
         } else if (rowFill) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowFill } };
@@ -388,6 +394,7 @@ export async function exportMiniPlanPdf(report) {
   const photoMatrix = [];   // body row index -> image objects
   const stateMatrix = [];   // body row index -> row state
   const statusMatrix = [];
+  const noDateMatrix = [];  // body row index -> is the Schedule box empty?
 
   const PHOTO_COL_WIDTH = 186;
   const STATUS_COL = 4;   // table column index of Status
@@ -409,6 +416,7 @@ export async function exportMiniPlanPdf(report) {
       photoMatrix[rowIndex] = images;
       stateMatrix[rowIndex] = state;
       statusMatrix[rowIndex] = status;
+      noDateMatrix[rowIndex] = needsPlanDate(item, today);
 
       const cells = [];
       if (i === 0) {
@@ -494,6 +502,11 @@ export async function exportMiniPlanPdf(report) {
       // it maps an array row onto columns. So 4 is Status and 7 is Photo on
       // every row, whether that row carries the merged Item/Equipment cells
       // or not — do not try to correct for the shorter raw array.
+      // Schedule (column 2) carries the empty-date mark on its own.
+      if (data.column.index === 2 && noDateMatrix[data.row.index]) {
+        data.cell.styles.fillColor = NO_DATE_CELL.rgb;
+      }
+
       if (data.column.index === STATUS_COL) {
         const s = STATUS_STYLE[statusMatrix[data.row.index]];
         if (s?.rgb) {

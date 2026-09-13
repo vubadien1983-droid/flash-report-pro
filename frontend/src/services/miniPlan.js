@@ -66,15 +66,19 @@ export function scheduleKey(value) {
 //   Schedule = today      AND Status = On-going     -> BLUE    (today)
 //   Schedule in the past  AND Status = On-going     -> AMBER   (overdue)
 //   Schedule in the past  AND Status = blank        -> RED     (missed)
-//   NO SCHEDULE AT ALL                              -> PALE YELLOW (unplanned)
+//   NO SCHEDULE AT ALL                              -> no ROW fill; the
+//                                                      SCHEDULE CELL alone is
+//                                                      tinted (unplanned)
 //   a future date                                   -> no fill (none)
 //
 // Done wins over every date: a finished activity is never late, and one that
 // was finished without ever being scheduled is Done, not unplanned.
 //
-// UNPLANNED is pale on purpose. It is not a warning - nothing is late - it is
-// a gap in the plan, and on a 500-row sheet the eye needs to find those
-// without them shouting over the rows that ARE late.
+// UNPLANNED COLOURS ONE CELL, NOT THE ROW. Every other colour here describes
+// the ROW's situation - this one describes a single EMPTY BOX, so tinting the
+// whole row made readers ask what was wrong with the activity when the answer
+// was only "this date has not been filled in". The mark belongs where the
+// missing value is.
 
 export const ROW_STATE = {
   DONE: 'done',
@@ -128,11 +132,13 @@ export const ROW_STATE_STYLE = {
   },
   [ROW_STATE.UNPLANNED]: {
     label: 'Unplanned',
-    tw: 'bg-amber-50',
-    twText: 'text-amber-900',
-    css: '#FFFBEB',
-    argb: 'FFFFFBEB',
-    rgb: [255, 251, 235],
+    // No ROW fill: see the note above. The Schedule cell carries the mark
+    // (NO_DATE_CELL), everywhere the plan is drawn.
+    tw: '',
+    twText: 'text-slate-800',
+    css: '#FFFFFF',
+    argb: null,
+    rgb: null,
   },
   [ROW_STATE.NONE]: {
     label: 'Planned',
@@ -170,6 +176,24 @@ export function rowState(item, today = todayKey()) {
 
 export function rowStyle(item, today = todayKey()) {
   return ROW_STATE_STYLE[rowState(item, today)];
+}
+
+/**
+ * The tint the SCHEDULE CELL wears when no date has been entered — one cell,
+ * in the column the value is missing from, so the reason for the colour is
+ * where the colour is. The inset ring is what separates "a marked empty box"
+ * from "a row filled amber because it is overdue".
+ */
+export const NO_DATE_CELL = {
+  tw: 'bg-amber-100/80 ring-1 ring-inset ring-amber-300 rounded-md',
+  css: '#FEF3C7',
+  argb: 'FFFEF3C7',
+  rgb: [254, 243, 199],
+};
+
+/** Does this row need a plan date? (No date, and not already finished.) */
+export function needsPlanDate(item, today = todayKey()) {
+  return rowState(item, today) === ROW_STATE.UNPLANNED;
 }
 
 /** Colour of the Status cell itself, so the two values read apart at a glance. */

@@ -21,6 +21,7 @@ import { summaryTiles, describeFilter } from './miniPlanDashboard';
 import {
   ROW_STATE_STYLE, ROW_STATE, rowState, STATUS_STYLE, normalizeStatus,
   scheduleKey, completedKey, todayKey, MINI_PLAN_LABEL, STATUS_DONE,
+  needsPlanDate, NO_DATE_CELL,
 } from './miniPlan';
 import { writeOverviewSheet, reportState } from './miniPlanReportSheets';
 import {
@@ -158,6 +159,7 @@ export async function exportDashboardExcel({ title, view }) {
     const item = row.item;
     const state = rowState(item, today);
     const tint = ROW_TINT[state];
+    const noDate = needsPlanDate(item, today);
 
     ws.getRow(r).height = Math.max(16, Math.max(
       linesFor(item.activity, COLS.activities),
@@ -174,6 +176,10 @@ export async function exportDashboardExcel({ title, view }) {
         indent: c === 2 || c === 3 ? 1 : 0,
       };
       if (c === 4 || c === 6) cell.numFmt = 'd-mmm-yy';
+      // The empty Schedule box is marked; the row is left alone (BUG-027).
+      if (c === 4 && noDate) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NO_DATE_CELL.argb } };
+      }
     }
 
     // State — and an activity with NO SCHEDULE says "Unplanned", in red.
@@ -255,11 +261,13 @@ export async function exportDashboardPdf({ title, view }) {
   const body = [];
   const stateMatrix = [];
   const statusMatrix = [];
+  const noDateMatrix = [];
 
   for (const row of view.previewRows) {
     const item = row.item;
     stateMatrix[body.length] = rowState(item, today);
     statusMatrix[body.length] = normalizeStatus(item.status);
+    noDateMatrix[body.length] = needsPlanDate(item, today);
     body.push([
       String(row.no),
       row.equipment || '',
@@ -300,6 +308,9 @@ export async function exportDashboardPdf({ title, view }) {
       if (data.section !== 'body') return;
       const style = ROW_STATE_STYLE[stateMatrix[data.row.index]];
       if (style?.rgb) data.cell.styles.fillColor = style.rgb;
+      if (data.column.index === 3 && noDateMatrix[data.row.index]) {
+        data.cell.styles.fillColor = NO_DATE_CELL.rgb;
+      }
       if (data.column.index === 4) {
         const s = STATUS_STYLE[statusMatrix[data.row.index]];
         if (s?.rgb) {
