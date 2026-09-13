@@ -12,11 +12,43 @@
  */
 
 import {
-  rowState, ROW_STATE, normalizeStatus, scheduleKey, completedKey,
+  rowState, ROW_STATE, ROW_STATE_STYLE, normalizeStatus, scheduleKey, completedKey,
   todayKey, STATUS_DONE, inRange,
 } from './miniPlan';
 import { VIZ, INK, PAPER, FONT, border, fill, titleFont, labelFont, bodyFont } from './excelTheme';
 import { donutChart, columnChart, rankChart } from './reportChart';
+
+/**
+ * The state a row is reported in, which is the row's colour state PLUS one
+ * distinction the plan itself does not draw: an activity with NO SCHEDULE is
+ * **Unplanned**, not "planned".
+ *
+ * On screen both look the same (no fill) because neither is late. In a
+ * progress report they are opposite things: one is work with a date in the
+ * future, the other is work nobody has dated yet, and a meeting needs to see
+ * the second. It is written in RED in the Data sheet for exactly that reason.
+ *
+ * `Done` still wins over everything - a finished activity that was never
+ * scheduled is Done, not Unplanned.
+ *
+ * ONE implementation, used by the Data sheet and by this sheet's figures, so
+ * the two can never disagree about what "Unplanned" counts.
+ */
+export function reportState(item, today = todayKey()) {
+  const st = rowState(item, today);
+  if (st === ROW_STATE.NONE && !scheduleKey(item?.schedule)) {
+    return { key: 'unplanned', label: 'Unplanned', argb: VIZ.missed.argb, unplanned: true };
+  }
+  return { key: st, label: ROW_STATE_STYLE[st].label, argb: (STATE_VIZ[st] || VIZ.planned).argb, unplanned: false };
+}
+
+const STATE_VIZ = {
+  [ROW_STATE.DONE]: VIZ.done,
+  [ROW_STATE.TODAY]: VIZ.today,
+  [ROW_STATE.OVERDUE]: VIZ.overdue,
+  [ROW_STATE.MISSED]: VIZ.missed,
+  [ROW_STATE.NONE]: VIZ.planned,
+};
 
 const STATE_ORDER = [
   { key: ROW_STATE.DONE,    viz: VIZ.done,    label: 'Done' },
@@ -31,6 +63,7 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
   const counts = { done: 0, today: 0, overdue: 0, missed: 0, none: 0 };
   let planWeek = 0;
   let doneWeek = 0;
+  let unplanned = 0;
 
   for (const item of rows || []) {
     const st = rowState(item, today);
@@ -39,6 +72,7 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
     else if (st === ROW_STATE.OVERDUE) counts.overdue++;
     else if (st === ROW_STATE.MISSED) counts.missed++;
     else counts.none++;
+    if (reportState(item, today).unplanned) unplanned++;
 
     if (range) {
       if (inRange(scheduleKey(item.schedule), range)) planWeek++;
@@ -49,6 +83,7 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
   const total = (rows || []).length;
   return {
     counts,
+    unplanned,
     total,
     done: counts.done,
     remaining: total - counts.done,
@@ -84,9 +119,12 @@ export function writeOverviewSheet(wb, {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
+  // Even columns, because the KPI strip is one card per column. The long
+  // equipment names in the ranking table are handled by MERGING B:E there,
+  // rather than by making column B wide and skewing every card above it.
   ws.columns = [
-    { width: 30 }, { width: 14 }, { width: 11 }, { width: 12 }, { width: 12 },
-    { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
+    { width: 30 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 },
+    { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 },
   ];
 
   // ── Title band ───────────────────────────────────────────────
@@ -113,6 +151,7 @@ export function writeOverviewSheet(wb, {
     ['Remaining', f.remaining],
     ['% complete', `${f.percent}%`],
     ['Overdue', f.overdueAll],
+    ['Unplanned', f.unplanned],
     [`Plan ${weekLabel.toLowerCase()}`, f.planWeek],
     [`Done ${weekLabel.toLowerCase()}`, f.doneWeek],
     ['Var (Done - Plan)', f.variance > 0 ? `+${f.variance}` : String(f.variance)],
@@ -133,7 +172,11 @@ export function writeOverviewSheet(wb, {
     v.value = value;
     v.font = {
       name: FONT, size: 15, bold: true,
-      color: { argb: label.startsWith('Var') && f.variance < 0 ? VIZ.missed.argb : INK.primary.argb },
+      color: {
+        argb: (label.startsWith('Var') && f.variance < 0) || (label === 'Unplanned' && value > 0)
+          ? VIZ.missed.argb
+          : INK.primary.argb,
+      },
     };
     v.alignment = { horizontal: 'center', vertical: 'middle' };
     v.border = border();
@@ -180,6 +223,30 @@ export function writeOverviewSheet(wb, {
     ws.getRow(r).height = 17;
   });
 
+  // Unplanned is a SUBSET of "Planned (not due yet)", not a sixth slice: the
+  // donut keeps the plan's own five colours, and the figure that matters to a
+  // meeting is called out here in red instead of inventing a colour for it.
+  {
+    const r = 9 + STATE_ORDER.length;
+    const a = ws.getCell(r, 1);
+    a.value = '— of which Unplanned (no date)';
+    a.font = { name: FONT, size: 9.5, italic: true, color: { argb: VIZ.missed.argb } };
+    a.alignment = { horizontal: 'left', vertical: 'middle', indent: 2 };
+    a.border = border();
+    const b = ws.getCell(r, 2);
+    b.value = f.unplanned;
+    b.font = { name: FONT, size: 10, bold: true, color: { argb: VIZ.missed.argb } };
+    b.alignment = { horizontal: 'center', vertical: 'middle' };
+    b.border = border();
+    const c2 = ws.getCell(r, 3);
+    c2.value = f.total ? f.unplanned / f.total : 0;
+    c2.numFmt = '0%';
+    c2.font = { name: FONT, size: 9.5, color: { argb: VIZ.missed.argb } };
+    c2.alignment = { horizontal: 'center', vertical: 'middle' };
+    c2.border = border();
+    ws.getRow(r).height = 17;
+  }
+
   // ── Charts ───────────────────────────────────────────────────
   // Pictures, because ExcelJS cannot write a native chart. Every value they
   // show is on this sheet in figures as well, so nothing depends on the image.
@@ -212,16 +279,71 @@ export function writeOverviewSheet(wb, {
       .filter((e) => e.total > 0)
       .sort((a, b) => (b.total - b.done) - (a.total - a.done))
       .slice(0, 10)
-      .map((e) => ({ label: `${e.no ? `${e.no}. ` : ''}${e.equipment}`, done: e.done, total: e.total }));
+      .map((e) => ({
+        label: `${e.no ? `${e.no}. ` : ''}${e.equipment}`,
+        name: e.equipment,
+        no: e.no,
+        done: e.done,
+        total: e.total,
+      }));
 
     if (ranked.length) {
       ws.getCell('A16').value = 'EQUIPMENT WITH THE MOST WORK OUTSTANDING';
       ws.getCell('A16').font = labelFont(9);
       const rank = rankChart(ranked, { heading: 'Done / total activities per equipment' });
       ws.addImage(wb.addImage({ base64: rank, extension: 'png' }), {
-        tl: { col: 0.1, row: 16.4 }, ext: { width: 690, height: 260 },
+        tl: { col: 0.1, row: 16.4 }, ext: { width: 1020, height: 330 },
       });
-      for (let r = 17; r <= 30; r++) ws.getRow(r).height = 19;
+      for (let r = 17; r <= 34; r++) ws.getRow(r).height = 19;
+
+      // The same ranking as TEXT. A picture can always be squeezed by whoever
+      // prints it; a table cannot, and these names are long.
+      // Columns: A = No, B:E = Equipment (merged, so a 60-character name has
+      // somewhere to go), F = Done, G = Total, H = Remaining, I = Complete.
+      const headRow = 36;
+      const layout = [
+        { col: 1, label: 'No' },
+        { col: 2, label: 'Equipment', merge: [2, 5], left: true },
+        { col: 6, label: 'Done' },
+        { col: 7, label: 'Total' },
+        { col: 8, label: 'Remaining' },
+        { col: 9, label: 'Complete' },
+      ];
+
+      const paint = (r, band) => {
+        for (const { col, merge, left } of layout) {
+          if (merge) ws.mergeCells(r, merge[0], r, merge[1]);
+          const c = ws.getCell(r, col);
+          c.alignment = { horizontal: left ? 'left' : 'center', vertical: 'middle', indent: left ? 1 : 0 };
+          c.border = border();
+          if (band) c.fill = fill(PAPER.band.argb);
+          // The merge swallows B..E; their borders have to be set too or the
+          // row draws with a gap on the right of the name.
+          if (merge) for (let x = merge[0]; x <= merge[1]; x++) ws.getCell(r, x).border = border();
+        }
+      };
+
+      paint(headRow, false);
+      layout.forEach(({ col, label, merge }) => {
+        const c = ws.getCell(headRow, col);
+        c.value = label;
+        c.font = { name: FONT, size: 9.5, bold: true, color: { argb: INK.onDark.argb } };
+        c.fill = fill(PAPER.header.argb);
+        if (merge) for (let x = merge[0]; x <= merge[1]; x++) ws.getCell(headRow, x).fill = fill(PAPER.header.argb);
+      });
+
+      ranked.forEach((e, i) => {
+        const r = headRow + 1 + i;
+        paint(r, i % 2 === 1);
+        const values = [e.no || '', e.name, e.done, e.total, e.total - e.done, e.total ? e.done / e.total : 0];
+        layout.forEach(({ col }, ci) => {
+          const c = ws.getCell(r, col);
+          c.value = values[ci];
+          c.font = bodyFont(9.5);
+          if (ci === 5) c.numFmt = '0%';
+        });
+        ws.getRow(r).height = 16;
+      });
     }
   } catch (e) {
     // A chart that cannot be drawn must never cost the reader the report.

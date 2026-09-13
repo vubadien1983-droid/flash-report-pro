@@ -22,7 +22,7 @@ import {
   ROW_STATE_STYLE, ROW_STATE, rowState, STATUS_STYLE, normalizeStatus,
   scheduleKey, completedKey, todayKey, MINI_PLAN_LABEL, STATUS_DONE,
 } from './miniPlan';
-import { writeOverviewSheet } from './miniPlanReportSheets';
+import { writeOverviewSheet, reportState } from './miniPlanReportSheets';
 import {
   VIZ, INK, PAPER, ROW_TINT, FONT, fill, bodyFont,
 } from './excelTheme';
@@ -30,15 +30,6 @@ import {
 const COLS = {
   no: 6, equipment: 38, activities: 56, schedule: 13,
   status: 13, completed: 14, state: 22,
-};
-
-/** The plan's row state, in the saturated palette the charts use. */
-const STATE_VIZ = {
-  [ROW_STATE.DONE]: VIZ.done,
-  [ROW_STATE.TODAY]: VIZ.today,
-  [ROW_STATE.OVERDUE]: VIZ.overdue,
-  [ROW_STATE.MISSED]: VIZ.missed,
-  [ROW_STATE.NONE]: VIZ.planned,
 };
 
 function formatDate(iso) {
@@ -138,7 +129,7 @@ export async function exportDashboardExcel({ title, view }) {
       excelDate(scheduleKey(item.schedule)),
       normalizeStatus(item.status) || 'Not started',
       excelDate(doneOn),
-      ROW_STATE_STYLE[rowState(item, today)].label,
+      reportState(item, today).label,
     ];
   });
 
@@ -185,9 +176,13 @@ export async function exportDashboardExcel({ title, view }) {
       if (c === 4 || c === 6) cell.numFmt = 'd-mmm-yy';
     }
 
+    // State — and an activity with NO SCHEDULE says "Unplanned", in red.
+    // Nothing else on the row says so: its Schedule cell is simply empty, and
+    // on screen it looks like any other future work. It is not future work,
+    // it is work nobody has dated.
+    const rs = reportState(item, today);
     const stateCell = ws.getCell(r, 7);
-    const viz = STATE_VIZ[state];
-    stateCell.font = { name: FONT, size: 9, bold: true, color: { argb: viz.argb } };
+    stateCell.font = { name: FONT, size: 9, bold: true, color: { argb: rs.argb } };
     if (tint) stateCell.fill = fill(tint);
 
     const statusCell = ws.getCell(r, 5);

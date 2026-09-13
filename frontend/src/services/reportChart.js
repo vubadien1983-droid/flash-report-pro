@@ -49,7 +49,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.fill();
 }
 
-function title(ctx, text, x, y, size = 12) {
+function title(ctx, text, x, y, size = 12) {   // size is the last argument
   ctx.fillStyle = INK.primary.hex;
   ctx.font = `700 ${size}px ${FONT}`;
   ctx.textAlign = 'left';
@@ -175,19 +175,36 @@ export function columnChart(bars, { width = 330, height = 220, heading = '', foo
  * Horizontal bars for "the equipment with the most work left" — a ranking is
  * read down a list, not across an axis, and the labels are long.
  */
-export function rankChart(rows, { width = 690, height = 260, heading = '' } = {}) {
+export function rankChart(rows, { width = 1020, height = 330, heading = '' } = {}) {
   const { canvas, ctx } = surface(width, height);
-  if (heading) title(ctx, heading, 12, 16);
+  if (heading) title(ctx, heading, 12, 18, 13);
 
   const list = (rows || []).slice(0, 10);
   if (!list.length) return toBase64(canvas);
 
   const max = Math.max(1, ...list.map((r) => r.total));
-  const labelW = 250;
-  const trackX = labelW + 18;
-  const trackW = width - trackX - 74;
-  const top = 34;
-  const rowH = Math.min(21, (height - top - 12) / list.length);
+  // The equipment name is the point of this chart - "96. Gas Turbine Generation
+  // Package (Dual…" tells a meeting nothing. The label column takes 44% of the
+  // width and the text is TRUNCATED BY MEASUREMENT, not by a character count,
+  // so a name is only ever shortened when it genuinely does not fit.
+  const labelW = Math.round(width * 0.44);
+  const trackX = labelW + 20;
+  const trackW = width - trackX - 96;
+  const top = 40;
+  const rowH = Math.min(27, (height - top - 14) / list.length);
+  const labelFontPx = 12;
+
+  const fit = (text, maxWidth) => {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (ctx.measureText(`${text.slice(0, mid)}…`).width <= maxWidth) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${text.slice(0, lo)}…`;
+  };
 
   list.forEach((r, i) => {
     const y = top + i * rowH;
@@ -195,8 +212,8 @@ export function rankChart(rows, { width = 690, height = 260, heading = '' } = {}
 
     ctx.textAlign = 'left';
     ctx.fillStyle = INK.primary.hex;
-    ctx.font = `600 10.5px ${FONT}`;
-    const label = r.label.length > 42 ? `${r.label.slice(0, 41)}…` : r.label;
+    ctx.font = `600 ${labelFontPx}px ${FONT}`;
+    const label = fit(r.label, labelW - 16);
     ctx.fillText(label, 12, midY);
 
     const h = Math.max(7, rowH - 9);
@@ -210,7 +227,7 @@ export function rankChart(rows, { width = 690, height = 260, heading = '' } = {}
 
     ctx.textAlign = 'right';
     ctx.fillStyle = INK.secondary.hex;
-    ctx.font = `700 10.5px ${FONT}`;
+    ctx.font = `700 12px ${FONT}`;
     ctx.fillText(`${r.done} / ${r.total}`, width - 12, midY);
   });
 
