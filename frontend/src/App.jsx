@@ -13,7 +13,7 @@ import ImageModal from './components/ImageModal';
 import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
 import SharedViewRouter from './components/SharedViewRouter';
-import MiniPlanTable from './components/MiniPlanTable';
+import MiniPlanWorkspace from './components/MiniPlanWorkspace';
 import PasswordModal from './components/PasswordModal';
 import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
@@ -1471,13 +1471,14 @@ export default function App() {
                 />
 
                 {isPlanReport ? (
-                  <MiniPlanTable
+                  <MiniPlanWorkspace
                     items={normalizeMiniPlanItems(currentReport.items)}
                     onItemsChange={handleItemsChange}
                     onPhotoClick={openLightboxByUrl}
                     isMobileMode={isPhoneView}
                     readOnly={planLocked}
                     onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}
+                    title={currentReport.title}
                   />
                 ) : (
                   <InspectionTable
