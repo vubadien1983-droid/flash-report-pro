@@ -396,13 +396,10 @@ export default function MiniPlanTable({
       )}
 
       <span className="ml-auto flex items-center gap-1 flex-wrap">
-        {ROW_STATE_LEGEND.map((s) => (
-          <Chip
-            key={s}
-            state={s}
-            count={s === 'done' ? stats.done : s === 'today' ? stats.today : s === 'overdue' ? stats.overdue : stats.missed}
-          />
-        ))}
+        {/* One count per state, looked up by key: a ternary chain silently
+            mislabels the moment a state is added — which is exactly what
+            happened when Unplanned arrived. */}
+        {ROW_STATE_LEGEND.map((s) => <Chip key={s} state={s} count={stats[s] ?? 0} />)}
       </span>
     </div>
   );
