@@ -151,7 +151,10 @@ export default function MiniPlanDashboard({
             }`}
           >
             <span className="text-[12.5px] text-black leading-snug break-words">
-              <span className="text-[10px] font-bold text-slate-400 tabular-nums mr-1.5">{row.no || '-'}</span>
+              {/* The item number in a soft red: it is the one thing in this
+                  list that is a LOOKUP KEY - "which line is equipment 104?" -
+                  and in grey it disappeared into the names around it. */}
+              <span className="text-[10.5px] font-bold text-rose-400 tabular-nums mr-1.5">{row.no || '-'}</span>
               {row.equipment || <em className="text-slate-400">Unnamed</em>}
             </span>
             <span className="text-[12.5px] font-bold tabular-nums whitespace-nowrap">
