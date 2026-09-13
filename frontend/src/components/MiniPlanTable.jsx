@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
   CornerDownRight, Layers, Search, X, CalendarRange, SearchX,
@@ -12,29 +12,46 @@ import {
   filterMiniPlanGroups, weekRange,
 } from '../services/miniPlan';
 
-/** Auto-growing textarea — no scrollbars, grows to fit its content. */
-function AutoGrowingTextarea({ value, onChange, placeholder, className = '', minHeight = 40, rows = 2, disabled = false }) {
-  const ref = useRef(null);
-
-  const adjust = () => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
-  };
-
-  useEffect(() => { adjust(); }, [value]);
+/**
+ * Auto-growing textarea - no scrollbars, grows to fit its content.
+ *
+ * The height comes from a MIRROR element sharing the same grid cell: the
+ * hidden copy holds the same text with the same font and padding, so the
+ * browser sizes the cell in its ordinary layout pass and the textarea
+ * stretches to fill it. No JavaScript measurement at all.
+ *
+ * The previous version measured itself - set `height:'auto'`, read
+ * `scrollHeight`, write back a pixel height - inside an effect that runs on
+ * every mount. Each read is a FORCED SYNCHRONOUS LAYOUT. At 19 equipment
+ * (~130 textareas) that was invisible. At 188 equipment the plan holds ~1,200
+ * of them, and clearing a filter took a measured **15.3 seconds** of frozen
+ * tab. That is BUG-013's lesson in a new place: work that is fine per item and
+ * ruinous in bulk. Never measure layout per row in a table that can grow.
+ */
+function AutoGrowingTextarea({ value, onChange, placeholder, className = '', minHeight = 40, disabled = false }) {
+  const cell = { gridArea: '1 / 1 / 2 / 2' };
+  // The trailing space keeps a final newline from being collapsed, so the box
+  // still grows when the user presses Enter at the end.
+  const mirror = `${value || placeholder || ''} `;
 
   return (
-    <textarea
-      ref={ref}
-      rows={rows}
-      value={value || ''}
-      disabled={disabled}
-      onChange={(e) => { onChange(e); adjust(); }}
-      placeholder={placeholder}
-      className={`${className} overflow-hidden resize-none disabled:cursor-default`}
-    />
+    <div className="grid w-full" style={{ minHeight }}>
+      <div
+        aria-hidden="true"
+        style={cell}
+        className={`${className} invisible whitespace-pre-wrap break-words pointer-events-none`}
+      >
+        {mirror}
+      </div>
+      <textarea
+        style={cell}
+        value={value || ''}
+        disabled={disabled}
+        onChange={onChange}
+        placeholder={placeholder}
+        className={`${className} overflow-hidden resize-none disabled:cursor-default`}
+      />
+    </div>
   );
 }
 
@@ -409,7 +426,6 @@ export default function MiniPlanTable({
                   {group.no || '-'}
                 </span>
                 <AutoGrowingTextarea
-                  rows={1}
                   minHeight={28}
                   disabled={readOnly}
                   value={group.equipment}
@@ -456,7 +472,6 @@ export default function MiniPlanTable({
                       </div>
 
                       <AutoGrowingTextarea
-                        rows={2}
                         minHeight={52}
                         disabled={readOnly}
                         value={item.activity}
@@ -485,7 +500,6 @@ export default function MiniPlanTable({
                       <div>
                         <label className="block text-[12px] font-semibold text-black mb-1">Note</label>
                         <AutoGrowingTextarea
-                          rows={1}
                           minHeight={36}
                           disabled={readOnly}
                           value={item.note}
@@ -598,7 +612,6 @@ export default function MiniPlanTable({
                         </td>
                         <td rowSpan={group.count} className="px-2 py-2 align-top border-b border-slate-200 bg-white/60">
                           <AutoGrowingTextarea
-                            rows={2}
                             minHeight={56}
                             disabled={readOnly}
                             value={group.equipment}
@@ -671,7 +684,6 @@ export default function MiniPlanTable({
                     {/* Activities */}
                     <td className={cellBase}>
                       <AutoGrowingTextarea
-                        rows={2}
                         minHeight={54}
                         disabled={readOnly}
                         value={item.activity}
@@ -689,7 +701,6 @@ export default function MiniPlanTable({
                     {/* Note */}
                     <td className={cellBase}>
                       <AutoGrowingTextarea
-                        rows={2}
                         minHeight={54}
                         disabled={readOnly}
                         value={item.note}
