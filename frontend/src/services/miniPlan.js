@@ -64,17 +64,24 @@ export function scheduleKey(value) {
 //
 //   Status = Done                                   -> GREEN   (done)
 //   Schedule = today      AND Status = On-going     -> BLUE    (today)
-//   Schedule in the past  AND Status = On-going     -> YELLOW  (overdue)
+//   Schedule in the past  AND Status = On-going     -> AMBER   (overdue)
 //   Schedule in the past  AND Status = blank        -> RED     (missed)
-//   anything else (future, or no schedule)          -> no fill (none)
+//   NO SCHEDULE AT ALL                              -> PALE YELLOW (unplanned)
+//   a future date                                   -> no fill (none)
 //
-// Done wins over every date: a finished activity is never late.
+// Done wins over every date: a finished activity is never late, and one that
+// was finished without ever being scheduled is Done, not unplanned.
+//
+// UNPLANNED is pale on purpose. It is not a warning - nothing is late - it is
+// a gap in the plan, and on a 500-row sheet the eye needs to find those
+// without them shouting over the rows that ARE late.
 
 export const ROW_STATE = {
   DONE: 'done',
   TODAY: 'today',
   OVERDUE: 'overdue',
   MISSED: 'missed',
+  UNPLANNED: 'unplanned',
   NONE: 'none',
 };
 
@@ -119,6 +126,14 @@ export const ROW_STATE_STYLE = {
     argb: 'FFFEE2E2',
     rgb: [254, 226, 226],
   },
+  [ROW_STATE.UNPLANNED]: {
+    label: 'Unplanned',
+    tw: 'bg-amber-50',
+    twText: 'text-amber-900',
+    css: '#FFFBEB',
+    argb: 'FFFFFBEB',
+    rgb: [255, 251, 235],
+  },
   [ROW_STATE.NONE]: {
     label: 'Planned',
     tw: '',
@@ -132,14 +147,16 @@ export const ROW_STATE_STYLE = {
 /** The legend, in the order it should be displayed. */
 export const ROW_STATE_LEGEND = [
   ROW_STATE.DONE, ROW_STATE.TODAY, ROW_STATE.OVERDUE, ROW_STATE.MISSED,
+  ROW_STATE.UNPLANNED,
 ];
 
 export function rowState(item, today = todayKey()) {
   const status = normalizeStatus(item?.status);
   if (status === STATUS_DONE) return ROW_STATE.DONE;
 
+  // No date at all: the work exists but nobody has planned it.
   const sched = scheduleKey(item?.schedule);
-  if (!sched) return ROW_STATE.NONE;
+  if (!sched) return ROW_STATE.UNPLANNED;
 
   if (status === STATUS_ONGOING) {
     if (sched === today) return ROW_STATE.TODAY;
@@ -279,13 +296,17 @@ export function miniPlanStats(items, today = todayKey()) {
   // Counts ACTIVITIES, not rows: a freshly inserted blank row carries its
   // group's equipment name and must not be counted as planned work.
   const rows = (items || []).filter(miniActivityHasContent);
-  const counts = { total: rows.length, done: 0, today: 0, overdue: 0, missed: 0, planned: 0 };
+  const counts = {
+    total: rows.length, done: 0, today: 0, overdue: 0, missed: 0,
+    unplanned: 0, planned: 0,
+  };
   for (const r of rows) {
     const st = rowState(r, today);
     if (st === ROW_STATE.DONE) counts.done++;
     else if (st === ROW_STATE.TODAY) counts.today++;
     else if (st === ROW_STATE.OVERDUE) counts.overdue++;
     else if (st === ROW_STATE.MISSED) counts.missed++;
+    else if (st === ROW_STATE.UNPLANNED) counts.unplanned++;
     else counts.planned++;
   }
   counts.equipment = countMiniPlanItems(items);

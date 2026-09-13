@@ -36,10 +36,15 @@ import { donutChart, columnChart, rankChart } from './reportChart';
  */
 export function reportState(item, today = todayKey()) {
   const st = rowState(item, today);
-  if (st === ROW_STATE.NONE && !scheduleKey(item?.schedule)) {
-    return { key: 'unplanned', label: 'Unplanned', argb: VIZ.missed.argb, unplanned: true };
-  }
-  return { key: st, label: ROW_STATE_STYLE[st].label, argb: (STATE_VIZ[st] || VIZ.planned).argb, unplanned: false };
+  const unplanned = st === ROW_STATE.UNPLANNED;
+  return {
+    key: st,
+    label: ROW_STATE_STYLE[st].label,
+    // The word is RED in the Data sheet — the user asked for it and it is the
+    // one place with no colour behind it to carry the meaning.
+    argb: unplanned ? VIZ.missed.argb : (STATE_VIZ[st] || VIZ.planned).argb,
+    unplanned,
+  };
 }
 
 const STATE_VIZ = {
@@ -47,6 +52,7 @@ const STATE_VIZ = {
   [ROW_STATE.TODAY]: VIZ.today,
   [ROW_STATE.OVERDUE]: VIZ.overdue,
   [ROW_STATE.MISSED]: VIZ.missed,
+  [ROW_STATE.UNPLANNED]: VIZ.unplanned,
   [ROW_STATE.NONE]: VIZ.planned,
 };
 
@@ -54,16 +60,16 @@ const STATE_ORDER = [
   { key: ROW_STATE.DONE,    viz: VIZ.done,    label: 'Done' },
   { key: ROW_STATE.TODAY,   viz: VIZ.today,   label: 'Due today - on-going' },
   { key: ROW_STATE.OVERDUE, viz: VIZ.overdue, label: 'Overdue - on-going' },
-  { key: ROW_STATE.MISSED,  viz: VIZ.missed,  label: 'Overdue - not started' },
-  { key: ROW_STATE.NONE,    viz: VIZ.planned, label: 'Planned (not due yet)' },
+  { key: ROW_STATE.MISSED,    viz: VIZ.missed,    label: 'Overdue - not started' },
+  { key: ROW_STATE.UNPLANNED, viz: VIZ.unplanned, label: 'Unplanned (no date)' },
+  { key: ROW_STATE.NONE,      viz: VIZ.planned,   label: 'Planned (not due yet)' },
 ];
 
 /** The figures the overview states, counted once. */
 export function overviewFigures(rows, { today = todayKey(), range = null } = {}) {
-  const counts = { done: 0, today: 0, overdue: 0, missed: 0, none: 0 };
+  const counts = { done: 0, today: 0, overdue: 0, missed: 0, unplanned: 0, none: 0 };
   let planWeek = 0;
   let doneWeek = 0;
-  let unplanned = 0;
 
   for (const item of rows || []) {
     const st = rowState(item, today);
@@ -71,8 +77,8 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
     else if (st === ROW_STATE.TODAY) counts.today++;
     else if (st === ROW_STATE.OVERDUE) counts.overdue++;
     else if (st === ROW_STATE.MISSED) counts.missed++;
+    else if (st === ROW_STATE.UNPLANNED) counts.unplanned++;
     else counts.none++;
-    if (reportState(item, today).unplanned) unplanned++;
 
     if (range) {
       if (inRange(scheduleKey(item.schedule), range)) planWeek++;
@@ -83,7 +89,7 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
   const total = (rows || []).length;
   return {
     counts,
-    unplanned,
+    unplanned: counts.unplanned,
     total,
     done: counts.done,
     remaining: total - counts.done,
@@ -222,30 +228,6 @@ export function writeOverviewSheet(wb, {
     c.border = border();
     ws.getRow(r).height = 17;
   });
-
-  // Unplanned is a SUBSET of "Planned (not due yet)", not a sixth slice: the
-  // donut keeps the plan's own five colours, and the figure that matters to a
-  // meeting is called out here in red instead of inventing a colour for it.
-  {
-    const r = 9 + STATE_ORDER.length;
-    const a = ws.getCell(r, 1);
-    a.value = '— of which Unplanned (no date)';
-    a.font = { name: FONT, size: 9.5, italic: true, color: { argb: VIZ.missed.argb } };
-    a.alignment = { horizontal: 'left', vertical: 'middle', indent: 2 };
-    a.border = border();
-    const b = ws.getCell(r, 2);
-    b.value = f.unplanned;
-    b.font = { name: FONT, size: 10, bold: true, color: { argb: VIZ.missed.argb } };
-    b.alignment = { horizontal: 'center', vertical: 'middle' };
-    b.border = border();
-    const c2 = ws.getCell(r, 3);
-    c2.value = f.total ? f.unplanned / f.total : 0;
-    c2.numFmt = '0%';
-    c2.font = { name: FONT, size: 9.5, color: { argb: VIZ.missed.argb } };
-    c2.alignment = { horizontal: 'center', vertical: 'middle' };
-    c2.border = border();
-    ws.getRow(r).height = 17;
-  }
 
   // ── Charts ───────────────────────────────────────────────────
   // Pictures, because ExcelJS cannot write a native chart. Every value they

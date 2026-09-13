@@ -28,6 +28,12 @@ export const VIZ = {
   overdue:   { hex: '#D98A00', argb: 'FFD98A00', label: 'Overdue - on-going' },
   missed:    { hex: '#D03B3B', argb: 'FFD03B3B', label: 'Overdue - not started' },
   planned:   { hex: '#7C8DA3', argb: 'FF7C8DA3', label: 'Planned' },
+  // Unplanned needs a slice of its own in the doughnut, so it takes the
+  // validated "serious" status step — separable from both the amber of
+  // overdue-on-going and the red of overdue-not-started. On SCREEN the same
+  // state is a pale yellow row tint (it is a gap, not an alarm), and in the
+  // Data sheet the word itself is red, which is what the user asked for.
+  unplanned: { hex: '#EC835A', argb: 'FFEC835A', label: 'Unplanned' },
   plan:      { hex: '#2A78D6', argb: 'FF2A78D6', label: 'Plan' },
   actual:    { hex: '#1BAF7A', argb: 'FF1BAF7A', label: 'Actual' },
 };
@@ -51,11 +57,12 @@ export const PAPER = {
 
 /** Pale row tints, matching the app's row colours but printable. */
 export const ROW_TINT = {
-  done:    'FFE7F6E7',
-  today:   'FFE4EEFB',
-  overdue: 'FFFBF0DC',
-  missed:  'FFFBE4E4',
-  none:    null,
+  done:      'FFE7F6E7',
+  today:     'FFE4EEFB',
+  overdue:   'FFFBF0DC',
+  missed:    'FFFBE4E4',
+  unplanned: 'FFFFFBEB',
+  none:      null,
 };
 
 export const border = (argb = PAPER.rule.argb) => ({
