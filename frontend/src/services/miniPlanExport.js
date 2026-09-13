@@ -19,8 +19,10 @@ import {
 import {
   groupMiniPlanItems, miniPlanStats, rowState, ROW_STATE_STYLE, ROW_STATE_LEGEND,
   STATUS_STYLE, normalizeStatus, scheduleKey, todayKey, MINI_PLAN_LABEL,
-  completedKey,
+  completedKey, miniActivityHasContent, weekRange,
 } from './miniPlan';
+import { writeOverviewSheet } from './miniPlanReportSheets';
+import { INK, PAPER } from './excelTheme';
 
 // --- Column geometry, shared by both exporters --------------------
 // Excel width units. colWidthToPx() is the ONLY conversion to pixels; the
@@ -86,6 +88,31 @@ export async function exportMiniPlanExcel(report) {
   wb.created = new Date();
   wb.modified = new Date();
 
+  const today0 = todayKey();
+  const planItems = report.items || [];
+  const planGroups = groupMiniPlanItems(planItems);
+
+  // SHEET 1 — the report. The detail sheet below is the evidence for it; a
+  // reader should not have to build the summary in their head from 500 rows.
+  writeOverviewSheet(wb, {
+    title: report.title || MINI_PLAN_LABEL,
+    subtitle: `Block B - EPC#1   |   Exported ${formatDate(today0)}   |   Whole plan`,
+    rows: planItems.filter(miniActivityHasContent),
+    equipment: planGroups.map((g) => {
+      const acts = g.rows.map((r) => r.item).filter(miniActivityHasContent);
+      return {
+        no: g.no,
+        equipment: g.equipment || '',
+        total: acts.length,
+        done: acts.filter((it) => normalizeStatus(it.status) === 'Done').length,
+      };
+    }),
+    today: today0,
+    range: weekRange(today0),
+    weekLabel: 'This week',
+  });
+
+  // SHEET 2 — the plan itself, photographs and all.
   const ws = wb.addWorksheet('MEC mini plan', {
     views: [{ showGridLines: false, state: 'frozen', ySplit: 4 }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -111,7 +138,7 @@ export async function exportMiniPlanExcel(report) {
   ws.mergeCells('A1:H1');
   const t = ws.getCell('A1');
   t.value = report.title || MINI_PLAN_LABEL;
-  t.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF0F172A' } };
+  t.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF1F3A5F' } };
   t.alignment = { horizontal: 'left', vertical: 'middle' };
   ws.getRow(1).height = 26;
 
@@ -122,7 +149,7 @@ export async function exportMiniPlanExcel(report) {
     `${stats.equipment} Equipment, ${stats.total} activities   |   ` +
     `Done ${stats.done} (${stats.percent}%)  ·  Due today ${stats.today}  ·  ` +
     `Overdue on-going ${stats.overdue}  ·  Overdue not started ${stats.missed}`;
-  sub.font = { name: 'Arial', size: 9, color: { argb: 'FF475569' } };
+  sub.font = { name: 'Arial', size: 9, color: { argb: 'FF51607A' } };
   sub.alignment = { horizontal: 'left', vertical: 'middle' };
   ws.getRow(2).height = 18;
 
@@ -130,12 +157,12 @@ export async function exportMiniPlanExcel(report) {
   const legendRow = ws.getRow(3);
   legendRow.height = 18;
   ws.getCell('A3').value = 'Legend:';
-  ws.getCell('A3').font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF475569' } };
+  ws.getCell('A3').font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF51607A' } };
   ROW_STATE_LEGEND.forEach((state, i) => {
     const cell = ws.getCell(3, 2 + i);
     const style = ROW_STATE_STYLE[state];
     cell.value = style.label;
-    cell.font = { name: 'Arial', size: 8.5, bold: true, color: { argb: 'FF1F2937' } };
+    cell.font = { name: 'Arial', size: 8.5, bold: true, color: { argb: 'FF1F3A5F' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
     if (style.argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.argb } };
     cell.border = thin();
@@ -150,8 +177,8 @@ export async function exportMiniPlanExcel(report) {
     cell.value = text;
     cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
-    cell.border = thin('FF1E293B');
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3A5F' } };
+    cell.border = thin('FF1F3A5F');
   });
 
   // ── Data rows ────────────────────────────────────────────────
@@ -190,11 +217,11 @@ export async function exportMiniPlanExcel(report) {
       const cellB = ws.getCell(excelRow, 2);
       if (excelRow === groupStartRow) {
         cellA.value = group.no === '' ? '' : group.no;
-        cellA.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+        cellA.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF1F3A5F' } };
         cellA.alignment = { horizontal: 'center', vertical: 'middle' };
 
         cellB.value = group.equipment || '';
-        cellB.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+        cellB.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1F3A5F' } };
         cellB.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
       }
       cellA.border = thin();
@@ -211,13 +238,13 @@ export async function exportMiniPlanExcel(report) {
       } else {
         cellC.value = '';
       }
-      cellC.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };
+      cellC.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F3A5F' } };
       cellC.alignment = { horizontal: 'center', vertical: 'middle' };
 
       // Activities (D)
       const cellD = ws.getCell(excelRow, 4);
       cellD.value = item.activity || '';
-      cellD.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };
+      cellD.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F3A5F' } };
       cellD.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
       // Status (E) — its own colour, distinct from the row's.
@@ -238,13 +265,13 @@ export async function exportMiniPlanExcel(report) {
       } else {
         cellF.value = '';
       }
-      cellF.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };
+      cellF.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F3A5F' } };
       cellF.alignment = { horizontal: 'center', vertical: 'middle' };
 
       // Note (G)
       const cellG = ws.getCell(excelRow, 7);
       cellG.value = item.note || '';
-      cellG.font = { name: 'Arial', size: 9, color: { argb: 'FF374151' } };
+      cellG.font = { name: 'Arial', size: 9, color: { argb: 'FF51607A' } };
       cellG.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
       // Photo (H)
@@ -328,12 +355,12 @@ export async function exportMiniPlanPdf(report) {
   // ── Header ───────────────────────────────────────────────────
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(13);
-  doc.setTextColor(15, 23, 42);
+  doc.setTextColor(31, 58, 95);
   doc.text(report.title || MINI_PLAN_LABEL, 24, 34);
 
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(81, 96, 122);
   doc.text(
     `Block B - EPC#1   |   Exported ${formatDate(today)}   |   ${stats.equipment} Equipment, ` +
     `${stats.total} activities   |   Done ${stats.done} (${stats.percent}%)`,
@@ -351,7 +378,7 @@ export async function exportMiniPlanPdf(report) {
       doc.setDrawColor(203, 213, 225);
       doc.rect(lx, ly, 9, 9, 'FD');
     }
-    doc.setTextColor(51, 65, 85);
+    doc.setTextColor(81, 96, 122);
     doc.text(s.label, lx + 12, ly + 7);
     lx += 14 + doc.getTextWidth(s.label) + 14;
   }
@@ -428,7 +455,7 @@ export async function exportMiniPlanPdf(report) {
       overflow: 'linebreak',
     },
     headStyles: {
-      fillColor: [30, 41, 59],
+      fillColor: [31, 58, 95],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       halign: 'center',
@@ -519,7 +546,7 @@ export async function exportMiniPlanPdf(report) {
     didDrawPage: () => {
       doc.setFontSize(7.5);
       doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(107, 114, 128);
+      doc.setTextColor(132, 148, 172);
       doc.text('Block B - EPC#1  |  CPP Mechanical Mini Plan', 24, pageHeight - 16);
       doc.text(`Page ${doc.internal.getNumberOfPages()}`, pageWidth - 24, pageHeight - 16, { align: 'right' });
     },

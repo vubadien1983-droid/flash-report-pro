@@ -14,6 +14,13 @@
  * changes what the next new one starts from. That is deliberate: the plan is
  * updated in the app (and through the live share link), not in the source.
  *
+ * 2026-09-13: the equipment NAMES were cleaned up at the user's request - the
+ * leading verb "Install" removed, and the equipment tag given the project
+ * prefix (PK-2601 -> CPPT-PK-2601), with the dash that used to separate the
+ * description from the tag dropped. 141 of the 188 names changed; the nine
+ * with no tag at all (Safety Equipment, Deluge Sprinkler System, ...) keep
+ * their plain names, and a tag already carrying CPPT- was left alone.
+ *
  * Each entry is one EQUIPMENT with its activities, in spreadsheet order.
  * Schedules are YYYY-MM-DD; an empty schedule means "not dated yet", which
  * the colour rule reads as "no fill" rather than as overdue.
@@ -21,7 +28,7 @@
 
 export const MINI_PLAN_SEED = [
   {
-    equipment: 'Install Turbo Expander Package No.1 PK-1301 (Cellar Deck)',
+    equipment: 'Turbo Expander Package No.1 CPPT-PK-1301 (Cellar Deck)',
     rows: [
       { schedule: '2026-09-14', activity: 'Cut short anchor bolt & zince coated', status: '' },
       { schedule: '2026-09-14', activity: 'Check final dim & bolting', status: '' },
@@ -31,7 +38,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Turbo Expander Package No.2 PK-2301 (Cellar Deck)',
+    equipment: 'Turbo Expander Package No.2 CPPT-PK-2301 (Cellar Deck)',
     rows: [
       { schedule: '2026-09-14', activity: 'Cut short anchor bolt & zince coated', status: '' },
       { schedule: '2026-09-14', activity: 'Check final dim & bolting', status: '' },
@@ -41,39 +48,39 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Glycol Contactor Outlet Filter Coalescer No.1 F-1202',
+    equipment: 'Glycol Contactor Outlet Filter Coalescer No.1 CPPT-F-1202',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (FILTER / STRAINER)', status: '' },
     ],
   },
   {
-    equipment: 'Install Pressure Vessels - LP KO Drum V-4301 (Cellar Deck)',
+    equipment: 'Pressure Vessels - LP KO Drum CPPT-V-4301 (Cellar Deck)',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Pressure Vessels - HP KO Drum V-4201 (Cellar Deck)',
+    equipment: 'Pressure Vessels - HP KO Drum CPPT-V-4201 (Cellar Deck)',
     rows: [
       { schedule: '2026-09-15', activity: 'Complete buttering and welding / NDT', status: '' },
       { schedule: '2026-09-15', activity: 'Bolting and Final Dim check', status: '' },
     ],
   },
   {
-    equipment: 'Install Glycol Contactor Outlet Filter No.2 - F-2202',
+    equipment: 'Glycol Contactor Outlet Filter No.2 CPPT-F-2202',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (FILTER / STRAINER)', status: '' },
     ],
   },
   {
-    equipment: 'Install Condensate Stabilizer - V-3404 (Cellar Deck)',
+    equipment: 'Condensate Stabilizer CPPT-V-3404 (Cellar Deck)',
     rows: [
       { schedule: '', activity: 'Complete installation of ladder, platform (check bolt / nut avaibility)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Jetting Water Pump P-3601',
+    equipment: 'Jetting Water Pump CPPT-P-3601',
     rows: [
       { schedule: '', activity: 'Equipment arrival and Receiving inspection', status: '' },
       { schedule: '', activity: 'Equipment Installation', status: '' },
@@ -85,42 +92,42 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Glycol Contactor No.2 V-2202',
+    equipment: 'Glycol Contactor No.2 CPPT-V-2202',
     rows: [
       { schedule: '', activity: 'Complete installation of ladder, platform, davit arm (check bolt / nut avaibility)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Gas/Gas Exchanger No.1A&B E-1302-01/02',
+    equipment: 'Gas/Gas Exchanger No.1A&B CPPT-E-1302-01/02',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: '' },
     ],
   },
   {
-    equipment: 'Install Liquid Heater No.1 E-1303',
+    equipment: 'Liquid Heater No.1 CPPT-E-1303',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: '' },
     ],
   },
   {
-    equipment: 'Install Liquid Heater No.2 E-2303',
+    equipment: 'Liquid Heater No.2 CPPT-E-2303',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: '' },
     ],
   },
   {
-    equipment: 'Install Gas/Gas Exchanger No.2A&B - E-2302-01/02',
+    equipment: 'Gas/Gas Exchanger No.2A&B CPPT-E-2302-01/02',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: '' },
     ],
   },
   {
-    equipment: 'Install Diesel Transfer Pump P-5401A',
+    equipment: 'Diesel Transfer Pump CPPT-P-5401A',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '2026-09-18', activity: 'Complete installation of Plan Seal', status: 'Done' },
@@ -130,7 +137,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Reboiler Circulation pumps - P-3402A',
+    equipment: 'Reboiler Circulation pumps CPPT-P-3402A',
     rows: [
       { schedule: '2026-09-20', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '2026-09-20', activity: 'Complete installation of Plan Seal', status: '' },
@@ -140,7 +147,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Reboiler Circulation pumps - P-3402B',
+    equipment: 'Reboiler Circulation pumps CPPT-P-3402B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -150,7 +157,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Diesel Firewater pump Package PK-8001',
+    equipment: 'Diesel Firewater pump Package CPPT-PK-8001',
     rows: [
       { schedule: '2026-09-09', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Check requirement of additional ITR-A for M04-A (Coupling Alignment), M03-A (Pumps). Currently only M03-B is avaialbe in CMS', status: '' },
@@ -158,7 +165,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Fire Water Pump Starting Air Receiver V-8001',
+    equipment: 'Fire Water Pump Starting Air Receiver CPPT-V-8001',
     rows: [
       { schedule: '2026-09-12', activity: 'Complete Leveling and bolting / welding for skid and Final Dim', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
@@ -166,20 +173,20 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Hydraulic Power unit (HPU Panel)',
+    equipment: 'Hydraulic Power unit (HPU Panel)',
     rows: [
       { schedule: '2026-09-14', activity: 'Complete Leveling and bolting / welding for skid and Final Dim (Check insulation kid requiremnt because skid frame are SS material)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Diesel Filter Coalescer F-5403',
+    equipment: 'Diesel Filter Coalescer CPPT-F-5403',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Survival Craft (50 Man CPP) (Cellar deck)',
+    equipment: 'Survival Craft (50 Man CPP) (Cellar deck)',
     rows: [
       { schedule: '', activity: 'Equipment arrival and Receiving inspection', status: '' },
       { schedule: '', activity: 'Equipment Installation', status: '' },
@@ -187,31 +194,31 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Diesel Inlet Strainer - F-5402(Cellar Deck)',
+    equipment: 'Diesel Inlet Strainer CPPT-F-5402(Cellar Deck)',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Survival Craft (50 Man CPP) (Cellar deck) - Davit',
+    equipment: 'Survival Craft (50 Man CPP) (Cellar deck) - Davit',
     rows: [
       { schedule: '2026-09-25', activity: 'Bolting and Final Dim', status: '' },
     ],
   },
   {
-    equipment: 'Install Nitrogen Receiver V-5201',
+    equipment: 'Nitrogen Receiver CPPT-V-5201',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Mercury Outlet Filter No.1 F-1402',
+    equipment: 'Mercury Outlet Filter No.1 CPPT-F-1402',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Water Injection Booster Pump P-3602A',
+    equipment: 'Water Injection Booster Pump CPPT-P-3602A',
     rows: [
       { schedule: '2026-09-22', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -221,19 +228,19 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Mercury Inlet Filter Coalescer No.2 F-2401',
+    equipment: 'Mercury Inlet Filter Coalescer No.2 CPPT-F-2401',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Glycol Contactor No.1 V-1202',
+    equipment: 'Glycol Contactor No.1 CPPT-V-1202',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Diesel Transfer Pump P-5401B',
+    equipment: 'Diesel Transfer Pump CPPT-P-5401B',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: 'Done' },
@@ -243,19 +250,19 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Charocoal Filter F-5801A',
+    equipment: 'Charocoal Filter CPPT-F-5801A',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Charocoal Filter F-5801B',
+    equipment: 'Charocoal Filter CPPT-F-5801B',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Water Injection Booster Pump P-3602B',
+    equipment: 'Water Injection Booster Pump CPPT-P-3602B',
     rows: [
       { schedule: '2026-09-23', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -265,7 +272,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Reflux pumps - P-3403A',
+    equipment: 'Reflux pumps CPPT-P-3403A',
     rows: [
       { schedule: '2026-09-25', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -275,7 +282,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Reflux pumps - P-3403B',
+    equipment: 'Reflux pumps CPPT-P-3403B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -285,7 +292,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Water Injection Booster Pump P-3602C',
+    equipment: 'Water Injection Booster Pump CPPT-P-3602C',
     rows: [
       { schedule: '2026-09-24', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -295,19 +302,19 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Pipeline Compressor Suction Scrubber No.1 V-1501',
+    equipment: 'Pipeline Compressor Suction Scrubber No.1 CPPT-V-1501',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Production Compressor Suction Scrubber No.2 V-2102',
+    equipment: 'Production Compressor Suction Scrubber No.2 CPPT-V-2102',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Condensate Transfer pumps - P-3501A',
+    equipment: 'Condensate Transfer pumps CPPT-P-3501A',
     rows: [
       { schedule: '2026-09-27', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -317,7 +324,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Condensate Transfer pumps - P-3501B',
+    equipment: 'Condensate Transfer pumps CPPT-P-3501B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -327,19 +334,19 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Pipeline Compressor Suction Scrubber No.2 V-2501',
+    equipment: 'Pipeline Compressor Suction Scrubber No.2 CPPT-V-2501',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Production Compressor Suction Scrubber No.1 V-1102',
+    equipment: 'Production Compressor Suction Scrubber No.1 CPPT-V-1102',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install HP Flare KO transfer pumps - P-4201A',
+    equipment: 'HP Flare KO transfer pumps CPPT-P-4201A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -349,7 +356,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install HP Flare KO transfer pumps - P-4201B',
+    equipment: 'HP Flare KO transfer pumps CPPT-P-4201B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -359,25 +366,25 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Expander Suction Scrubber No.1 V-1302',
+    equipment: 'Expander Suction Scrubber No.1 CPPT-V-1302',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Expander Suction Scrubber No.2 - V-2302',
+    equipment: 'Expander Suction Scrubber No.2 CPPT-V-2302',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Cold Separation No.1 V-1303',
+    equipment: 'Cold Separation No.1 CPPT-V-1303',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install LP Flare KO transfer pumps - P-4301A',
+    equipment: 'LP Flare KO transfer pumps CPPT-P-4301A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -387,7 +394,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install LP Flare KO transfer pumps - P-4301B',
+    equipment: 'LP Flare KO transfer pumps CPPT-P-4301B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -397,43 +404,43 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Gas Scrubbers - V-1305',
+    equipment: 'Gas Scrubbers CPPT-V-1305',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Gas Scrubbers - V-2305',
+    equipment: 'Gas Scrubbers CPPT-V-2305',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Inlet Separators - V-1001',
+    equipment: 'Inlet Separators CPPT-V-1001',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Inlet Separators - V-2001',
+    equipment: 'Inlet Separators CPPT-V-2001',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Portable Water Storage Tank T-5801A/B',
+    equipment: 'Portable Water Storage Tank CPPT-T-5801A/B',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Cold Separators No.2 - V-2303',
+    equipment: 'Cold Separators No.2 CPPT-V-2303',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Diesel Centrifuge Package PK-5401',
+    equipment: 'Diesel Centrifuge Package CPPT-PK-5401',
     rows: [
       { schedule: '', activity: 'Equipment arrival and Receiving inspection', status: '' },
       { schedule: '', activity: 'Equipment Installation', status: '' },
@@ -443,82 +450,82 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Instrument Air Receiver V-5001',
+    equipment: 'Instrument Air Receiver CPPT-V-5001',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Utility Air Receiver V-5101',
+    equipment: 'Utility Air Receiver CPPT-V-5101',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Mercury Outlet Filter No.2 F-2402',
+    equipment: 'Mercury Outlet Filter No.2 CPPT-F-2402',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Mercury Absorber V-1401',
+    equipment: 'Mercury Absorber CPPT-V-1401',
     rows: [
       { schedule: '', activity: 'Check if ITR-A M01-A need to check onshore (Internal parts will be installed offshore)', status: '' },
     ],
   },
   {
-    equipment: 'Install Mercury Absorber V-2401',
+    equipment: 'Mercury Absorber CPPT-V-2401',
     rows: [
       { schedule: '', activity: 'Check if ITR-A M01-A need to check onshore (Internal parts will be installed offshore)', status: '' },
     ],
   },
   {
-    equipment: 'Install Mercury Inlet Filter Coalescer No.1 F-1401',
+    equipment: 'Mercury Inlet Filter Coalescer No.1 CPPT-F-1401',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M08-A (Filter / Strainer)', status: '' },
     ],
   },
   {
-    equipment: 'Install Instrument & Utility Air Compressor Package-PK - 5101',
+    equipment: 'Instrument & Utility Air Compressor Package CPPT-PK-5101',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: 'Done' },
       { schedule: '', activity: 'Check requirement of additional ITR-A for M04-A (Coupling Alignment), currently M05-B is already avaible in CMS', status: '' },
     ],
   },
   {
-    equipment: 'Install Instrument & Utility Air Compressor Package-PK - 5102',
+    equipment: 'Instrument & Utility Air Compressor Package CPPT-PK-5102',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: 'Done' },
       { schedule: '', activity: 'Check requirement of additional ITR-A for M04-A (Coupling Alignment), currently M05-B is already avaible in CMS', status: '' },
     ],
   },
   {
-    equipment: 'Install Instrument & Utility Air Compressor Package-PK - 5103',
+    equipment: 'Instrument & Utility Air Compressor Package CPPT-PK-5103',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: 'Done' },
       { schedule: '', activity: 'Check requirement of additional ITR-A for M04-A (Coupling Alignment), currently M05-B is already avaible in CMS', status: '' },
     ],
   },
   {
-    equipment: 'Install Instrument Air Dryer Package PK-5001',
+    equipment: 'Instrument Air Dryer Package CPPT-PK-5001',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: 'Done' },
     ],
   },
   {
-    equipment: 'Install Stabilizer Feed Bottom Exchangers  - E-3405A-01/02',
+    equipment: 'Stabilizer Feed Bottom Exchangers CPPT-E-3405A-01/02',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Stabilizer Feed Bottom Exchangers  - E-3405B-01/02',
+    equipment: 'Stabilizer Feed Bottom Exchangers CPPT-E-3405B-01/02',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Portable Water Pump A P-5801A',
+    equipment: 'Portable Water Pump A CPPT-P-5801A',
     rows: [
       { schedule: '2026-09-11', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -528,7 +535,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Portable Water Pump B P-5801B',
+    equipment: 'Portable Water Pump B CPPT-P-5801B',
     rows: [
       { schedule: '2026-09-11', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -538,7 +545,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Nitrogen Generator Package PK-5201',
+    equipment: 'Nitrogen Generator Package CPPT-PK-5201',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: 'Done' },
@@ -546,80 +553,80 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Separation Gas Backup Nitrogen Quad PK-5202',
+    equipment: 'Separation Gas Backup Nitrogen Quad CPPT-PK-5202',
     rows: [
       { schedule: '2026-09-20', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Ignition Panel IP-4201',
+    equipment: 'Ignition Panel CPPT-IP-4201',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
     ],
   },
   {
-    equipment: 'Install Three Phase Separator V-3402',
+    equipment: 'Three Phase Separator CPPT-V-3402',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Dilution Blower/Ejector K-7780',
+    equipment: 'Dilution Blower/Ejector CPPT-K-7780',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],
   },
   {
-    equipment: 'Install Pig Receiver R-3201',
+    equipment: 'Pig Receiver CPPT-R-3201',
     rows: [
       { schedule: '2026-09-09', activity: 'Complete Leveling and bolting, final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Pig Receiver R-3202',
+    equipment: 'Pig Receiver CPPT-R-3202',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Pig Receiver R-3203',
+    equipment: 'Pig Receiver CPPT-R-3203',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Condenste Launcher L-3302',
+    equipment: 'Condenste Launcher CPPT-L-3302',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Stabilizer Reboiler E-3402A',
+    equipment: 'Stabilizer Reboiler CPPT-E-3402A',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: '' },
     ],
   },
   {
-    equipment: 'Install Overhead Reflux Separation -V-3405',
+    equipment: 'Overhead Reflux Separation CPPT-V-3405',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Stabilizer Reboiler E-3402B',
+    equipment: 'Stabilizer Reboiler CPPT-E-3402B',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M06-A (Heat Exchanger / Heater)', status: '' },
     ],
   },
   {
-    equipment: 'Install Air Cooled Condensing Units No.1 CPPT-HEC-9001A',
+    equipment: 'Air Cooled Condensing Units No.1 CPPT-HEC-9001A',
     rows: [
       { schedule: '2026-09-12', activity: 'Complete Leveling and bolting, final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -628,7 +635,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Air Cooled Condensing Units No.2 CPPT-HEC-9001B',
+    equipment: 'Air Cooled Condensing Units No.2 CPPT-HEC-9001B',
     rows: [
       { schedule: '2026-09-12', activity: 'Complete Leveling and bolting, final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -637,7 +644,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Therminol Transfer Pump P-5601',
+    equipment: 'Therminol Transfer Pump CPPT-P-5601',
     rows: [
       { schedule: '2026-09-21', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: 'Done' },
@@ -647,14 +654,14 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Hypochlorite Package PK-5303',
+    equipment: 'Hypochlorite Package CPPT-PK-5303',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Turbine Wash Water Maker Package PK-2601',
+    equipment: 'Turbine Wash Water Maker Package CPPT-PK-2601',
     rows: [
       { schedule: '', activity: 'Equipment arrival and Receiving inspection', status: '' },
       { schedule: '', activity: 'Equipment Installation', status: '' },
@@ -663,7 +670,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Hot Oil Circulation Pumps P-5602B',
+    equipment: 'Hot Oil Circulation Pumps CPPT-P-5602B',
     rows: [
       { schedule: '2026-09-30', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -673,43 +680,43 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Sale Gas Analyzer Shelter - PK-3104',
+    equipment: 'Sale Gas Analyzer Shelter CPPT-PK-3104',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Sale Gas Metering Package - PK-3101',
+    equipment: 'Sale Gas Metering Package CPPT-PK-3101',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Sale Gas Metering Package - PK-3102',
+    equipment: 'Sale Gas Metering Package CPPT-PK-3102',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Glycol Generation Package No.1 PK-1201',
+    equipment: 'Glycol Generation Package No.1 CPPT-PK-1201',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Sale Gas Metering Package - PK-3103',
+    equipment: 'Sale Gas Metering Package CPPT-PK-3103',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Sale Gas Launcher L-3301',
+    equipment: 'Sale Gas Launcher CPPT-L-3301',
     rows: [
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Glycol Generation Package No.2 PK-2201',
+    equipment: 'Glycol Generation Package No.2 CPPT-PK-2201',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -717,7 +724,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Glycol Cooler No.1 E-1202',
+    equipment: 'Glycol Cooler No.1 CPPT-E-1202',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
@@ -725,7 +732,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Produced Water Degasser Package PK-3602',
+    equipment: 'Produced Water Degasser Package CPPT-PK-3602',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -733,7 +740,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Gas Turbine Generation Package (Dual Fuel) PK-6001',
+    equipment: 'Gas Turbine Generation Package (Dual Fuel) CPPT-PK-6001',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation and Final Dim for Exhaust Duct System', status: '' },
@@ -797,7 +804,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Gas Turbine Generation Package (Dual Fuel) PK-6002',
+    equipment: 'Gas Turbine Generation Package (Dual Fuel) CPPT-PK-6002',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation and Final Dim for Exhaust Duct System', status: '' },
@@ -861,7 +868,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Gas Turbine Generation Package (Dual Fuel) PK-6003',
+    equipment: 'Gas Turbine Generation Package (Dual Fuel) CPPT-PK-6003',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: 'Done' },
       { schedule: '', activity: 'Complete installation and Final Dim for Exhaust Duct System', status: '' },
@@ -925,7 +932,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Glycol Cooler No.2 E-2202',
+    equipment: 'Glycol Cooler No.2 CPPT-E-2202',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
@@ -933,7 +940,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Fuel Gas Package PK-3801',
+    equipment: 'Fuel Gas Package CPPT-PK-3801',
     rows: [
       { schedule: '', activity: 'Equipment arrival and Receiving inspection', status: '' },
       { schedule: '', activity: 'Equipment Installation', status: '' },
@@ -942,7 +949,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Vapor Recovery Compressor No.1 Package PK-3001',
+    equipment: 'Vapor Recovery Compressor No.1 Package CPPT-PK-3001',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Check if M04-A (Coupling Alignment) of  is required', status: '' },
@@ -950,7 +957,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Vapour Recovery Intercooler/After Cooler No.1 E-3001-01/02',
+    equipment: 'Vapour Recovery Intercooler/After Cooler No.1 CPPT-E-3001-01/02',
     rows: [
       { schedule: '2026-09-19', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -958,7 +965,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Water Injection Pump P-3603A',
+    equipment: 'Water Injection Pump CPPT-P-3603A',
     rows: [
       { schedule: '2026-09-15', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -967,7 +974,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Water Injection Pump P-3603B',
+    equipment: 'Water Injection Pump CPPT-P-3603B',
     rows: [
       { schedule: '2026-09-15', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -976,7 +983,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Water Injection Pump P-3603C',
+    equipment: 'Water Injection Pump CPPT-P-3603C',
     rows: [
       { schedule: '2026-09-15', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -1158,14 +1165,14 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Glycol Storage Tank T-5304',
+    equipment: 'Glycol Storage Tank CPPT-T-5304',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Chemical Injection Package PK-5301',
+    equipment: 'Chemical Injection Package CPPT-PK-5301',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -1173,28 +1180,28 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Hot Oil Slip Stream Filter F-5601',
+    equipment: 'Hot Oil Slip Stream Filter CPPT-F-5601',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M08-A (FILTER / STRAINER)', status: '' },
     ],
   },
   {
-    equipment: 'Install Sale Gas Corrosion inhibitor Package PK-5302',
+    equipment: 'Sale Gas Corrosion inhibitor Package CPPT-PK-5302',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
     ],
   },
   {
-    equipment: 'Install Therminol Storage Tank T-5601',
+    equipment: 'Therminol Storage Tank CPPT-T-5601',
     rows: [
       { schedule: '', activity: 'Complete Leveling/welding and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Hot Oil Circulation Pumps P-5602A',
+    equipment: 'Hot Oil Circulation Pumps CPPT-P-5602A',
     rows: [
       { schedule: '2026-10-01', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -1204,14 +1211,14 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Glycol Transfer Pump P-5304',
+    equipment: 'Glycol Transfer Pump CPPT-P-5304',
     rows: [
       { schedule: '2026-09-15', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M28-A (Miscellaneous Equipment)', status: '' },
     ],
   },
   {
-    equipment: 'Production Comprressor after Cooler No.1 -E-1102',
+    equipment: 'Production Comprressor after Cooler No.1 CPPT-E-1102',
     rows: [
       { schedule: '2026-10-06', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1219,7 +1226,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Overhead Condenser E-3403',
+    equipment: 'Overhead Condenser CPPT-E-3403',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1227,7 +1234,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Bottom Cooler E-3404',
+    equipment: 'Bottom Cooler CPPT-E-3404',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1235,7 +1242,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Waste Heat Recovery Unit No.1 E-5601A',
+    equipment: 'Waste Heat Recovery Unit No.1 CPPT-E-5601A',
     rows: [
       { schedule: '2026-09-20', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -1243,14 +1250,14 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Hot Oil Expansion Tank V-5601',
+    equipment: 'Hot Oil Expansion Tank CPPT-V-5601',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Pipeline Compressor after Cooler No.1 E-1501',
+    equipment: 'Pipeline Compressor after Cooler No.1 CPPT-E-1501',
     rows: [
       { schedule: '2026-10-07', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1258,7 +1265,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Waste Heat Recovery Trim Cooler E-5602',
+    equipment: 'Waste Heat Recovery Trim Cooler CPPT-E-5602',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1266,7 +1273,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Waste Heat Recovery Unit No.2 E-5601B',
+    equipment: 'Waste Heat Recovery Unit No.2 CPPT-E-5601B',
     rows: [
       { schedule: '2026-09-26', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -1274,7 +1281,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Pipeline Compressor after Cooler No.2 E-2501',
+    equipment: 'Pipeline Compressor after Cooler No.2 CPPT-E-2501',
     rows: [
       { schedule: '2026-10-08', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1282,7 +1289,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Mineral Oil Forced Air Cooler E-2101',
+    equipment: 'Mineral Oil Forced Air Cooler CPPT-E-2101',
     rows: [
       { schedule: '2026-10-10', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1290,7 +1297,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Turbo Expander Lube Oil Cooler No.1 E-1301',
+    equipment: 'Turbo Expander Lube Oil Cooler No.1 CPPT-E-1301',
     rows: [
       { schedule: '2026-09-23', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1298,7 +1305,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Turbo Expander Lube Oil Cooler No.2 E-2301',
+    equipment: 'Turbo Expander Lube Oil Cooler No.2 CPPT-E-2301',
     rows: [
       { schedule: '2026-09-23', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1306,7 +1313,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Production Compressor after Cooler No.2 E-2102',
+    equipment: 'Production Compressor after Cooler No.2 CPPT-E-2102',
     rows: [
       { schedule: '2026-06-10', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M09-A (FAN / COOLER / BLOWER)', status: '' },
@@ -1332,14 +1339,14 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Close Drain Drum-V-4701',
+    equipment: 'Close Drain Drum CPPT-V-4701',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Sewage Treatment Unit and Ejector-PK-5501',
+    equipment: 'Sewage Treatment Unit and Ejector CPPT-PK-5501',
     rows: [
       { schedule: '', activity: 'Complete Leveling/Bolting and Final Dim for skid', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
@@ -1359,7 +1366,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Recovered Oil Pump-P-4702A',
+    equipment: 'Recovered Oil Pump CPPT-P-4702A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -1370,7 +1377,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Recovered Oil Pump-P-4702B',
+    equipment: 'Recovered Oil Pump CPPT-P-4702B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -1381,7 +1388,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Closed Drain Pump-P-4701A',
+    equipment: 'Closed Drain Pump CPPT-P-4701A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -1392,7 +1399,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Closed Drain Pump-P-4701B',
+    equipment: 'Closed Drain Pump CPPT-P-4701B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
@@ -1403,7 +1410,7 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install PW Package - Desender & Deoiler Package - PK-3601',
+    equipment: 'PW Package - Desender & Deoiler Package CPPT-PK-3601',
     rows: [
       { schedule: '', activity: 'Complete modification clashed spool of PIT-3601-06 and PG-3601-06', status: '' },
       { schedule: '', activity: 'Complete Leveling and bolting, final dimention for skid', status: '' },
@@ -1411,14 +1418,14 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Wash Down Water (Fresh Water) Storage Tank-T-5802',
+    equipment: 'Wash Down Water (Fresh Water) Storage Tank CPPT-T-5802',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting, final dimention for skid', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M01-A (Pressure Vessel / Tank / Column)', status: '' },
     ],
   },
   {
-    equipment: 'Install Wash Down Water Booster Pump-P-5802',
+    equipment: 'Wash Down Water Booster Pump CPPT-P-5802',
     rows: [
       { schedule: '2026-09-11', activity: 'Complete Leveling and bolting for skid', status: '' },
       { schedule: '', activity: 'Complete installation of Plan Seal', status: 'Done' },
@@ -1429,37 +1436,37 @@ export const MINI_PLAN_SEED = [
     ],
   },
   {
-    equipment: 'Install Lab Equipment',
+    equipment: 'Lab Equipment',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],
   },
   {
-    equipment: 'Install Deluge Sprinkler System',
+    equipment: 'Deluge Sprinkler System',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],
   },
   {
-    equipment: 'Install Safety Equipment',
+    equipment: 'Safety Equipment',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],
   },
   {
-    equipment: 'Install Material Handling Equipment',
+    equipment: 'Material Handling Equipment',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],
   },
   {
-    equipment: 'Install Turbine Wash water Collection Tank T-XX01',
+    equipment: 'Turbine Wash water Collection Tank CPPT-T-XX01',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],
   },
   {
-    equipment: 'Install Turbine Wash Water Pump P-XX01',
+    equipment: 'Turbine Wash Water Pump CPPT-P-XX01',
     rows: [
       { schedule: '', activity: '', status: '' },
     ],

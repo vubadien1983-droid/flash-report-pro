@@ -19,18 +19,27 @@
 import { sanitizeFilename, downloadBlob, excelDate } from './exportImage';
 import { summaryTiles, describeFilter } from './miniPlanDashboard';
 import {
-  ROW_STATE_STYLE, rowState, STATUS_STYLE, normalizeStatus,
-  scheduleKey, completedKey, todayKey, MINI_PLAN_LABEL,
+  ROW_STATE_STYLE, ROW_STATE, rowState, STATUS_STYLE, normalizeStatus,
+  scheduleKey, completedKey, todayKey, MINI_PLAN_LABEL, STATUS_DONE,
 } from './miniPlan';
+import { writeOverviewSheet } from './miniPlanReportSheets';
+import {
+  VIZ, INK, PAPER, ROW_TINT, FONT, fill, bodyFont,
+} from './excelTheme';
 
-const COLS = { no: 6, equipment: 40, activities: 58, schedule: 14, status: 14, completed: 16 };
+const COLS = {
+  no: 6, equipment: 38, activities: 56, schedule: 13,
+  status: 13, completed: 14, state: 22,
+};
 
-const thin = (argb = 'FFD0D5DD') => ({
-  top: { style: 'thin', color: { argb } },
-  left: { style: 'thin', color: { argb } },
-  bottom: { style: 'thin', color: { argb } },
-  right: { style: 'thin', color: { argb } },
-});
+/** The plan's row state, in the saturated palette the charts use. */
+const STATE_VIZ = {
+  [ROW_STATE.DONE]: VIZ.done,
+  [ROW_STATE.TODAY]: VIZ.today,
+  [ROW_STATE.OVERDUE]: VIZ.overdue,
+  [ROW_STATE.MISSED]: VIZ.missed,
+  [ROW_STATE.NONE]: VIZ.planned,
+};
 
 function formatDate(iso) {
   const key = scheduleKey(iso);
@@ -73,133 +82,119 @@ export async function exportDashboardExcel({ title, view }) {
   wb.creator = 'Flash Report Pro';
   wb.created = new Date();
 
-  const ws = wb.addWorksheet('Equipment status', {
-    views: [{ showGridLines: false, state: 'frozen', ySplit: 7 }],
+  const today = view.today || todayKey();
+  const rowsInView = view.previewRows.map((r) => r.item);
+
+  // ── SHEET 1 — the report ─────────────────────────────────────
+  writeOverviewSheet(wb, {
+    title: `${title || MINI_PLAN_LABEL} — Equipment installation status`,
+    subtitle: subtitle(view),
+    rows: rowsInView,
+    equipment: view.equipmentRows,
+    today,
+    range: view.range,
+    weekLabel: view.weekLabel,
+  });
+
+  // ── SHEET 2 — the data ───────────────────────────────────────
+  //
+  // A real Excel TABLE, not a grid of coloured cells: the header gets filter
+  // dropdowns, the stripes come from the table style, and the whole range can
+  // be sorted, filtered and fed to a PivotTable by whoever opens it. That is
+  // what "filter it like the app does" means once the file leaves the app.
+  const ws = wb.addWorksheet('Data', {
+    views: [{ showGridLines: false, state: 'frozen', ySplit: 4 }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
   ws.columns = [
-    { key: 'no', width: COLS.no },
-    { key: 'equipment', width: COLS.equipment },
-    { key: 'activities', width: COLS.activities },
-    { key: 'schedule', width: COLS.schedule },
-    { key: 'status', width: COLS.status },
-    { key: 'completed', width: COLS.completed },
+    { width: COLS.no }, { width: COLS.equipment }, { width: COLS.activities },
+    { width: COLS.schedule }, { width: COLS.status }, { width: COLS.completed },
+    { width: COLS.state },
   ];
 
-  const today = view.today || todayKey();
-
-  ws.mergeCells('A1:F1');
+  ws.mergeCells('A1:G1');
   const t = ws.getCell('A1');
-  t.value = `${title || MINI_PLAN_LABEL} — Equipment installation status`;
-  t.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF0F172A' } };
-  ws.getRow(1).height = 26;
+  t.value = `${title || MINI_PLAN_LABEL} — data`;
+  t.font = { name: FONT, size: 13, bold: true, color: { argb: INK.onDark.argb } };
+  t.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  t.fill = fill(PAPER.header.argb);
+  ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:F2');
+  ws.mergeCells('A2:G2');
   const sub = ws.getCell('A2');
   sub.value = subtitle(view);
-  sub.font = { name: 'Arial', size: 9, color: { argb: 'FF475569' } };
+  sub.font = { name: FONT, size: 9, color: { argb: INK.secondary.argb } };
+  sub.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
   ws.getRow(2).height = 18;
 
-  // ── The six summary figures, labels above values ─────────────
-  const tiles = summaryTiles(view);
-  const labelRow = ws.getRow(4);
-  const valueRow = ws.getRow(5);
-  labelRow.height = 16;
-  valueRow.height = 22;
-
-  tiles.forEach((tile, i) => {
-    const c = i + 1;
-    const l = ws.getCell(4, c);
-    l.value = tile.label;
-    l.font = { name: 'Arial', size: 8.5, bold: true, color: { argb: 'FF475569' } };
-    l.alignment = { horizontal: 'center', vertical: 'middle' };
-    l.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-    l.border = thin();
-
-    const v = ws.getCell(5, c);
-    v.value = tile.signed ? signed(tile.value) : tile.value;
-    v.font = {
-      name: 'Arial', size: 14, bold: true,
-      color: { argb: tile.signed && tile.value < 0 ? 'FFB91C1C' : 'FF0F172A' },
-    };
-    v.alignment = { horizontal: 'center', vertical: 'middle' };
-    v.border = thin();
-  });
-
-  // ── Table header ─────────────────────────────────────────────
-  const headers = ['No', 'Equipment', 'Activities', 'Schedule', 'Status', 'Completed Date'];
-  const headRow = ws.getRow(7);
-  headRow.height = 22;
-  headers.forEach((text, i) => {
-    const cell = ws.getCell(7, i + 1);
-    cell.value = text;
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
-    cell.border = thin('FF1E293B');
-  });
-
-  // ── Rows, exactly the ones on screen and in the same order ───
-  let r = 8;
-  for (const row of view.previewRows) {
+  const tableRows = view.previewRows.map((row) => {
     const item = row.item;
-    const fill = ROW_STATE_STYLE[rowState(item, today)].argb;
-    const status = normalizeStatus(item.status);
-    const sStyle = STATUS_STYLE[status];
-
-    const line = ws.getRow(r);
-    line.height = Math.max(18, Math.max(
-      linesFor(item.activity, COLS.activities),
-      linesFor(row.equipment, COLS.equipment)
-    ) * 12.5 + 5);
-
-    const cells = [
+    const doneOn = completedKey(item);
+    return [
       row.no,
       row.equipment || '',
       item.activity || '',
-      null,   // Schedule — written as a real date below
-      status || '',
-      null,   // Completed Date — ditto
+      excelDate(scheduleKey(item.schedule)),
+      normalizeStatus(item.status) || 'Not started',
+      excelDate(doneOn),
+      ROW_STATE_STYLE[rowState(item, today)].label,
     ];
-    cells.forEach((value, i) => {
-      const cell = ws.getCell(r, i + 1);
-      if (value !== null) cell.value = value;
-      cell.border = thin();
-      if (i === 4 && sStyle.argb) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sStyle.argb } };
-      } else if (fill) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
-      }
-    });
+  });
 
-    // Real DATE values, so the sheet can sort and filter on them.
-    const writeDate = (col, key) => {
-      const cell = ws.getCell(r, col);
-      const k = scheduleKey(key);
-      if (k) {
-        cell.value = excelDate(k);
-        cell.numFmt = 'd-mmm-yy';
-      }
-      cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    };
-    writeDate(4, item.schedule);
-    writeDate(6, completedKey(item));
+  ws.addTable({
+    name: 'EquipmentStatus',
+    ref: 'A4',
+    headerRow: true,
+    style: { theme: 'TableStyleMedium2', showRowStripes: true },
+    columns: [
+      { name: 'No', filterButton: true },
+      { name: 'Equipment', filterButton: true },
+      { name: 'Activities', filterButton: true },
+      { name: 'Schedule', filterButton: true },
+      { name: 'Status', filterButton: true },
+      { name: 'Completed Date', filterButton: true },
+      { name: 'State', filterButton: true },
+    ],
+    rows: tableRows.length ? tableRows : [['', '', 'No rows in this view', null, '', null, '']],
+  });
 
-    ws.getCell(r, 1).font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
-    ws.getCell(r, 1).alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getCell(r, 2).font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
-    ws.getCell(r, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-    ws.getCell(r, 3).font = { name: 'Arial', size: 9.5, color: { argb: 'FF1F2937' } };
-    ws.getCell(r, 3).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-    ws.getCell(r, 5).font = { name: 'Arial', size: 9.5, bold: true, color: { argb: sStyle.fg } };
-    ws.getCell(r, 5).alignment = { horizontal: 'center', vertical: 'middle' };
+  // Cell-level formatting on top of the table style: dates as dates, the
+  // State column in the plan's own colours, text in navy rather than black.
+  const firstRow = 5;
+  view.previewRows.forEach((row, i) => {
+    const r = firstRow + i;
+    const item = row.item;
+    const state = rowState(item, today);
+    const tint = ROW_TINT[state];
 
-    r++;
-  }
+    ws.getRow(r).height = Math.max(16, Math.max(
+      linesFor(item.activity, COLS.activities),
+      linesFor(row.equipment, COLS.equipment)
+    ) * 12.5 + 3);
 
-  ws.autoFilter = { from: { row: 7, column: 1 }, to: { row: Math.max(7, r - 1), column: 6 } };
+    for (let c = 1; c <= 7; c++) {
+      const cell = ws.getCell(r, c);
+      cell.font = bodyFont(9.5);
+      cell.alignment = {
+        horizontal: c === 1 || c >= 4 ? 'center' : 'left',
+        vertical: 'middle',
+        wrapText: c === 2 || c === 3,
+        indent: c === 2 || c === 3 ? 1 : 0,
+      };
+      if (c === 4 || c === 6) cell.numFmt = 'd-mmm-yy';
+    }
+
+    const stateCell = ws.getCell(r, 7);
+    const viz = STATE_VIZ[state];
+    stateCell.font = { name: FONT, size: 9, bold: true, color: { argb: viz.argb } };
+    if (tint) stateCell.fill = fill(tint);
+
+    const statusCell = ws.getCell(r, 5);
+    if (normalizeStatus(item.status) === STATUS_DONE) {
+      statusCell.font = { name: FONT, size: 9.5, bold: true, color: { argb: VIZ.done.argb } };
+    }
+  });
 
   const buffer = await wb.xlsx.writeBuffer();
   downloadBlob(
@@ -229,7 +224,7 @@ export async function exportDashboardPdf({ title, view }) {
 
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(12);
-  doc.setTextColor(15, 23, 42);
+  doc.setTextColor(31, 58, 95);
   doc.text(`${title || MINI_PLAN_LABEL} — Equipment installation status`, 24, 32);
 
   doc.setFont('Helvetica', 'normal');
@@ -246,17 +241,17 @@ export async function exportDashboardPdf({ title, view }) {
     const x = 24 + i * (boxW + 6);
     const y = 66;
     doc.setDrawColor(203, 213, 225);
-    doc.setFillColor(248, 250, 252);
+    doc.setFillColor(234, 240, 248);
     doc.roundedRect(x, y, boxW, 34, 3, 3, 'FD');
 
     doc.setFontSize(6);
-    doc.setTextColor(100, 116, 139);
+    doc.setTextColor(81, 96, 122);
     doc.text(String(tile.label).toUpperCase(), x + 5, y + 11, { maxWidth: boxW - 10 });
 
     doc.setFont('Helvetica', 'bold');
     doc.setFontSize(13);
     if (tile.signed && tile.value < 0) doc.setTextColor(185, 28, 28);
-    else doc.setTextColor(15, 23, 42);
+    else doc.setTextColor(31, 58, 95);
     doc.text(tile.signed ? signed(tile.value) : String(tile.value), x + 5, y + 28);
     doc.setFont('Helvetica', 'normal');
   });
@@ -293,7 +288,7 @@ export async function exportDashboardPdf({ title, view }) {
       lineColor: [203, 213, 225], lineWidth: 0.5, overflow: 'linebreak',
     },
     headStyles: {
-      fillColor: [30, 41, 59], textColor: [255, 255, 255],
+      fillColor: [31, 58, 95], textColor: [255, 255, 255],
       fontStyle: 'bold', halign: 'center', fontSize: 7.5,
     },
     // 24 + 130 + 197 + 54 + 52 + 54 = 511pt, inside the 547pt of printable
