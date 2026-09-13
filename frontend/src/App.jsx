@@ -139,6 +139,7 @@ export default function App() {
   };
 
   const autoSaveTimerRef = useRef(null);
+  const republishTimerRef = useRef(null);
   const undoDeleteRef = useRef(null);
 
   // Realtime callbacks fire outside React's render cycle, so they read these
@@ -751,12 +752,43 @@ export default function App() {
           out.push({
             url: p.url,
             filename: p.filename || `Item ${i + 1} · Photo ${(p.slot_index ?? sIdx) + 1}`,
+            // Where this photo LIVES, so the lightbox can delete the one on
+            // screen rather than the first row that happens to share its url.
+            itemIndex: i,
+            photoIndex: sIdx,
+            slotIndex: p.slot_index ?? sIdx,
           });
         }
       });
     });
     return out;
   }, [currentReport]);
+
+  /**
+   * Delete the photo currently open in the lightbox.
+   *
+   * Addressed by ITEM + SLOT, never by url: two rows can legitimately hold the
+   * same image (the same detail photographed for two activities), and matching
+   * on the url would delete whichever came first.
+   */
+  const handleDeletePhoto = (photo) => {
+    if (!currentReport || !photo || planLocked) return;
+    const items = currentReport.items || [];
+    const item = items[photo.itemIndex];
+    if (!item) return;
+
+    const photos = (item.photos || []).filter((p, idx) =>
+      !(p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex)
+    );
+    const nextItems = items.map((it, i) => (i === photo.itemIndex ? { ...it, photos } : it));
+    handleItemsChange(nextItems);
+
+    // Keep the viewer on something sensible instead of a dangling index.
+    const remaining = galleryPhotos.length - 1;
+    if (remaining <= 0) setImageModalState({ isOpen: false, index: 0 });
+    else setImageModalState((st) => ({ ...st, index: Math.min(st.index, remaining - 1) }));
+    showToast('Photo deleted', 'success');
+  };
 
   const openLightboxByUrl = (url) => {
     const idx = galleryPhotos.findIndex((g) => g.url === url);
@@ -878,13 +910,41 @@ export default function App() {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // ─── UPDATED: Auto-save uses SyncEngine (local instant, cloud debounced) ─
+  // ─── Auto-save uses SyncEngine (local instant, cloud debounced) ─────
+  //
+  // Two things here are deliberately SLOW, because the alternative is an app
+  // that stutters while somebody types into it during a meeting (BUG-024):
+  //
+  //  - the save itself waits 2.5s after the last change. An edit now arrives
+  //    once per CELL (a cell commits when it closes), not once per keystroke,
+  //    so a longer wait costs nothing and collapses a burst of edits into one
+  //    write.
+  //  - re-publishing the SHARE LINK is separated from the save and throttled
+  //    hard. Publishing rewrites the whole shared document — 500 rows of JSON
+  //    — and doing that after every autosave was the single most expensive
+  //    thing the app did while the user was typing. The link now catches up
+  //    ~12s after the last edit, or instantly on an explicit Save.
+  const latestSavedRef = useRef(null);
+
+  const scheduleRepublish = (report, immediate = false) => {
+    latestSavedRef.current = report;
+    if (republishTimerRef.current) clearTimeout(republishTimerRef.current);
+    if (immediate) {
+      republishIfShared(latestSavedRef.current).catch(() => {});
+      return;
+    }
+    republishTimerRef.current = setTimeout(() => {
+      republishTimerRef.current = null;
+      if (latestSavedRef.current) republishIfShared(latestSavedRef.current).catch(() => {});
+    }, 12000);
+  };
+
   const triggerAutoSave = (updatedReport) => {
     setHasUnsavedChanges(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
       await executeSave(updatedReport, false);
-    }, 1500);
+    }, 2500);
   };
 
   const executeSave = async (reportToSave = currentReport, notify = true) => {
@@ -897,13 +957,15 @@ export default function App() {
       setCurrentReport(savedReport);
       setHasUnsavedChanges(false);
 
-      // Refresh reports list
-      await refreshReportsList();
+      // The sidebar only shows titles and timestamps, and re-reading the whole
+      // list re-renders the app. On an autosave it is not worth a frame of the
+      // user's typing; an explicit save still refreshes it.
+      if (notify) await refreshReportsList();
 
       // If this report has already been shared, push the new content to the
-      // same share link so recipients always see current data. No-op
-      // otherwise, and never blocks the save.
-      republishIfShared(savedReport).catch(() => {});
+      // same share link so recipients always see current data. Throttled —
+      // see scheduleRepublish.
+      scheduleRepublish(savedReport, notify);
 
       if (notify) {
         showToast('Report saved. Cloud sync queued.', 'success');
@@ -1553,6 +1615,7 @@ export default function App() {
         onIndexChange={(i) => setImageModalState((st) => ({ ...st, index: i }))}
         title={currentReport?.title}
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
+        onDelete={planLocked ? undefined : handleDeletePhoto}
       />
 
       {/* Share Modal.
