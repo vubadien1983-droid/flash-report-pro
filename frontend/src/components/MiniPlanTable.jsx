@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
-  CornerDownRight, Layers, Search, X, CalendarRange, SearchX,
+  CornerDownRight, Layers, Search, X, CalendarRange, SearchX, CalendarCheck,
 } from 'lucide-react';
 import PhotoGalleryCell from './PhotoGalleryCell';
 import { compressForStorage, yieldToBrowser } from '../services/imageCompression';
@@ -9,7 +9,8 @@ import {
   STATUS_OPTIONS, STATUS_STYLE, ROW_STATE_LEGEND, ROW_STATE_STYLE,
   rowState, rowStyle, todayKey, groupMiniPlanItems, miniPlanStats,
   makeMiniPlanRow, makeGroupId, nextPhotoSlot, normalizeStatus,
-  filterMiniPlanGroups, weekRange,
+  filterMiniPlanGroups, statusChangePatch, isCompletedDateInferred,
+  EMPTY_FILTER, normalizeFilter, weekRangeFor, weekModeLabel, WEEK_MODE, FOCUS,
 } from '../services/miniPlan';
 
 /**
@@ -90,14 +91,26 @@ export default function MiniPlanTable({
   isMobileMode = false,
   readOnly = false,
   onRequestUnlock,
+  filter: filterProp,
+  onFilterChange,
 }) {
   const [selectedCell, setSelectedCell] = useState(null); // itemIndex | null
 
-  // Search box and the "this week" toggle. Deliberately NOT gated on
-  // `readOnly`: finding your equipment and seeing what is due this week is
-  // reading, not editing, so it works on the public link with no password.
-  const [search, setSearch] = useState('');
-  const [weekOnly, setWeekOnly] = useState(false);
+  // The filter is CONTROLLED when the workspace passes one in, so the
+  // dashboard tab and this table select the same work — that is the whole
+  // point of the two tabs. Standalone (no workspace) it keeps its own state,
+  // which is what the v2.9 behaviour was.
+  //
+  // Deliberately NOT gated on `readOnly`: finding your equipment and seeing
+  // what is due this week is reading, not editing, so every control here
+  // works on the public link with no password.
+  const [ownFilter, setOwnFilter] = useState(EMPTY_FILTER);
+  const filter = normalizeFilter(filterProp || ownFilter);
+  const setFilter = (patch) => {
+    const next = { ...filter, ...patch };
+    if (onFilterChange) onFilterChange(next);
+    else setOwnFilter(next);
+  };
 
   // Recomputed once per render; "today" only changes at midnight and a stale
   // value would silently mis-colour every row, so it is read fresh.
@@ -110,10 +123,12 @@ export default function MiniPlanTable({
 
   const {
     groups, matched, groupCount, rowCount, active: filterActive,
-  } = filterMiniPlanGroups(allGroups, { search, week: weekOnly, today });
+  } = filterMiniPlanGroups(allGroups, { ...filter, today });
 
-  const week = weekRange(today);
-  const clearFilters = () => { setSearch(''); setWeekOnly(false); };
+  const week = weekRangeFor(filter.week, today);
+  const weekLabel = weekModeLabel(filter.week);
+  const search = filter.search;
+  const clearFilters = () => setFilter({ ...EMPTY_FILTER });
 
   /** Mark the rows that actually matched, so it is clear why a group is here.
    *  An OUTLINE, not a fill: the row background already carries the schedule
@@ -246,14 +261,16 @@ export default function MiniPlanTable({
   }, [selectedCell, items, readOnly]);
 
   // ── Shared bits ────────────────────────────────────────────────
-  const StatusSelect = ({ index, value }) => {
-    const st = normalizeStatus(value);
+  /** Changing Status also stamps or clears the Completed Date - the two
+   *  values are one fact and must never disagree (statusChangePatch). */
+  const StatusSelect = ({ index, item }) => {
+    const st = normalizeStatus(item?.status);
     const s = STATUS_STYLE[st];
     return (
       <select
         value={st}
         disabled={readOnly}
-        onChange={(e) => patchItem(index, { status: e.target.value })}
+        onChange={(e) => patchItem(index, statusChangePatch(item, e.target.value, today))}
         className={`w-full text-[13px] font-bold rounded-md border px-1.5 py-1.5 outline-none transition-colors cursor-pointer disabled:cursor-default disabled:opacity-100 ${s.tw}`}
       >
         {STATUS_OPTIONS.map((o) => (
@@ -304,10 +321,34 @@ export default function MiniPlanTable({
   );
 
   /**
-   * Search + "this week", available to EVERYONE including a viewer on the
-   * public link who has not entered the password. Reading the plan and
+   * Search + the two week buttons, available to EVERYONE including a viewer
+   * on the public link who has not entered the password. Reading the plan and
    * finding your way around it is not editing.
+   *
+   * When the workspace owns the filter these controls move the SAME selection
+   * the dashboard tab shows, so switching tabs never loses your place.
    */
+  const weekButton = (mode, label) => {
+    const on = filter.week === mode;
+    const r = weekRangeFor(mode, today);
+    return (
+      <button
+        key={mode}
+        type="button"
+        onClick={() => setFilter({ week: on ? WEEK_MODE.NONE : mode })}
+        title={`Show every Equipment with an activity scheduled ${r.start} to ${r.end}`}
+        className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${
+          on
+            ? 'bg-violet-600 text-white border-violet-700 shadow-sm shadow-violet-600/30'
+            : 'bg-white text-black border-slate-300 hover:bg-slate-50'
+        }`}
+      >
+        <CalendarRange className="w-4 h-4" />
+        {label}
+      </button>
+    );
+  };
+
   const toolbar = (
     <div className="px-4 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2">
       <div className="relative flex-1 min-w-[220px] max-w-lg">
@@ -315,14 +356,14 @@ export default function MiniPlanTable({
         <input
           type="text"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => setFilter({ search: e.target.value })}
           placeholder="Search anything - equipment, activity, note, status, date..."
           className="w-full text-[13px] text-black bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
         />
         {search && (
           <button
             type="button"
-            onClick={() => setSearch('')}
+            onClick={() => setFilter({ search: '' })}
             title="Clear the search"
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded"
           >
@@ -331,19 +372,8 @@ export default function MiniPlanTable({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setWeekOnly((v) => !v)}
-        title={`Show only Equipment with an activity scheduled ${week.start} to ${week.end}`}
-        className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${
-          weekOnly
-            ? 'bg-violet-600 text-white border-violet-700 shadow-sm shadow-violet-600/30'
-            : 'bg-white text-black border-slate-300 hover:bg-slate-50'
-        }`}
-      >
-        <CalendarRange className="w-4 h-4" />
-        This week
-      </button>
+      {weekButton(WEEK_MODE.THIS, 'This week')}
+      {weekButton(WEEK_MODE.NEXT, 'Next week')}
 
       {filterActive && (
         <>
@@ -360,9 +390,15 @@ export default function MiniPlanTable({
         </>
       )}
 
-      {weekOnly && (
+      {filter.focus !== FOCUS.ALL && (
+        <span className="text-[12px] font-semibold text-violet-700">
+          filtered from the dashboard
+        </span>
+      )}
+
+      {filter.week !== WEEK_MODE.NONE && (
         <span className="text-[12px] text-slate-500">
-          Week of {week.start} to {week.end}
+          {weekLabel}: {week.start} to {week.end}
         </span>
       )}
     </div>
@@ -375,9 +411,9 @@ export default function MiniPlanTable({
       <SearchX className="w-8 h-8 text-slate-300 mx-auto mb-2" />
       <p className="text-[14px] font-bold text-black">No Equipment matches</p>
       <p className="text-[12px] text-slate-500 mt-1">
-        {weekOnly
+        {filter.week !== WEEK_MODE.NONE
           ? `Nothing is scheduled between ${week.start} and ${week.end}${search ? ' for that search' : ''}.`
-          : 'Try a shorter search.'}
+          : 'Try a shorter search, or clear the dashboard selection.'}
       </p>
       <button
         type="button"
@@ -493,7 +529,24 @@ export default function MiniPlanTable({
                         </div>
                         <div>
                           <label className="block text-[12px] font-semibold text-black mb-1">Status</label>
-                          <StatusSelect index={index} value={item.status} />
+                          <StatusSelect index={index} item={item} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[12px] font-semibold text-black mb-1 flex items-center gap-1">
+                            <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" /> Completed date
+                            {isCompletedDateInferred(item) && (
+                              <span className="text-[10px] font-medium text-slate-500 italic">
+                                (counted from the plan date)
+                              </span>
+                            )}
+                          </label>
+                          <input
+                            type="date"
+                            disabled={readOnly}
+                            value={item.completed_date || ''}
+                            onChange={(e) => patchItem(index, { completed_date: e.target.value })}
+                            className="w-full text-[14px] text-black bg-white border border-slate-200 rounded-lg px-2 py-2 focus:border-brand-500 outline-none disabled:text-black"
+                          />
                         </div>
                       </div>
 
@@ -579,7 +632,7 @@ export default function MiniPlanTable({
           A plan is read across the row, so the row must keep its shape and the
           container must scroll instead. */}
       <div className="overflow-x-auto w-full">
-        <table className="w-full min-w-[1400px] text-left border-collapse table-fixed">
+        <table className="w-full min-w-[1560px] text-left border-collapse table-fixed">
           <thead>
             <tr className="bg-slate-100/90 border-b border-slate-300 text-black text-[13px] font-bold">
               <th className="w-12 px-2 py-2.5 text-center">Item</th>
@@ -587,6 +640,7 @@ export default function MiniPlanTable({
               <th className="w-32 px-2 py-2.5 text-center">Schedule</th>
               <th className="w-[22rem] px-3 py-2.5 text-center">Activities</th>
               <th className="w-32 px-2 py-2.5 text-center">Status</th>
+              <th className="w-36 px-2 py-2.5 text-center">Completed Date</th>
               <th className="w-52 px-2 py-2.5 text-center">Note</th>
               <th className="w-[19rem] px-2 py-2.5 text-center">Photo</th>
               <th className="w-14 px-1 py-2.5 text-center">Action</th>
@@ -695,7 +749,28 @@ export default function MiniPlanTable({
 
                     {/* Status */}
                     <td className={`${cellBase} align-middle`}>
-                      <StatusSelect index={index} value={item.status} />
+                      <StatusSelect index={index} item={item} />
+                    </td>
+
+                    {/* Completed Date — when the work was actually finished,
+                        which is what the dashboard's weekly figures count.
+                        Stamped automatically the moment Status becomes Done. */}
+                    <td className={`${cellBase} align-middle`}>
+                      <input
+                        type="date"
+                        disabled={readOnly}
+                        value={item.completed_date || ''}
+                        onChange={(e) => patchItem(index, { completed_date: e.target.value })}
+                        className="w-full text-[13px] text-black bg-white/85 border border-slate-200 rounded-md px-1.5 py-1.5 focus:border-brand-500 outline-none disabled:bg-transparent disabled:border-transparent disabled:text-black"
+                      />
+                      {isCompletedDateInferred(item) && (
+                        <span
+                          title="No completed date was recorded for this Done activity, so the dashboard counts its plan date."
+                          className="block text-[10px] text-slate-600 italic text-center mt-0.5"
+                        >
+                          from plan date
+                        </span>
+                      )}
                     </td>
 
                     {/* Note */}

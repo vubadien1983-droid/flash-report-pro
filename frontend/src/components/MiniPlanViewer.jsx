@@ -3,7 +3,7 @@ import {
   FileSpreadsheet, FileText, RefreshCw, ArrowLeft, Lock, Unlock, Radio,
   Laptop, Smartphone, Copy, Check, Download, Save,
 } from 'lucide-react';
-import MiniPlanTable from './MiniPlanTable';
+import MiniPlanWorkspace from './MiniPlanWorkspace';
 import ImageModal from './ImageModal';
 import PasswordModal from './PasswordModal';
 import Toast from './Toast';
@@ -308,13 +308,17 @@ export default function MiniPlanViewer({ shareId }) {
       </header>
 
       <main className="flex-1 w-full p-3 md:p-4">
-        <MiniPlanTable
+        {/* Both tabs on the public link. The dashboard is read-only by
+            construction, so it needs no password; Monitoring stays locked
+            until the project password is entered, exactly as before. */}
+        <MiniPlanWorkspace
           items={normalizeMiniPlanItems(report.items)}
           onItemsChange={handleItemsChange}
           onPhotoClick={openLightbox}
           isMobileMode={isPhoneView}
           readOnly={!unlocked}
           onRequestUnlock={() => setAskPassword(true)}
+          title={report.title}
         />
 
         <p className="text-center text-[11px] text-slate-500 pb-6">
