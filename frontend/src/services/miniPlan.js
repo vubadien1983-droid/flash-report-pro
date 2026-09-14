@@ -355,6 +355,29 @@ export function applyEquipmentToGroup(items, groupKey, equipment) {
  * Cheap, idempotent, and run on load so an older or hand-edited document
  * cannot render an un-grouped table.
  */
+/**
+ * One-off text corrections the plan carries itself.
+ *
+ * A phrase that was typed the wrong way round lives in hundreds of rows, in
+ * the live report AND in the shared copy, so fixing it by hand is not a fix at
+ * all. Every surface reads its rows through normalizeMiniPlanItems(), so a
+ * correction stated here lands on the table, the dashboard, the share link and
+ * every export at once, and is written back the next time the plan is saved.
+ *
+ * Rules must be idempotent — running them on already-corrected text must
+ * change nothing — because they run on every load, forever.
+ */
+const TEXT_FIXES = [
+  [/\bPlan Seal\b/g, 'Seal Plan'],
+];
+
+export function fixPlanText(value) {
+  if (typeof value !== 'string' || !value) return value;
+  let out = value;
+  for (const [pattern, replacement] of TEXT_FIXES) out = out.replace(pattern, replacement);
+  return out;
+}
+
 export function normalizeMiniPlanItems(items) {
   const list = Array.isArray(items) ? items : [];
   let lastKey = null;
@@ -363,6 +386,10 @@ export function normalizeMiniPlanItems(items) {
   return list.map((raw, i) => {
     const item = { ...(raw || {}) };
     if (!item.id) item.id = `mp_${i}_${Math.random().toString(36).slice(2, 7)}`;
+
+    item.equipment = fixPlanText(item.equipment);
+    item.activity = fixPlanText(item.activity);
+    item.note = fixPlanText(item.note);
 
     if (!item.group_id) {
       // No id: fall back to the equipment text, which is how a row imported

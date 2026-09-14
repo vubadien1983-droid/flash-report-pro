@@ -85,7 +85,7 @@ export const MINI_PLAN_SEED = [
       { schedule: '', activity: 'Equipment arrival and Receiving inspection', status: '' },
       { schedule: '', activity: 'Equipment Installation', status: '' },
       { schedule: '', activity: 'Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -130,7 +130,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Diesel Transfer Pump CPPT-P-5401A',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '2026-09-18', activity: 'Complete installation of Plan Seal', status: 'Done' },
+      { schedule: '2026-09-18', activity: 'Complete installation of Seal Plan', status: 'Done' },
       { schedule: '2026-09-18', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '2026-09-18', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '2026-09-18', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -140,7 +140,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Reboiler Circulation pumps CPPT-P-3402A',
     rows: [
       { schedule: '2026-09-20', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '2026-09-20', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '2026-09-20', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '2026-09-20', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '2026-09-20', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '2026-09-20', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -150,7 +150,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Reboiler Circulation pumps CPPT-P-3402B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -221,7 +221,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Water Injection Booster Pump CPPT-P-3602A',
     rows: [
       { schedule: '2026-09-22', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -243,7 +243,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Diesel Transfer Pump CPPT-P-5401B',
     rows: [
       { schedule: '2026-09-18', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: 'Done' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -265,7 +265,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Water Injection Booster Pump CPPT-P-3602B',
     rows: [
       { schedule: '2026-09-23', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -275,7 +275,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Reflux pumps CPPT-P-3403A',
     rows: [
       { schedule: '2026-09-25', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -285,7 +285,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Reflux pumps CPPT-P-3403B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -295,7 +295,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Water Injection Booster Pump CPPT-P-3602C',
     rows: [
       { schedule: '2026-09-24', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -317,7 +317,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Condensate Transfer pumps CPPT-P-3501A',
     rows: [
       { schedule: '2026-09-27', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -327,7 +327,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Condensate Transfer pumps CPPT-P-3501B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -349,7 +349,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'HP Flare KO transfer pumps CPPT-P-4201A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -359,7 +359,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'HP Flare KO transfer pumps CPPT-P-4201B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -387,7 +387,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'LP Flare KO transfer pumps CPPT-P-4301A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -397,7 +397,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'LP Flare KO transfer pumps CPPT-P-4301B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -528,7 +528,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Portable Water Pump A CPPT-P-5801A',
     rows: [
       { schedule: '2026-09-11', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -538,7 +538,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Portable Water Pump B CPPT-P-5801B',
     rows: [
       { schedule: '2026-09-11', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -647,7 +647,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Therminol Transfer Pump CPPT-P-5601',
     rows: [
       { schedule: '2026-09-21', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: 'Done' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -673,7 +673,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Hot Oil Circulation Pumps CPPT-P-5602B',
     rows: [
       { schedule: '2026-09-30', activity: 'Complete Leveling and bolting for skid', status: 'Done' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -1369,7 +1369,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Recovered Oil Pump CPPT-P-4702A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -1380,7 +1380,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Recovered Oil Pump CPPT-P-4702B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -1391,7 +1391,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Closed Drain Pump CPPT-P-4701A',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -1402,7 +1402,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Closed Drain Pump CPPT-P-4701B',
     rows: [
       { schedule: '', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: '' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: '' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },
@@ -1428,7 +1428,7 @@ export const MINI_PLAN_SEED = [
     equipment: 'Wash Down Water Booster Pump CPPT-P-5802',
     rows: [
       { schedule: '2026-09-11', activity: 'Complete Leveling and bolting for skid', status: '' },
-      { schedule: '', activity: 'Complete installation of Plan Seal', status: 'Done' },
+      { schedule: '', activity: 'Complete installation of Seal Plan', status: 'Done' },
       { schedule: '', activity: 'Complete and NFI for M17-A (Vendor Skid Installation)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M03-A (Pumps)', status: '' },
       { schedule: '', activity: 'Complete and NFI for M04-A (Coupling Alignment)', status: '' },

@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { CalendarDays } from 'lucide-react';
 import { STATUS_OPTIONS, STATUS_STYLE, normalizeStatus, scheduleKey } from '../services/miniPlan';
+import { formatDateKey } from '../services/dateInput';
+import DatePopover from './DatePopover';
 
 /**
  * The cells of the Mini Plan table. Two things make them what they are:
@@ -95,13 +98,18 @@ export function TextCell({
 
 /** Human form of a stored date, so the table reads like the exports. */
 export function formatCellDate(value) {
-  const key = scheduleKey(value);
-  if (!key) return '';
-  const [y, m, d] = key.split('-');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${Number(d)}-${months[Number(m) - 1]}-${y.slice(2)}`;
+  return formatDateKey(scheduleKey(value));
 }
 
+/**
+ * A date in the plan. Closed it is plain text; a SINGLE click opens the
+ * picker, because opening a calendar changes nothing and a date is the field
+ * people update most often — double-click stays the rule for the cells that
+ * take free text, where a stray click could overwrite real work.
+ *
+ * The picker itself lives in DatePopover: no native date box, no commit until
+ * the user says so, and no closing on blur. See BUG-028.
+ */
 export function DateCell({
   value = '',
   isEditing = false,
@@ -111,29 +119,49 @@ export function DateCell({
   readOnly = false,
   displayClassName = '',
   note = null,
+  label = 'Date',
 }) {
-  if (!isEditing) {
-    return (
-      <ClosedCell onEdit={onEdit} readOnly={readOnly} className={`text-center tabular-nums ${displayClassName}`}>
-        {value
-          ? formatCellDate(value)
-          : <span className="text-slate-400">—</span>}
-        {note}
-      </ClosedCell>
-    );
-  }
+  const ref = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+  const key = scheduleKey(value);
+
+  // The popover needs a mounted element to hang off, which only exists after
+  // this cell has rendered once.
+  useEffect(() => { setAnchor(isEditing ? ref.current : null); }, [isEditing]);
 
   return (
-    <input
-      type="date"
-      autoFocus
-      value={scheduleKey(value) || ''}
-      // A date is picked, not typed: commit the moment it changes and close.
-      onChange={(e) => onCommit(e.target.value)}
-      onBlur={onCancel}
-      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } }}
-      className={`w-full text-[13px] text-black bg-white border border-slate-200 rounded-md px-1.5 py-1.5 outline-none ${EDIT_RING}`}
-    />
+    <>
+      <div
+        ref={ref}
+        onClick={readOnly ? undefined : onEdit}
+        onDoubleClick={onEdit}
+        title={readOnly
+          ? 'Locked — enter the project password to edit'
+          : 'Click to pick a date — or type 15/9'}
+        className={`rounded-md px-2 py-1.5 text-center tabular-nums transition-colors ${
+          readOnly ? '' : 'cursor-pointer hover:bg-white hover:ring-1 hover:ring-brand-300'
+        } ${isEditing ? `bg-white ${EDIT_RING}` : ''} ${displayClassName}`}
+      >
+        {key
+          ? formatCellDate(key)
+          : (
+            <span className="text-slate-400 inline-flex items-center gap-1">
+              <CalendarDays className="w-3.5 h-3.5 opacity-70" />—
+            </span>
+          )}
+        {note}
+      </div>
+
+      {isEditing && anchor && (
+        <DatePopover
+          anchorEl={anchor}
+          value={key}
+          label={label}
+          onPick={(picked) => onCommit(picked)}
+          onClose={onCancel}
+        />
+      )}
+    </>
   );
 }
 

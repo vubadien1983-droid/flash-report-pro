@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
   CornerDownRight, Layers, X, CalendarRange, SearchX, PencilLine,
@@ -81,6 +81,18 @@ export default function MiniPlanTable({
 
   const isEditingCell = editing !== null;
 
+  // Writing a cell re-renders the whole list, and a list that re-renders can
+  // lose its scroll position — which reads as the table "jumping" the moment
+  // a date is saved. Hold the scroll where the user left it.
+  const scrollRef = useRef(null);
+  const keepScroll = useRef(null);
+  useLayoutEffect(() => {
+    if (keepScroll.current == null) return;
+    const box = scrollRef.current;
+    if (box) box.scrollTop = keepScroll.current;
+    keepScroll.current = null;
+  });
+
   // Recomputed once per render; "today" only changes at midnight and a stale
   // value would silently mis-colour every row, so it is read fresh.
   const today = todayKey();
@@ -125,6 +137,7 @@ export default function MiniPlanTable({
 
   /** Commit one cell: close it first, then write. */
   const commitCell = (index, patch) => {
+    keepScroll.current = scrollRef.current ? scrollRef.current.scrollTop : null;
     setEditing(null);
     const current = items[index] || {};
     const changed = Object.keys(patch).some((k) => (current[k] ?? '') !== (patch[k] ?? ''));
@@ -538,6 +551,7 @@ export default function MiniPlanTable({
                         <div>
                           <label className="block text-[11.5px] font-semibold text-black mb-0.5">Schedule</label>
                           <DateCell
+                            label="Schedule"
                             value={item.schedule}
                             readOnly={readOnly}
                             isEditing={isOpen(index, 'schedule')}
@@ -568,6 +582,7 @@ export default function MiniPlanTable({
                             )}
                           </label>
                           <DateCell
+                            label="Completed date"
                             value={item.completed_date}
                             readOnly={readOnly}
                             isEditing={isOpen(index, 'completed_date')}
@@ -663,7 +678,7 @@ export default function MiniPlanTable({
           on screen or the table cannot be read at all. The min-width keeps the
           row's shape: a plan is read across the row, so the box scrolls
           sideways rather than squeezing eight columns into the pane. */}
-      <div className={`overflow-auto w-full ${
+      <div ref={scrollRef} className={`overflow-auto w-full ${
         fullScreen ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-215px)] min-h-[320px]'
       }`}>
         <table className="w-full min-w-[1480px] text-left border-collapse table-fixed">
@@ -763,6 +778,7 @@ export default function MiniPlanTable({
                         the missing value instead of colouring the whole row. */}
                     <td className={`${cellBase} align-middle`}>
                       <DateCell
+                        label="Schedule"
                         value={item.schedule}
                         readOnly={readOnly}
                         isEditing={isOpen(index, 'schedule')}
@@ -805,6 +821,7 @@ export default function MiniPlanTable({
                         Stamped automatically the moment Status becomes Done. */}
                     <td className={`${cellBase} align-middle`}>
                       <DateCell
+                        label="Completed date"
                         value={item.completed_date}
                         readOnly={readOnly}
                         isEditing={isOpen(index, 'completed_date')}
