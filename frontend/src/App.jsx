@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save, Download, FileSpreadsheet, FileText, Printer,
   Sparkles, Check, RefreshCw, AlertCircle, Share2, Menu,
-  Laptop, Smartphone, Sliders, ChevronDown, Link as LinkIcon,
-  Lock, Unlock
+  Laptop, Smartphone, Sliders, ChevronDown, Link as LinkIcon
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import HeaderForm from './components/HeaderForm';
@@ -12,9 +11,7 @@ import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
 import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
-import SharedViewRouter from './components/SharedViewRouter';
-import MiniPlanWorkspace from './components/MiniPlanWorkspace';
-import PasswordModal from './components/PasswordModal';
+import ReportViewer from './components/ReportViewer';
 import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
 import { fileKey } from './services/firebase';
@@ -38,15 +35,6 @@ import {
 } from './services/shareService';
 import syncEngine, { SyncStatus } from './services/syncEngine';
 import realtimeSync from './services/realtimeSync';
-import {
-  MINI_PLAN_TYPE, MINI_PLAN_LABEL, isMiniPlan,
-  normalizeMiniPlanItems, makeMiniPlanRow, makeGroupId,
-} from './services/miniPlan';
-import { MINI_PLAN_SEED, MINI_PLAN_DEFAULT_TITLE } from './services/miniPlanSeed';
-import {
-  isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
-} from './services/miniPlanAuth';
-import { lockApp } from './services/appLock';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -99,6 +87,11 @@ export default function App() {
   // indistinguishable from a hang, which is exactly how the old build felt.
   const [uploadProgress, setUploadProgress] = useState(null);
 
+  // Report header: full size while a report is being created, one line once it
+  // has been saved and synced. See the effect below for why the decision is
+  // made per report rather than per render.
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+
   // Responsive device view mode: 'auto' | 'laptop' | 'phone'
   const [viewMode, setViewMode] = useState('auto');
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -119,28 +112,7 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
 
-  // Mini Plan edit lock. Held in sessionStorage by services/miniPlanAuth so a
-  // reload of the shared link re-locks; mirrored into state so the table, the
-  // header badge and the Share button all flip together.
-  const [miniPlanUnlocked, setMiniPlanUnlocked] = useState(isMiniPlanUnlocked());
-  const [passwordPrompt, setPasswordPrompt] = useState(null); // null | { then }
-
-  useEffect(() => onMiniPlanLockChange(setMiniPlanUnlocked), []);
-
-  // A Mini Plan is read-only until the project password is entered. Both
-  // editing and ISSUING THE SHARE LINK sit behind it - handing somebody a live
-  // link is as consequential as changing the plan, so it is gated the same way.
-  const isPlanReport = isMiniPlan(currentReport);
-  const planLocked = isPlanReport && !miniPlanUnlocked;
-
-  /** Run `action` now, or after the password is accepted. */
-  const requirePlanPassword = (action) => {
-    if (!planLocked) { action(); return; }
-    setPasswordPrompt({ then: action });
-  };
-
   const autoSaveTimerRef = useRef(null);
-  const republishTimerRef = useRef(null);
   const undoDeleteRef = useRef(null);
 
   // Realtime callbacks fire outside React's render cycle, so they read these
@@ -176,6 +148,44 @@ export default function App() {
     }, 180_000);
     return () => clearTimeout(timer);
   }, [isSyncing]);
+
+  /**
+   * Decide the header's size ONCE, when a report is opened.
+   *
+   * It must not be recomputed on every render: a report autosaves while the
+   * inspector is typing, and re-deriving "has it synced yet?" on each pass
+   * would snap the header shut under the cursor mid-word. A report that has
+   * never synced — i.e. one just created — keeps the full header; anything
+   * already synced opens collapsed. A manual toggle wins and is remembered
+   * per report.
+   */
+  const headerDecidedForRef = useRef(null);
+  useEffect(() => {
+    const id = currentReport?.id;
+    if (!id || isViewRoute) return;
+    if (headerDecidedForRef.current === id) return;   // already decided for this report
+    headerDecidedForRef.current = id;
+
+    let remembered = null;
+    try { remembered = localStorage.getItem(`fr_header_collapsed_${id}`); } catch { /* ignore */ }
+    if (remembered !== null) {
+      setHeaderCollapsed(remembered === '1');
+      return;
+    }
+
+    const everSynced = Boolean(currentReport._lastSyncedAt) ||
+      currentReport._syncStatus === SyncStatus.SYNCED;
+    setHeaderCollapsed(everSynced);
+  }, [currentReport?.id, currentReport?._lastSyncedAt, currentReport?._syncStatus, isViewRoute]);
+
+  const toggleHeaderCollapsed = () => {
+    setHeaderCollapsed((was) => {
+      const next = !was;
+      const id = currentReport?.id;
+      if (id) { try { localStorage.setItem(`fr_header_collapsed_${id}`, next ? '1' : '0'); } catch { /* ignore */ } }
+      return next;
+    });
+  };
 
   // One-time compaction of reports created before ingest compression existed.
   //
@@ -349,7 +359,6 @@ export default function App() {
         if (local) {
           const changed =
             local.title !== h.title ||
-            local.report_type !== h.report_type ||
             local.system_tag !== h.system_tag ||
             local.location !== h.location ||
             local.inspection_date !== h.inspection_date ||
@@ -358,11 +367,11 @@ export default function App() {
           if (!changed) continue;
 
           // Spread local FIRST so its `items` survive the header overlay.
-          await saveLocalReport(keepShareId({
+          await saveLocalReport({
             ...local, ...h,
             items: local.items,
             _syncStatus: SyncStatus.SYNCED,
-          }, local));
+          });
         } else {
           // A report created on another device. Stored header-only; the full
           // document (with photos) is fetched when the user opens it.
@@ -406,11 +415,11 @@ export default function App() {
           // Same protection as loadSingleReport: a remote copy whose photo
           // slots came back empty must not wipe images held only here.
           const localCopy = await getLocalReport(ev.report.id);
-          const safe = keepShareId({
+          const safe = {
             ...ev.report,
             items: mergePhotosPreferLocal(ev.report.items, localCopy?.items),
             _syncStatus: SyncStatus.SYNCED,
-          }, localCopy);
+          };
           delete safe._photosIncomplete;
 
           setCurrentReport(safe);
@@ -608,20 +617,6 @@ export default function App() {
     });
   };
 
-  /**
-   * Keep a share id the cloud copy does not have.
-   *
-   * Same shape of rule as the photo merge: an EMPTY field arriving from the
-   * cloud means "this copy predates the share" at least as often as it means
-   * "the share was withdrawn". Losing it breaks `republishIfShared` silently
-   * and freezes a link the user still believes is live.
-   */
-  const keepShareId = (incoming, local) => {
-    const id = incoming?.share_id || incoming?.cloud_code || local?.share_id || local?.cloud_code || '';
-    if (!id) return incoming;
-    return { ...incoming, share_id: id, cloud_code: id };
-  };
-
   /** True when this device holds at least one image the cloud copy is missing. */
   const localHasPhotoCloudLacks = (cloudItems, localItems) => {
     if (!Array.isArray(cloudItems) || !Array.isArray(localItems)) return false;
@@ -682,13 +677,13 @@ export default function App() {
           // simply because that read failed or the bytes were never written.
           // Overwriting a local image with an empty slot destroys the only
           // copy — which is exactly what used to happen (BUG-012).
-          const merged = keepShareId({
+          const merged = {
             ...cloudRep,
             items: mergePhotosPreferLocal(cloudRep.items, rep?.items),
             _version: Math.max(rep?._version || 0, cloudRep._version || 0),
             _syncStatus: SyncStatus.SYNCED,
             _lastSyncedAt: new Date().toISOString(),
-          }, rep);
+          };
           delete merged._photosIncomplete;
 
           setCurrentReport(merged);
@@ -753,43 +748,12 @@ export default function App() {
           out.push({
             url: p.url,
             filename: p.filename || `Item ${i + 1} · Photo ${(p.slot_index ?? sIdx) + 1}`,
-            // Where this photo LIVES, so the lightbox can delete the one on
-            // screen rather than the first row that happens to share its url.
-            itemIndex: i,
-            photoIndex: sIdx,
-            slotIndex: p.slot_index ?? sIdx,
           });
         }
       });
     });
     return out;
   }, [currentReport]);
-
-  /**
-   * Delete the photo currently open in the lightbox.
-   *
-   * Addressed by ITEM + SLOT, never by url: two rows can legitimately hold the
-   * same image (the same detail photographed for two activities), and matching
-   * on the url would delete whichever came first.
-   */
-  const handleDeletePhoto = (photo) => {
-    if (!currentReport || !photo || planLocked) return;
-    const items = currentReport.items || [];
-    const item = items[photo.itemIndex];
-    if (!item) return;
-
-    const photos = (item.photos || []).filter((p, idx) =>
-      !(p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex)
-    );
-    const nextItems = items.map((it, i) => (i === photo.itemIndex ? { ...it, photos } : it));
-    handleItemsChange(nextItems);
-
-    // Keep the viewer on something sensible instead of a dangling index.
-    const remaining = galleryPhotos.length - 1;
-    if (remaining <= 0) setImageModalState({ isOpen: false, index: 0 });
-    else setImageModalState((st) => ({ ...st, index: Math.min(st.index, remaining - 1) }));
-    showToast('Photo deleted', 'success');
-  };
 
   const openLightboxByUrl = (url) => {
     const idx = galleryPhotos.findIndex((g) => g.url === url);
@@ -911,41 +875,13 @@ export default function App() {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // ─── Auto-save uses SyncEngine (local instant, cloud debounced) ─────
-  //
-  // Two things here are deliberately SLOW, because the alternative is an app
-  // that stutters while somebody types into it during a meeting (BUG-024):
-  //
-  //  - the save itself waits 2.5s after the last change. An edit now arrives
-  //    once per CELL (a cell commits when it closes), not once per keystroke,
-  //    so a longer wait costs nothing and collapses a burst of edits into one
-  //    write.
-  //  - re-publishing the SHARE LINK is separated from the save and throttled
-  //    hard. Publishing rewrites the whole shared document — 500 rows of JSON
-  //    — and doing that after every autosave was the single most expensive
-  //    thing the app did while the user was typing. The link now catches up
-  //    ~12s after the last edit, or instantly on an explicit Save.
-  const latestSavedRef = useRef(null);
-
-  const scheduleRepublish = (report, immediate = false) => {
-    latestSavedRef.current = report;
-    if (republishTimerRef.current) clearTimeout(republishTimerRef.current);
-    if (immediate) {
-      republishIfShared(latestSavedRef.current).catch(() => {});
-      return;
-    }
-    republishTimerRef.current = setTimeout(() => {
-      republishTimerRef.current = null;
-      if (latestSavedRef.current) republishIfShared(latestSavedRef.current).catch(() => {});
-    }, 12000);
-  };
-
+  // ─── UPDATED: Auto-save uses SyncEngine (local instant, cloud debounced) ─
   const triggerAutoSave = (updatedReport) => {
     setHasUnsavedChanges(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
       await executeSave(updatedReport, false);
-    }, 2500);
+    }, 1500);
   };
 
   const executeSave = async (reportToSave = currentReport, notify = true) => {
@@ -958,15 +894,13 @@ export default function App() {
       setCurrentReport(savedReport);
       setHasUnsavedChanges(false);
 
-      // The sidebar only shows titles and timestamps, and re-reading the whole
-      // list re-renders the app. On an autosave it is not worth a frame of the
-      // user's typing; an explicit save still refreshes it.
-      if (notify) await refreshReportsList();
+      // Refresh reports list
+      await refreshReportsList();
 
       // If this report has already been shared, push the new content to the
-      // same share link so recipients always see current data. Throttled —
-      // see scheduleRepublish.
-      scheduleRepublish(savedReport, notify);
+      // same share link so recipients always see current data. No-op
+      // otherwise, and never blocks the save.
+      republishIfShared(savedReport).catch(() => {});
 
       if (notify) {
         showToast('Report saved. Cloud sync queued.', 'success');
@@ -979,35 +913,8 @@ export default function App() {
     }
   };
 
-  // Lock the app again — stepping away from the desk, or handing the phone
-  // over. AppGate UNMOUNTS <App/> when this fires, so anything still sitting in
-  // a debounce would go with it: flush the pending autosave and the pending
-  // re-publish FIRST, and only lock once they have settled. Locking is never
-  // blocked by a failure here — a save that will not complete must not become
-  // a reason the screen stays open.
-  const handleLockApp = async () => {
-    const pendingSave = hasUnsavedChanges || Boolean(autoSaveTimerRef.current);
-    const pendingPublish = Boolean(republishTimerRef.current);
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-    try {
-      if (currentReport?.id && (pendingSave || pendingPublish)) {
-        // notify = true so the share link is re-published NOW rather than in
-        // 12 seconds' time, by which point this component is gone.
-        await executeSave(currentReport, true);
-      }
-    } catch (err) {
-      console.warn('Save before locking failed:', err?.message || err);
-    } finally {
-      lockApp();
-    }
-  };
-
   const handleHeaderChange = (field, value) => {
     if (!currentReport) return;
-    if (planLocked) return;   // the inputs are disabled too; this is the backstop
     const updated = { ...currentReport, [field]: value };
     setCurrentReport(updated);
     triggerAutoSave(updated);
@@ -1015,59 +922,19 @@ export default function App() {
 
   const handleItemsChange = (newItems) => {
     if (!currentReport) return;
-    if (planLocked) return;   // ditto - MiniPlanTable renders read-only when locked
     const updated = { ...currentReport, items: newItems };
     setCurrentReport(updated);
     triggerAutoSave(updated);
   };
 
-  /**
-   * Build the rows a brand-new Mini Plan starts with.
-   *
-   * The plan as it stands (items 1-19) is copied in from services/
-   * miniPlanSeed.js, because an empty CPP Mechanical Mini Plan is of no use to
-   * anyone - the equipment list and its activities already exist. From this
-   * point the report in Firestore is the live document: editing the seed file
-   * later changes only what the NEXT new plan starts from, never this one.
-   */
-  const buildMiniPlanItems = () => {
-    const rows = [];
-    for (const group of MINI_PLAN_SEED) {
-      const gid = makeGroupId();
-      for (const r of group.rows) {
-        rows.push(makeMiniPlanRow(gid, group.equipment, {
-          schedule: r.schedule || '',
-          activity: r.activity || '',
-          status: r.status || '',
-          note: r.note || '',
-        }));
-      }
-    }
-    return normalizeMiniPlanItems(rows);
-  };
-
-  const handleNewReport = async (reportType = '') => {
+  const handleNewReport = async () => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     try {
       setIsSaving(true);
       const newId = `rep_${Date.now()}`;
-      const isPlan = reportType === MINI_PLAN_TYPE;
-
-      const defaultNew = isPlan ? {
-        id: newId,
-        title: MINI_PLAN_DEFAULT_TITLE,
-        report_type: MINI_PLAN_TYPE,
-        system_tag: '',
-        location: 'Block B CPP',
-        inspection_date: new Date().toISOString().split('T')[0],
-        discipline: 'Mechanical',
-        items: buildMiniPlanItems(),
-        _version: 1,
-        _syncStatus: SyncStatus.PENDING,
-      } : {
+      const defaultNew = {
         id: newId,
         title: 'New Flash Report',
-        report_type: '',
         system_tag: '',
         location: '',
         inspection_date: new Date().toISOString().split('T')[0],
@@ -1090,10 +957,16 @@ export default function App() {
       setActiveReportId(saved.id);
       localStorage.setItem('flash_report_last_active_id', saved.id);
       setHasUnsavedChanges(false);
-      showToast(
-        isPlan ? `${MINI_PLAN_LABEL} created with ${MINI_PLAN_SEED.length} equipment items` : 'New report created',
-        'success'
-      );
+
+      // A brand-new report ALWAYS opens with the full header — that is the
+      // one moment the inspector has to fill it in. Claim the decision here
+      // so the effect below cannot collapse it just because syncEngine
+      // already marked the empty report SYNCED.
+      headerDecidedForRef.current = saved.id;
+      setHeaderCollapsed(false);
+      try { localStorage.removeItem(`fr_header_collapsed_${saved.id}`); } catch { /* ignore */ }
+
+      showToast('New report created', 'success');
     } catch (err) {
       console.error('Failed to create report:', err);
       showToast('Error creating report', 'error');
@@ -1217,11 +1090,6 @@ export default function App() {
   // Share Link Handler
   const handleOpenShareModal = async () => {
     if (!currentReport) return;
-    if (planLocked) {
-      // Ask for the password, then come back and publish.
-      setPasswordPrompt({ then: () => handleOpenShareModal() });
-      return;
-    }
     setIsPublishing(true);
     try {
       const { shareUrl, shareId } = await publishReportForSharing(currentReport);
@@ -1306,10 +1174,9 @@ export default function App() {
     return <FileViewer shareId={fileRouteMatch[1]} fileKey={fileRouteMatch[2]} />;
   }
 
-  // A shared link e.g. #/view/:id. Which viewer it opens depends on the
-  // report's type, so the router probes that before mounting either.
+  // If user opens a shared presentation link e.g. #/view/:id
   if (isViewRoute && sharedReportId) {
-    return <SharedViewRouter shareId={sharedReportId} />;
+    return <ReportViewer reportId={sharedReportId} />;
   }
 
   if (loading) {
@@ -1427,35 +1294,9 @@ export default function App() {
             title="Generate shareable web link with QR code"
           >
             {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 text-brand-600" />}
-            <span className="hidden sm:inline">{isPlanReport ? 'Live Link' : 'Share Link'}</span>
+            <span className="hidden sm:inline">Share Link</span>
             <span className="sm:hidden">Share</span>
           </button>
-
-          {/* Mini Plan lock. Only a plan has one, so it is not drawn for a
-              Flash Report, which has never been password protected. */}
-          {isPlanReport && (
-            planLocked ? (
-              <button
-                type="button"
-                onClick={() => setPasswordPrompt({ then: () => {} })}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors"
-                title="Enter the project password to edit or share this plan"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Locked</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => { lockMiniPlan(); showToast('Plan locked', 'info'); }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors"
-                title="Lock this plan again"
-              >
-                <Unlock className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Unlocked</span>
-              </button>
-            )
-          )}
 
           <button
             type="button"
@@ -1486,17 +1327,6 @@ export default function App() {
             {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Export PDF</span>
             <span className="sm:hidden">PDF</span>
-          </button>
-
-          {/* Lock the app. Saves first — see handleLockApp. */}
-          <button
-            type="button"
-            onClick={handleLockApp}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors"
-            title="Lock the app (saves first). The password is needed to open it again."
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Lock</span>
           </button>
         </div>
       </header>
@@ -1565,31 +1395,18 @@ export default function App() {
                 <HeaderForm
                   report={currentReport}
                   onChange={handleHeaderChange}
-                  variant={isPlanReport ? 'miniPlan' : 'flash'}
-                  readOnly={planLocked}
-                  onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}
+                  collapsed={headerCollapsed}
+                  onToggleCollapsed={toggleHeaderCollapsed}
                 />
 
-                {isPlanReport ? (
-                  <MiniPlanWorkspace
-                    items={normalizeMiniPlanItems(currentReport.items)}
-                    onItemsChange={handleItemsChange}
-                    onPhotoClick={openLightboxByUrl}
-                    isMobileMode={isPhoneView}
-                    readOnly={planLocked}
-                    onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}
-                    title={currentReport.title}
-                  />
-                ) : (
-                  <InspectionTable
-                    items={currentReport.items || []}
-                    onItemsChange={handleItemsChange}
-                    onPhotoClick={openLightboxByUrl}
-                    onAttachFile={handleAttachFile}
-                    onOpenAttachment={handleOpenAttachment}
-                    isMobileMode={isPhoneView}
-                  />
-                )}
+                <InspectionTable
+                  items={currentReport.items || []}
+                  onItemsChange={handleItemsChange}
+                  onPhotoClick={openLightboxByUrl}
+                  onAttachFile={handleAttachFile}
+                  onOpenAttachment={handleOpenAttachment}
+                  isMobileMode={isPhoneView}
+                />
               </>
             )}
           </div>
@@ -1653,38 +1470,15 @@ export default function App() {
         onIndexChange={(i) => setImageModalState((st) => ({ ...st, index: i }))}
         title={currentReport?.title}
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
-        onDelete={planLocked ? undefined : handleDeletePhoto}
       />
 
-      {/* Share Modal.
-          `report` is the prop ShareModal actually reads - it was being passed
-          as `currentReport`, so the "Download standalone HTML" button inside
-          the dialog had nothing to export. */}
+      {/* Share Modal */}
       <ShareModal
         isOpen={shareModalState.isOpen}
         shareUrl={shareModalState.shareUrl}
-        report={currentReport}
+        reportTitle={shareModalState.reportTitle}
+        currentReport={currentReport}
         onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
-      />
-
-      {/* Mini Plan password prompt. Opened by an edit attempt, by the lock
-          badge, or by pressing Share on a locked plan; whatever asked for it
-          runs once the password is accepted. */}
-      <PasswordModal
-        isOpen={Boolean(passwordPrompt)}
-        title={`Unlock ${MINI_PLAN_LABEL}`}
-        message="Editing this plan and issuing its live share link are password protected."
-        onSubmit={(pw) => {
-          const ok = unlockMiniPlan(pw);
-          if (ok) {
-            const next = passwordPrompt?.then;
-            setPasswordPrompt(null);
-            showToast('Editing unlocked for this session', 'success');
-            if (typeof next === 'function') setTimeout(next, 0);
-          }
-          return ok;
-        }}
-        onClose={() => setPasswordPrompt(null)}
       />
 
       {/* Upload progress. A long first sync is normal; a long sync with no
