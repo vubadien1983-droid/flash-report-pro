@@ -46,6 +46,7 @@ import { MINI_PLAN_SEED, MINI_PLAN_DEFAULT_TITLE } from './services/miniPlanSeed
 import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from './services/miniPlanAuth';
+import { lockApp } from './services/appLock';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -978,6 +979,32 @@ export default function App() {
     }
   };
 
+  // Lock the app again — stepping away from the desk, or handing the phone
+  // over. AppGate UNMOUNTS <App/> when this fires, so anything still sitting in
+  // a debounce would go with it: flush the pending autosave and the pending
+  // re-publish FIRST, and only lock once they have settled. Locking is never
+  // blocked by a failure here — a save that will not complete must not become
+  // a reason the screen stays open.
+  const handleLockApp = async () => {
+    const pendingSave = hasUnsavedChanges || Boolean(autoSaveTimerRef.current);
+    const pendingPublish = Boolean(republishTimerRef.current);
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    try {
+      if (currentReport?.id && (pendingSave || pendingPublish)) {
+        // notify = true so the share link is re-published NOW rather than in
+        // 12 seconds' time, by which point this component is gone.
+        await executeSave(currentReport, true);
+      }
+    } catch (err) {
+      console.warn('Save before locking failed:', err?.message || err);
+    } finally {
+      lockApp();
+    }
+  };
+
   const handleHeaderChange = (field, value) => {
     if (!currentReport) return;
     if (planLocked) return;   // the inputs are disabled too; this is the backstop
@@ -1459,6 +1486,17 @@ export default function App() {
             {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Export PDF</span>
             <span className="sm:hidden">PDF</span>
+          </button>
+
+          {/* Lock the app. Saves first — see handleLockApp. */}
+          <button
+            type="button"
+            onClick={handleLockApp}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors"
+            title="Lock the app (saves first). The password is needed to open it again."
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Lock</span>
           </button>
         </div>
       </header>
