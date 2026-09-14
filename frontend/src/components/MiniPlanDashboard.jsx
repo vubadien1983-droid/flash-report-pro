@@ -4,6 +4,7 @@ import {
   Layers, SearchX, ArrowUpRight,
 } from 'lucide-react';
 import SearchBox from './SearchBox';
+import WeeklyProgressChart from './WeeklyProgressChart';
 import {
   dashboardView, summaryTiles, describeFilter,
 } from '../services/miniPlanDashboard';
@@ -88,13 +89,13 @@ export default function MiniPlanDashboard({
       <button
         type="button"
         onClick={() => setFilter({ week: on ? WEEK_MODE.NONE : mode })}
-        className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${
+        className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-bold rounded-lg border transition-colors ${
           on
             ? 'bg-violet-600 text-white border-violet-700 shadow-sm shadow-violet-600/30'
             : 'bg-white text-black border-slate-300 hover:bg-slate-50'
         }`}
       >
-        <CalendarRange className="w-4 h-4" />
+        <CalendarRange className="w-3.5 h-3.5" />
         {label}
       </button>
     );
@@ -136,7 +137,7 @@ export default function MiniPlanDashboard({
       </div>
 
       <div className={`overflow-y-auto ${
-        isMobileMode ? 'max-h-[360px]' : (fullScreen ? 'max-h-[calc(100vh-190px)]' : 'max-h-[calc(100vh-260px)]')
+        isMobileMode ? 'max-h-[360px]' : (fullScreen ? 'max-h-[calc(100vh-175px)]' : 'max-h-[calc(100vh-245px)]')
       }`}>
         {equipmentRows.length === 0 && (
           <p className="px-3 py-6 text-center text-[12px] text-slate-500">No Equipment in view.</p>
@@ -171,13 +172,13 @@ export default function MiniPlanDashboard({
   // ── Right panel, top: summary + controls ────────────────────────
   const summary = (
     <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 overflow-hidden">
-      <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center gap-2">
+      <div className="px-3 py-1.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center gap-1.5">
         <SearchBox
           className="flex-1 min-w-[200px] max-w-md"
           value={view.filter.search}
           onChange={(v) => setFilter({ search: v })}
           placeholder="Search anything - equipment, activity, status, date..."
-          inputClassName="w-full text-[13px] text-black bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
+          inputClassName="w-full text-[12.5px] text-black bg-white border border-slate-200 rounded-lg pl-9 pr-9 py-1.5 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder:text-slate-400"
         />
 
         {weekButton(WEEK_MODE.THIS, 'This week')}
@@ -199,7 +200,7 @@ export default function MiniPlanDashboard({
             onClick={() => runExport('excel')}
             disabled={Boolean(busy)}
             title="Export exactly what this panel shows"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg disabled:opacity-60"
+            className="inline-flex items-center gap-1 px-2 py-1 text-[11.5px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg disabled:opacity-60"
           >
             {busy === 'excel' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
             Excel
@@ -209,7 +210,7 @@ export default function MiniPlanDashboard({
             onClick={() => runExport('pdf')}
             disabled={Boolean(busy)}
             title="Export exactly what this panel shows"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg disabled:opacity-60"
+            className="inline-flex items-center gap-1 px-2 py-1 text-[11.5px] font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg disabled:opacity-60"
           >
             {busy === 'pdf' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             PDF
@@ -220,7 +221,7 @@ export default function MiniPlanDashboard({
       {/* The six figures. Each one is also a filter — the number and the rows
           behind it are the same query, so a user can always get from a figure
           to the work it counts. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 p-3">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5 px-2 pt-2 pb-1">
         {tiles.map((tile) => {
           const tone = TONE[tile.tone] || TONE.slate;
           const on = tile.key !== 'equipment' && tile.key !== 'total' && view.filter.focus === tile.focus;
@@ -231,12 +232,12 @@ export default function MiniPlanDashboard({
               type="button"
               onClick={() => clickTile(tile)}
               title={tile.hint}
-              className={`text-left px-3 py-2.5 rounded-xl border transition-all ${tone.box} ${on ? `ring-2 ${tone.on}` : ''}`}
+              className={`text-left px-2 py-1 rounded-lg border transition-all ${tone.box} ${on ? `ring-2 ${tone.on}` : ''}`}
             >
-              <p className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 leading-tight">
+              <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-500 leading-tight truncate">
                 {tile.label}
               </p>
-              <p className={`text-2xl font-extrabold tabular-nums leading-tight ${
+              <p className={`text-[19px] font-extrabold tabular-nums leading-tight ${
                 tile.signed
                   ? (tile.value < 0 ? 'text-rose-600' : tile.value > 0 ? 'text-emerald-600' : 'text-slate-700')
                   : tone.text
@@ -248,7 +249,7 @@ export default function MiniPlanDashboard({
         })}
       </div>
 
-      <div className="px-4 pb-2.5 -mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-500">
+      <div className="px-3 pb-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-slate-500">
         <span><strong className="text-slate-700">{stats.percent}%</strong> of the activities in view are done</span>
         <span className="text-slate-300">|</span>
         <span>{view.weekLabel}: {range.start} → {range.end}</span>
@@ -258,11 +259,22 @@ export default function MiniPlanDashboard({
           <button
             type="button"
             onClick={onOpenMonitoring}
-            className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-bold text-brand-600 hover:text-brand-800"
+            className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-brand-600 hover:text-brand-800"
           >
             Open these in Monitoring <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         )}
+      </div>
+
+      {/* The week-by-week picture of the same rows the figures count. It sits
+          under the figures because that is the order the meeting reads in:
+          where are we, then how did we get here and where does it end. */}
+      <div className="px-3 pt-1.5 pb-2 border-t border-slate-100">
+        <WeeklyProgressChart
+          items={previewRows.map((r) => r.item)}
+          today={today}
+          compact={isMobileMode}
+        />
       </div>
     </div>
   );
@@ -307,7 +319,7 @@ export default function MiniPlanDashboard({
         // The header row is sticky and the BODY scrolls: on a 500-row plan the
         // column titles have to stay on screen or the table is unreadable.
         <div className={`overflow-auto ${
-          isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-355px)] min-h-[300px]' : 'max-h-[calc(100vh-420px)] min-h-[300px]')
+          isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-560px)] min-h-[220px]' : 'max-h-[calc(100vh-625px)] min-h-[220px]')
         }`}>
           <table className="w-full min-w-[900px] text-left border-collapse">
             <thead>{previewHead}</thead>

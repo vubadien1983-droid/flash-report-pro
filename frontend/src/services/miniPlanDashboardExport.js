@@ -24,6 +24,8 @@ import {
   needsPlanDate, NO_DATE_CELL,
 } from './miniPlan';
 import { writeOverviewSheet, reportState } from './miniPlanReportSheets';
+import { weeklySeries } from './miniPlanWeekly';
+import { weeklyTrendChart } from './reportChart';
 import {
   VIZ, INK, PAPER, ROW_TINT, FONT, fill, bodyFont,
 } from './excelTheme';
@@ -257,6 +259,29 @@ export async function exportDashboardPdf({ title, view }) {
     doc.setFont('Helvetica', 'normal');
   });
 
+  // ── The weekly picture, above the list ───────────────────────
+  // Same series as the screen and the Excel overview, so the three cannot
+  // tell different stories about the same week.
+  let tableTop = 112;
+  try {
+    const series = weeklySeries(view.previewRows.map((r) => r.item), { today, maxWeeks: 14 });
+    if (series.hasData) {
+      const png = weeklyTrendChart(series.weeks, {
+        heading: 'Weekly progress - plan vs actual',
+        footnote: `To this week: plan ${series.totals.planToDate}, done ${series.totals.doneToDate}`
+          + `, variance ${series.totals.doneToDate - series.totals.planToDate}`
+          + (series.totals.unplanned ? `  |  ${series.totals.unplanned} task with no plan date are not in this chart` : ''),
+      });
+      const w = pageWidth - 48;
+      const h = (w * 320) / 1020;
+      doc.addImage(`data:image/png;base64,${png}`, 'PNG', 24, 108, w, h);
+      tableTop = 108 + h + 10;
+    }
+  } catch (e) {
+    // A missing picture must never cost the reader the report.
+    console.warn('Weekly chart skipped in PDF:', e?.message);
+  }
+
   // ── The table, in the order the panel showed it ──────────────
   const body = [];
   const stateMatrix = [];
@@ -279,7 +304,7 @@ export async function exportDashboardPdf({ title, view }) {
   }
 
   doc.autoTable({
-    startY: 112,
+    startY: tableTop,
     margin: { left: 24, right: 24, bottom: 30 },
     head: [['No', 'Equipment', 'Activities', 'Schedule', 'Status', 'Completed']],
     body,

@@ -233,3 +233,145 @@ export function rankChart(rows, { width = 1020, height = 330, heading = '' } = {
 
   return toBase64(canvas);
 }
+
+/**
+ * Plan vs actual, week by week — the report's version of the chart on the
+ * dashboard, drawn from the same series so the meeting and the file agree.
+ *
+ *   columns : tasks planned in the week / tasks finished in the week
+ *   lines   : both running totals, on their own scale at the right
+ *
+ * The actual series stops at the current week. A future week has no actual,
+ * and a zero drawn there would read as a failure that has not happened yet.
+ */
+/** Text with a white halo, so a number over a bar or a line stays readable. */
+function haloText(ctx, text, x, y, color, size = 9, align = 'center') {
+  ctx.textAlign = align;
+  ctx.font = `700 ${size}px ${FONT}`;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = PAPER.surface.hex;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+export function weeklyTrendChart(weeks, { width = 1020, height = 320, heading = '', footnote = '' } = {}) {
+  const { canvas, ctx } = surface(width, height);
+  const rows = Array.isArray(weeks) ? weeks : [];
+  if (!rows.length) return toBase64(canvas);
+
+  if (heading) title(ctx, heading, 12, 16, 12);
+
+  // Legend, right-aligned on the heading line.
+  const legend = [
+    ['Plan / week', VIZ.plan.hex, 'bar'],
+    ['Actual / week', VIZ.actual.hex, 'bar'],
+    ['Cum. plan', INK.primary.hex, 'dash'],
+    ['Cum. actual', VIZ.done.hex, 'line'],
+  ];
+  ctx.font = `600 9.5px ${FONT}`;
+  ctx.textAlign = 'left';
+  let lx = width - 12 - legend.reduce((w, [t]) => w + ctx.measureText(t).width + 26, 0);
+  legend.forEach(([text, color, kind]) => {
+    if (kind === 'bar') { ctx.fillStyle = color; roundRect(ctx, lx, 12, 9, 9, 2); }
+    else {
+      ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.setLineDash(kind === 'dash' ? [4, 3] : []);
+      ctx.beginPath(); ctx.moveTo(lx, 16.5); ctx.lineTo(lx + 14, 16.5); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = INK.secondary.hex;
+    ctx.fillText(text, lx + (kind === 'bar' ? 13 : 18), 17);
+    lx += ctx.measureText(text).width + 26 + (kind === 'bar' ? 0 : 4);
+  });
+
+  const M = { top: 40, right: 46, bottom: 34, left: 40 };
+  const plotW = width - M.left - M.right;
+  const plotH = height - M.top - M.bottom;
+  const base = M.top + plotH;
+
+  const maxBar = Math.max(1, ...rows.map((w) => Math.max(w.plan || 0, w.actual || 0)));
+  const maxCum = Math.max(1, ...rows.map((w) => Math.max(w.cumPlan || 0, w.cumActual || 0)));
+  const band = plotW / rows.length;
+  const barW = Math.max(4, Math.min(20, band * 0.32));
+  const yBar = (v) => base - (v / maxBar) * plotH;
+  const yCum = (v) => base - (v / maxCum) * plotH;
+  const xMid = (i) => M.left + band * (i + 0.5);
+  const every = rows.length > 18 ? 2 : 1;
+
+  // Baseline only — the labels carry the values, so gridlines are noise.
+  ctx.strokeStyle = PAPER.rule ? PAPER.rule.hex : '#CBD5E1';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(M.left, base + 0.5); ctx.lineTo(M.left + plotW, base + 0.5); ctx.stroke();
+
+  ctx.fillStyle = INK.muted.hex;
+  ctx.font = `400 9px ${FONT}`;
+  ctx.textAlign = 'right';
+  ctx.fillText(String(maxBar), M.left - 6, M.top);
+  ctx.textAlign = 'left';
+  ctx.fillText(String(maxCum), M.left + plotW + 6, M.top);
+
+  rows.forEach((w, i) => {
+    const x = xMid(i);
+    if (w.isCurrent) {
+      ctx.fillStyle = `${VIZ.unplanned.hex}1F`;
+      ctx.fillRect(x - band / 2, M.top - 10, band, plotH + 10);
+      ctx.fillStyle = VIZ.unplanned.hex;
+      ctx.font = `700 9px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('NOW', x, M.top - 16);
+    }
+    if (w.plan > 0) {
+      ctx.fillStyle = VIZ.plan.hex;
+      roundRect(ctx, x - barW - 1, yBar(w.plan), barW, base - yBar(w.plan), 2);
+      haloText(ctx, String(w.plan), x - barW / 2 - 1, yBar(w.plan) - 7, VIZ.plan.hex);
+    }
+    if (w.actual != null && w.actual > 0) {
+      ctx.fillStyle = VIZ.actual.hex;
+      roundRect(ctx, x + 1, yBar(w.actual), barW, base - yBar(w.actual), 2);
+      haloText(ctx, String(w.actual), x + barW / 2 + 1, yBar(w.actual) - 7, VIZ.actual.hex);
+    }
+    if (i % every === 0) {
+      ctx.textAlign = 'center';
+      ctx.font = `${w.isCurrent ? 700 : 400} 9px ${FONT}`;
+      ctx.fillStyle = w.isCurrent ? INK.primary.hex : INK.muted.hex;
+      ctx.fillText(w.label, x, base + 16);
+    }
+  });
+
+  const drawLine = (pick, color, dash) => {
+    const pts = rows.map((w, i) => (pick(w) == null ? null : [xMid(i), yCum(pick(w))])).filter(Boolean);
+    if (pts.length < 1) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = dash ? 1.8 : 2.4;
+    ctx.setLineDash(dash ? [5, 3] : []);
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    pts.forEach(([x, y]) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill(); });
+  };
+  drawLine((w) => w.cumPlan, INK.primary.hex, true);
+  drawLine((w) => w.cumActual, VIZ.done.hex, false);
+
+  // The running totals are labelled sparingly: the line's shape carries the
+  // story, the numbers are there to be read off at the points that matter -
+  // the ends, this week, and every other node when there is room.
+  const everyCum = rows.length > 10 ? 2 : 1;
+  const lastActual = rows.reduce((acc, w, i) => (w.cumActual == null ? acc : i), -1);
+  rows.forEach((w, i) => {
+    const anchor = w.isCurrent || i === 0 || i === rows.length - 1 || i === lastActual;
+    if (i % everyCum !== 0 && !anchor) return;
+    haloText(ctx, String(w.cumPlan), xMid(i), yCum(w.cumPlan) - 9, INK.primary.hex);
+    if (w.cumActual != null) haloText(ctx, String(w.cumActual), xMid(i), yCum(w.cumActual) + 16, VIZ.done.hex);
+  });
+
+  if (footnote) {
+    ctx.fillStyle = INK.muted.hex;
+    ctx.font = `400 9px ${FONT}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(footnote, 12, height - 8);
+  }
+  return toBase64(canvas);
+}

@@ -16,7 +16,8 @@ import {
   todayKey, STATUS_DONE, inRange,
 } from './miniPlan';
 import { VIZ, INK, PAPER, FONT, border, fill, titleFont, labelFont, bodyFont } from './excelTheme';
-import { donutChart, columnChart, rankChart } from './reportChart';
+import { weeklySeries } from './miniPlanWeekly';
+import { donutChart, rankChart, weeklyTrendChart } from './reportChart';
 
 /**
  * The state a row is reported in, which is the row's colour state PLUS one
@@ -243,19 +244,29 @@ export function writeOverviewSheet(wb, {
       tl: { col: 3.1, row: 6.2 }, ext: { width: 330, height: 220 },
     });
 
-    const week = columnChart(
-      [
-        { label: `Plan ${weekLabel.toLowerCase()}`, value: f.planWeek, color: VIZ.plan.hex },
-        { label: `Done ${weekLabel.toLowerCase()}`, value: f.doneWeek, color: VIZ.actual.hex },
-      ],
-      {
-        heading: `${weekLabel}: plan vs actual`,
-        footnote: range ? `${range.start} to ${range.end}` : '',
+    // The week-by-week picture: the same series the dashboard draws — two
+    // columns per week (planned / finished) and both running totals.
+    let rankTitleRow = 16;
+    try {
+      const series = weeklySeries(rows, { today, maxWeeks: 16 });
+      if (series.hasData) {
+      ws.getCell('A16').value = 'WEEKLY PROGRESS - PLAN VS ACTUAL';
+      ws.getCell('A16').font = labelFont(9);
+      const trend = weeklyTrendChart(series.weeks, {
+        heading: 'Tasks per week, and both running totals',
+        footnote: `To this week: plan ${series.totals.planToDate}, done ${series.totals.doneToDate}`
+          + `, variance ${series.totals.doneToDate - series.totals.planToDate}`
+          + (series.totals.unplanned ? `  |  ${series.totals.unplanned} task with no plan date are not in this chart` : ''),
+      });
+      ws.addImage(wb.addImage({ base64: trend, extension: 'png' }), {
+        tl: { col: 0.1, row: 16.4 }, ext: { width: 1020, height: 320 },
+      });
+      for (let r = 17; r <= 33; r++) ws.getRow(r).height = 19;
+      rankTitleRow = 34;
       }
-    );
-    ws.addImage(wb.addImage({ base64: week, extension: 'png' }), {
-      tl: { col: 6.6, row: 6.2 }, ext: { width: 330, height: 220 },
-    });
+    } catch (e) {
+      console.warn('Weekly chart skipped:', e?.message);
+    }
 
     const ranked = [...equipment]
       .filter((e) => e.total > 0)
@@ -270,19 +281,19 @@ export function writeOverviewSheet(wb, {
       }));
 
     if (ranked.length) {
-      ws.getCell('A16').value = 'EQUIPMENT WITH THE MOST WORK OUTSTANDING';
-      ws.getCell('A16').font = labelFont(9);
+      ws.getCell(`A${rankTitleRow}`).value = 'EQUIPMENT WITH THE MOST WORK OUTSTANDING';
+      ws.getCell(`A${rankTitleRow}`).font = labelFont(9);
       const rank = rankChart(ranked, { heading: 'Done / total activities per equipment' });
       ws.addImage(wb.addImage({ base64: rank, extension: 'png' }), {
-        tl: { col: 0.1, row: 16.4 }, ext: { width: 1020, height: 330 },
+        tl: { col: 0.1, row: rankTitleRow + 0.4 }, ext: { width: 1020, height: 330 },
       });
-      for (let r = 17; r <= 34; r++) ws.getRow(r).height = 19;
+      for (let r = rankTitleRow + 1; r <= rankTitleRow + 18; r++) ws.getRow(r).height = 19;
 
       // The same ranking as TEXT. A picture can always be squeezed by whoever
       // prints it; a table cannot, and these names are long.
       // Columns: A = No, B:E = Equipment (merged, so a 60-character name has
       // somewhere to go), F = Done, G = Total, H = Remaining, I = Complete.
-      const headRow = 36;
+      const headRow = rankTitleRow + 20;
       const layout = [
         { col: 1, label: 'No' },
         { col: 2, label: 'Equipment', merge: [2, 5], left: true },

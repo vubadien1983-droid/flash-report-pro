@@ -1,3 +1,4 @@
+import { applyChecksheetUpdate } from './checksheetUpdate.js';
 /**
  * CPP Mechanical Mini Plan — the ONE definition of this report type.
  *
@@ -379,6 +380,10 @@ export function fixPlanText(value) {
 }
 
 export function normalizeMiniPlanItems(items) {
+  return applyChecksheetUpdate(normalizeRows(items), makeMiniPlanRow);
+}
+
+function normalizeRows(items) {
   const list = Array.isArray(items) ? items : [];
   let lastKey = null;
   let lastEquip = '';
