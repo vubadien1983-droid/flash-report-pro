@@ -9,7 +9,11 @@ import PasswordModal from './PasswordModal';
 import Toast from './Toast';
 import { exportExcelClient, exportPdfClient } from '../services/clientExport';
 import { exportMiniPlanHtml } from '../services/miniPlanHtml';
-import { subscribeSharedMiniPlan, pushSharedMiniPlanEdit } from '../services/miniPlanLive';
+import {
+  subscribeSharedMiniPlan, pushSharedMiniPlanEdit, hydrateWithLocalPhotos,
+  deletePhotoBytes, refOf,
+} from '../services/miniPlanLive';
+import { mergeMiniPlanItems } from '../services/miniPlanMerge';
 import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from '../services/miniPlanAuth';
@@ -59,6 +63,44 @@ export default function MiniPlanViewer({ shareId }) {
   const dirtyRef = useRef(false);
   const pushTimerRef = useRef(null);
 
+  // ── Two devices, one plan ──────────────────────────────────────
+  //
+  // `baseRef` is the last copy this device received from the cloud. It is what
+  // makes a three-way merge possible: base + what I changed + what they
+  // changed. Without it a save is a blind overwrite, and the other device's
+  // work disappears (BUG-031).
+  //
+  // `itemsRef` mirrors the rows in a ref because the live listener is opened
+  // once and would otherwise read a stale copy from the closure.
+  const baseRef = useRef([]);
+  const itemsRef = useRef([]);
+  const retryRef = useRef({ timer: null, tries: 0 });
+  const [unsaved, setUnsaved] = useState(false);
+
+  /** A crash, a refresh or a dead phone must not take unsaved rows with it. */
+  const backupKey = `fr_share_pending_${shareId}`;
+  const writeBackup = (items) => {
+    try {
+      const light = (items || []).map((it) => ({
+        ...it,
+        photos: (it.photos || []).map((p) => (p && p.url && p.url.startsWith('data:')
+          ? { ...p, url: '' } : p)),
+      }));
+      localStorage.setItem(backupKey, JSON.stringify({ items: light, base: baseRef.current, at: Date.now() }));
+    } catch { /* storage full or blocked: the in-memory copy still stands */ }
+  };
+  const readBackup = () => {
+    try {
+      const raw = localStorage.getItem(backupKey);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      // A day-old draft is not a draft any more, it is a surprise.
+      if (!data?.items?.length || Date.now() - (data.at || 0) > 24 * 3600 * 1000) return null;
+      return data;
+    } catch { return null; }
+  };
+  const clearBackup = () => { try { localStorage.removeItem(backupKey); } catch { /* nothing to do */ } };
+
   const showToast = (message, type = 'success') => setToast({ message, type });
 
   useEffect(() => {
@@ -90,8 +132,37 @@ export default function MiniPlanViewer({ shareId }) {
         setLive(true);
         setNotFound(false);
         document.title = data.title || MINI_PLAN_LABEL;
-        // Do not clobber edits still being typed here.
-        if (dirtyRef.current) return;
+        const remote = data.items || [];
+
+        if (dirtyRef.current && itemsRef.current.length) {
+          // Somebody else saved while this device still has unsaved work.
+          // Take BOTH: their rows and fields, my rows and fields. Ignoring the
+          // snapshot (what this used to do) hid their work until the next
+          // save; taking it plainly would have thrown mine away.
+          const merged = mergeMiniPlanItems(baseRef.current, itemsRef.current, remote);
+          baseRef.current = remote;
+          itemsRef.current = merged.items;
+          setReport({ ...data, items: merged.items });
+          return;
+        }
+
+        // Nothing local in flight — but a draft may have survived a refresh.
+        const backup = !baseRef.current.length ? readBackup() : null;
+        if (backup) {
+          const merged = mergeMiniPlanItems(backup.base || remote, backup.items, remote);
+          baseRef.current = remote;
+          itemsRef.current = merged.items;
+          dirtyRef.current = true;
+          setUnsaved(true);
+          setReport({ ...data, items: merged.items });
+          showToast('Draft from this device restored — saving it now', 'success');
+          if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+          pushTimerRef.current = setTimeout(() => pushEditRef.current(merged.items), 800);
+          return;
+        }
+
+        baseRef.current = remote;
+        itemsRef.current = remote;
         setReport(data);
       },
       (err) => {
@@ -115,21 +186,74 @@ export default function MiniPlanViewer({ shareId }) {
   // ── Editing through the link ───────────────────────────────────
   const pushEdit = useCallback(async (items) => {
     if (!report) return;
+    const rows = items || itemsRef.current;
+    writeBackup(rows);
     setSaving(true);
     try {
-      await pushSharedMiniPlanEdit(shareId, report.source_report_id, items);
+      const res = await pushSharedMiniPlanEdit(shareId, report.source_report_id, rows, {
+        base: baseRef.current,
+      });
+
+      // Adopt what was actually written — it may contain the other device's
+      // work — and put this device's photo bytes back on top of the pointers.
+      const saved = hydrateWithLocalPhotos(shareId, res.items || rows);
+      baseRef.current = res.items || rows;
+      itemsRef.current = saved;
+      setReport((r) => (r ? { ...r, items: saved } : r));
+
       dirtyRef.current = false;
-      showToast('Saved — everyone on this link sees it', 'success');
+      setUnsaved(false);
+      retryRef.current.tries = 0;
+      if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
+      clearBackup();
+
+      const m = res.merge;
+      const fromThem = m ? (m.fromTheirs + m.addedRemote) : 0;
+      showToast(
+        fromThem
+          ? `Saved — and ${fromThem} change${fromThem === 1 ? '' : 's'} from another device kept`
+          : (res.photos?.written ? `Saved with ${res.photos.written} photo${res.photos.written === 1 ? '' : 's'}` : 'Saved — everyone on this link sees it'),
+        'success',
+      );
+      if (res.photos?.failed) {
+        showToast(`${res.photos.failed} photo could not be saved — will retry`, 'error');
+        dirtyRef.current = true;
+        setUnsaved(true);
+        scheduleRetry();
+      }
     } catch (e) {
+      // NOTHING IS THROWN AWAY. The rows stay in memory and in the local
+      // backup, and the save is tried again on a widening delay.
       console.error('Live edit failed:', e);
-      showToast(`Could not save: ${e.message}`, 'error');
+      dirtyRef.current = true;
+      setUnsaved(true);
+      if (retryRef.current.tries === 0) showToast(`Not saved yet: ${e.message} — retrying`, 'error');
+      scheduleRetry();
     } finally {
       setSaving(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, shareId]);
+
+  // The listener is opened once, so it needs a stable way to reach the current
+  // push function.
+  const pushEditRef = useRef(pushEdit);
+  useEffect(() => { pushEditRef.current = pushEdit; }, [pushEdit]);
+
+  function scheduleRetry() {
+    const tries = Math.min(retryRef.current.tries + 1, 6);
+    retryRef.current.tries = tries;
+    if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
+    retryRef.current.timer = setTimeout(() => {
+      pushEditRef.current(itemsRef.current);
+    }, Math.min(30_000, 4_000 * tries));
+  }
 
   const handleItemsChange = (items) => {
     dirtyRef.current = true;
+    setUnsaved(true);
+    itemsRef.current = items;
+    writeBackup(items);
     setReport((r) => (r ? { ...r, items } : r));
 
     // Debounced, for the same reason the editor debounces its cloud push
@@ -141,7 +265,9 @@ export default function MiniPlanViewer({ shareId }) {
 
   const flushNow = () => {
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-    if (report?.items) pushEdit(report.items);
+    if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
+    retryRef.current.tries = 0;
+    if (report?.items) pushEdit(itemsRef.current.length ? itemsRef.current : report.items);
   };
 
   /**
@@ -156,9 +282,9 @@ export default function MiniPlanViewer({ shareId }) {
   const syncNow = async () => {
     setSyncing(true);
     try {
-      if (dirtyRef.current && report?.items) {
+      if (dirtyRef.current && (itemsRef.current.length || report?.items)) {
         if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-        await pushEdit(report.items);
+        await pushEdit(itemsRef.current.length ? itemsRef.current : report.items);
       }
       dirtyRef.current = false;
       setSubKey((k) => k + 1);
@@ -203,16 +329,31 @@ export default function MiniPlanViewer({ shareId }) {
   }, [report]);
 
   /** Remove the photo currently open, addressed by item + slot, never by url. */
+  /**
+   * A deleted photo must lose its BYTES as well, in both copies. Dropping the
+   * pointer alone leaves the picture in the database and lets any device that
+   * still holds the old plan put the pointer back (BUG-035).
+   */
+  const dropPhotoBytes = (item, photo) => {
+    const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
+    deletePhotoBytes(shareId, report?.source_report_id, ref)
+      .catch((e) => console.warn('Photo bytes not removed:', e?.message));
+  };
+
   const deletePhoto = (photo) => {
     if (!report || !photo || !unlocked) return;
     const items = report.items || [];
     const item = items[photo.itemIndex];
     if (!item) return;
+    const gone = (item.photos || []).find((p, idx) =>
+      p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex
+    );
     const photos = (item.photos || []).filter((p, idx) =>
       !(p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex)
     );
     const next = items.map((it, i) => (i === photo.itemIndex ? { ...it, photos } : it));
     handleItemsChange(next);
+    if (gone) dropPhotoBytes(item, gone);
     setLightboxIndex(null);
     showToast('Photo deleted', 'success');
   };
@@ -299,6 +440,14 @@ export default function MiniPlanViewer({ shareId }) {
               <span className="text-slate-300">|</span>
               Block B - EPC#1
               {saving && <><span className="text-slate-300">|</span><span className="text-sky-600 font-semibold">Saving…</span></>}
+              {!saving && unsaved && (
+                <>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-amber-600 font-semibold" title="Kept on this device and retried automatically">
+                    Unsaved — retrying
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>

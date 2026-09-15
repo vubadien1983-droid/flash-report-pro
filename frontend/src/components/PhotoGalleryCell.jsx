@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Camera, ImagePlus, Trash2, ZoomIn, RefreshCw, Plus, X, FolderOpen } from 'lucide-react';
+import { Camera, ImagePlus, Trash2, ZoomIn, RefreshCw, Plus, ImageOff } from 'lucide-react';
 import { compressForStorage, compressDataUrl, yieldToBrowser } from '../services/imageCompression';
 import { nextPhotoSlot } from '../services/miniPlan';
 
@@ -33,6 +33,7 @@ export default function PhotoGalleryCell({
   isSelected = false,
   onSelectSlot,
   readOnly = false,
+  onPhotoRemoved,
   isMobileView = false,
   compact = false,
 }) {
@@ -166,9 +167,19 @@ export default function PhotoGalleryCell({
     }
   };
 
+  // Deleting a picture is not undoable, so it is asked for twice — but the
+  // button itself is ALWAYS visible now. Hidden behind a hover, people could
+  // not find it at all on the share link (BUG-035).
+  const [confirmIdx, setConfirmIdx] = useState(null);
+
   const removeAt = (arrayIndex) => {
+    const gone = list[arrayIndex];
     const next = list.filter((_, i) => i !== arrayIndex);
+    setConfirmIdx(null);
     onPhotosChange(next);
+    // Let the surface drop the stored bytes as well; the pointer alone would
+    // leave the picture in the database for ever.
+    if (gone && onPhotoRemoved) onPhotoRemoved(gone);
   };
 
   const thumbSize = compact || isMobileView ? 'w-16 h-16' : 'w-20 h-20';
@@ -234,8 +245,20 @@ export default function PhotoGalleryCell({
                 onClick={(e) => { e.stopPropagation(); if (onPhotoClick) onPhotoClick(p.url); }}
                 className="w-full h-full object-cover cursor-zoom-in"
               />
+            ) : p.photo_missing ? (
+              /* Read, and the picture is not in the database: broken, not
+                 loading. A spinner here never stops, which is what the user
+                 was looking at (BUG-036). Say it plainly and let it be
+                 deleted with the button above. */
+              <div
+                title="This photo is no longer in the database — delete the slot"
+                className="w-full h-full flex flex-col items-center justify-center gap-0.5 bg-rose-50 text-rose-400"
+              >
+                <ImageOff className="w-4 h-4" />
+                <span className="text-[8.5px] font-bold uppercase tracking-wide">missing</span>
+              </div>
             ) : (
-              /* A slot whose bytes have not been fetched yet. Shown as
+              /* A slot whose bytes have not been fetched YET. Shown as
                  "loading", never as empty - an unresolved photo reference is
                  not the same thing as a deleted photo (BUG-012). */
               <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400">
@@ -247,18 +270,40 @@ export default function PhotoGalleryCell({
               {i + 1}
             </span>
 
-            {/* Phone has no hover, so the remove button is always drawn there. */}
-            {!readOnly && (
+            {!readOnly && confirmIdx !== i && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); removeAt(i); }}
-                title="Remove photo"
-                className={`absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white rounded-md shadow transition-opacity ${
-                  isMobileView ? 'opacity-100' : 'opacity-0 group-hover/thumb:opacity-100'
-                }`}
+                onClick={(e) => { e.stopPropagation(); setConfirmIdx(i); }}
+                title="Delete this photo"
+                className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white rounded-md shadow"
               >
-                <X className="w-3 h-3" />
+                <Trash2 className="w-3 h-3" />
               </button>
+            )}
+
+            {!readOnly && confirmIdx === i && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute inset-0 z-10 bg-slate-950/80 flex flex-col items-center justify-center gap-1 px-1"
+              >
+                <span className="text-[10px] font-bold text-white leading-none">Delete?</span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeAt(i); }}
+                    className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setConfirmIdx(null); }}
+                    className="px-1.5 py-0.5 rounded bg-white/90 hover:bg-white text-slate-800 text-[10px] font-bold"
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
             )}
 
             {!isMobileView && (

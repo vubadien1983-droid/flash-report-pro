@@ -69,6 +69,7 @@ export default function MiniPlanWorkspace({
   items,
   onItemsChange,
   onPhotoClick,
+  onPhotoRemoved,
   isMobileMode = false,
   readOnly = false,
   onRequestUnlock,
@@ -142,6 +143,7 @@ export default function MiniPlanWorkspace({
           items={items}
           onItemsChange={onItemsChange}
           onPhotoClick={onPhotoClick}
+          onPhotoRemoved={onPhotoRemoved}
           isMobileMode={isMobileMode}
           readOnly={readOnly}
           onRequestUnlock={onRequestUnlock}

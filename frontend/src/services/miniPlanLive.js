@@ -39,15 +39,128 @@
 
 import {
   isFirebaseConfigured,
-  sharedDoc, sharedPhotoDoc, reportDoc,
+  sharedDoc, sharedPhotoDoc, reportDoc, reportPhotoDoc,
   photoKey,
-  getDoc, setDoc, onSnapshot,
+  getDoc, setDoc, deleteDoc, onSnapshot,
 } from './firebase';
 import { withTimeout, yieldToBrowser } from './imageCompression';
 import { normalizeMiniPlanItems } from './miniPlan';
+import { mergeMiniPlanItems } from './miniPlanMerge';
 
 const READ_TIMEOUT_MS = 30_000;
 const WRITE_TIMEOUT_MS = 45_000;
+const PHOTO_TIMEOUT_MS = 25_000;
+
+/**
+ * Bytes this DEVICE has produced, kept for the life of the page.
+ *
+ * A photo pasted through the link is held here the moment it is pasted, so the
+ * thumbnail keeps showing the picture even though the copy written to the
+ * shared document is only a pointer. Without it the next snapshot replaced the
+ * picture with a spinner that never stopped — the bytes existed nowhere the
+ * viewer could look (BUG-030).
+ */
+const localBytes = new Map();          // `${shareId}|${ref}` -> data URL
+const uploaded = new Set();            // `${shareId}|${ref}|${bytes}` already written
+
+export function rememberLocalPhoto(shareId, ref, url) {
+  if (shareId && ref && url) localBytes.set(`${shareId}|${ref}`, url);
+}
+export function localPhoto(shareId, ref) {
+  return localBytes.get(`${shareId}|${ref}`) || '';
+}
+
+/** The pointer a photo is stored under, whatever shape it arrives in. */
+/** Put this device's own bytes back into a list of stripped rows. */
+export function hydrateWithLocalPhotos(shareId, items) {
+  return (items || []).map((item) => ({
+    ...item,
+    photos: (item?.photos || []).map((p, i) => {
+      if (!p || p.url) return p;
+      const url = localPhoto(shareId, p.photo_ref || photoKey(item?.id || 'item', p.slot_index ?? i));
+      return url ? { ...p, url } : p;
+    }),
+  }));
+}
+
+/**
+ * Delete a photo's BYTES from both copies.
+ *
+ * Removing the pointer from the plan is what the user sees; without this the
+ * picture stays in the database for ever, and a device that still holds the
+ * old plan can put the pointer back and resurrect it. Failure is logged and
+ * never blocks the screen: the pointer is already gone.
+ */
+export async function deletePhotoBytes(shareId, sourceReportId, ref) {
+  if (!isFirebaseConfigured || !ref) return { shared: false, source: false };
+  const out = { shared: false, source: false };
+  localBytes.delete(`${shareId}|${ref}`);
+  for (const key of [...uploaded]) if (key.startsWith(`${shareId}|${ref}|`)) uploaded.delete(key);
+
+  if (shareId) {
+    try { await deleteDoc(sharedPhotoDoc(shareId, ref)); out.shared = true; }
+    catch (e) { console.warn('Shared photo not deleted:', e.message); }
+  }
+  if (sourceReportId) {
+    try { await deleteDoc(reportPhotoDoc(sourceReportId, ref)); out.source = true; }
+    catch (e) { console.warn('Report photo not deleted:', e.message); }
+  }
+  return out;
+}
+
+export function refOf(item, photo, index) {
+  return photo?.photo_ref || photoKey(item?.id || 'item', photo?.slot_index ?? index);
+}
+
+/**
+ * Write the bytes of every photo that is still inline, to BOTH copies.
+ *
+ * Photos go first, exactly as in the app's own save path: the parent document
+ * only ever stores pointers, so writing it while the bytes are missing is what
+ * leaves a viewer looking at a spinner (BUG-012, and again as BUG-030 on the
+ * share link, where photos were never written at all).
+ */
+async function pushPhotoBytes(shareId, sourceReportId, items) {
+  let written = 0;
+  let failed = 0;
+
+  for (const item of items || []) {
+    const photos = Array.isArray(item?.photos) ? item.photos : [];
+    for (const [i, p] of photos.entries()) {
+      if (!p || !p.url || !p.url.startsWith('data:')) continue;
+      const ref = refOf(item, p, i);
+      rememberLocalPhoto(shareId, ref, p.url);
+
+      const stamp = `${shareId}|${ref}|${p.url.length}`;
+      if (uploaded.has(stamp)) continue;
+
+      const row = {
+        url: p.url,
+        filename: p.filename || '',
+        slot_index: p.slot_index ?? i,
+        item_id: item.id || '',
+        updated_at: new Date().toISOString(),
+      };
+      try {
+        await withTimeout(setDoc(sharedPhotoDoc(shareId, ref), row), PHOTO_TIMEOUT_MS, 'Saving photo');
+        written += 1;
+        uploaded.add(stamp);
+        if (sourceReportId) {
+          // Best effort: the author's own copy. A failure here costs nobody
+          // the picture — the shared copy already has it.
+          try {
+            await withTimeout(setDoc(reportPhotoDoc(sourceReportId, ref), row), PHOTO_TIMEOUT_MS, 'Saving photo to the report');
+          } catch (e) { console.warn('Photo not copied to the source report:', e.message); }
+        }
+      } catch (e) {
+        failed += 1;
+        console.warn(`Photo ${ref} not saved:`, e.message);
+      }
+      await yieldToBrowser();
+    }
+  }
+  return { written, failed };
+}
 
 /**
  * Reduce items to what may be written into a PARENT document: every photo
@@ -92,14 +205,20 @@ function collectRefs(items) {
 }
 
 /** Splice cached bytes into the items, leaving unresolved pointers intact. */
-function applyCache(items, cache) {
+function applyCache(items, cache, shareId = '', missing = null) {
   return (items || []).map((item) => ({
     ...item,
     photos: (item?.photos || []).map((p) => {
       if (!p || p.url || !p.photo_ref) return p;
-      const stored = cache.get(p.photo_ref);
+      // Anything this device pasted is served from memory even before the
+      // upload lands, so a fresh photo is never shown as a spinner.
+      const stored = cache.get(p.photo_ref) || localPhoto(shareId, p.photo_ref);
+      if (stored) return { ...p, url: stored };
+      // Read, and there is no such photo document: the slot is broken, not
+      // loading. Marked so the cell can offer to delete it (BUG-036).
+      if (missing && missing.has(p.photo_ref)) return { ...p, photo_missing: true };
       // No `url: ''` fallback here on purpose — see the BUG-012 note above.
-      return stored ? { ...p, url: stored } : p;
+      return p;
     }),
   }));
 }
@@ -116,6 +235,7 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
   if (!isFirebaseConfigured || !shareId) return () => {};
 
   const cache = new Map();   // photo_ref -> base64 url
+  const missing = new Set();  // photo_ref that HAS been read and does not exist
   let stopped = false;
   let generation = 0;
 
@@ -137,7 +257,7 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
 
       // Emit at once with whatever is already cached, so a status change
       // appears immediately instead of waiting on photo reads.
-      onData({ ...base, items: applyCache(items, cache) });
+      onData({ ...base, items: applyCache(items, cache, shareId, missing) });
 
       // Then fetch only the photo documents never seen before.
       const needed = collectRefs(items);
@@ -150,7 +270,8 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
             getDoc(sharedPhotoDoc(shareId, key)), READ_TIMEOUT_MS, 'Loading shared photo'
           );
           const url = psnap.exists() ? (psnap.data()?.url || '') : '';
-          if (url) cache.set(key, url);
+          if (url) { cache.set(key, url); missing.delete(key); }
+          else if (!localPhoto(shareId, key)) missing.add(key);
         } catch (e) {
           // Leave it uncached: the next snapshot retries, and until then the
           // cell shows "loading" rather than claiming there is no photo.
@@ -165,7 +286,7 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
       }
 
       if (stopped || gen !== generation) return;
-      onData({ ...base, items: applyCache(items, cache) });
+      onData({ ...base, items: applyCache(items, cache, shareId, missing) });
     },
     (err) => {
       console.warn('Live share listener error:', err.message);
@@ -187,16 +308,44 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
  *
  * @returns {Promise<{shared:boolean, source:boolean}>}
  */
-export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, extra = {}) {
+export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, options = {}) {
   if (!isFirebaseConfigured) throw new Error('Cloud is not configured.');
   if (!shareId) throw new Error('Missing share id.');
 
-  const safeItems = stripPhotosToRefs(items);
+  const { base = null, extra = {}, ...rest } = options;
+  const meta = { ...rest, ...extra };
+
+  // 1. BYTES FIRST. The documents below hold pointers only.
+  const photos = await pushPhotoBytes(shareId, sourceReportId, items);
+
+  // 2. Merge with whatever the cloud holds right now, instead of overwriting
+  //    it. Another device may have saved between our last snapshot and this
+  //    write; a plain write would erase that work (BUG-031).
+  let toWrite = stripPhotosToRefs(items);
+  let mergeStats = null;
+  try {
+    const snap = await withTimeout(getDoc(sharedDoc(shareId)), READ_TIMEOUT_MS, 'Reading the shared plan');
+    if (snap.exists()) {
+      const theirs = normalizeMiniPlanItems(snap.data()?.items || []);
+      const merged = mergeMiniPlanItems(
+        base ? stripPhotosToRefs(base) : theirs,   // no base: treat theirs as the base
+        toWrite,
+        theirs,
+      );
+      toWrite = merged.items;
+      mergeStats = merged.stats;
+    }
+  } catch (e) {
+    // If the read fails we still save. Writing our own copy is worse than a
+    // merge and better than losing the edit.
+    console.warn('Merge skipped, writing this device\'s copy:', e.message);
+  }
+
   const updated_at = new Date().toISOString();
-  const result = { shared: false, source: false };
+  const result = { shared: false, source: false, items: toWrite, photos, merge: mergeStats };
 
   await withTimeout(
-    setDoc(sharedDoc(shareId), { ...extra, items: safeItems, updated_at }, { merge: true }),
+    setDoc(sharedDoc(shareId), { ...meta, items: toWrite, updated_at }, { merge: true }),
     WRITE_TIMEOUT_MS,
     'Saving to the shared plan'
   );
@@ -205,7 +354,7 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, ext
   if (sourceReportId) {
     try {
       await withTimeout(
-        setDoc(reportDoc(sourceReportId), { ...extra, items: safeItems, updated_at }, { merge: true }),
+        setDoc(reportDoc(sourceReportId), { ...meta, items: toWrite, updated_at }, { merge: true }),
         WRITE_TIMEOUT_MS,
         'Saving to the source report'
       );
@@ -217,3 +366,4 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, ext
 
   return result;
 }
+

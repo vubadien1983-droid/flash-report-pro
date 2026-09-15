@@ -57,6 +57,7 @@ export default function MiniPlanTable({
   items,
   onItemsChange,
   onPhotoClick,
+  onPhotoRemoved,
   isMobileMode = false,
   readOnly = false,
   onRequestUnlock,
@@ -618,6 +619,7 @@ export default function MiniPlanTable({
                           photos={item.photos}
                           onPhotosChange={(ph) => setPhotos(index, ph)}
                           onPhotoClick={onPhotoClick}
+                          onPhotoRemoved={(photo) => onPhotoRemoved?.(item, photo)}
                           isSelected={selectedCell === index}
                           onSelectSlot={() => setSelectedCell(index)}
                           readOnly={readOnly}
@@ -681,11 +683,11 @@ export default function MiniPlanTable({
       <div ref={scrollRef} className={`overflow-auto w-full ${
         fullScreen ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-215px)] min-h-[320px]'
       }`}>
-        <table className="w-full min-w-[1480px] text-left border-collapse table-fixed">
+        <table className="w-full min-w-[1400px] text-left border-collapse table-fixed">
           <thead>
             <tr>
               <th className={`${headCls} w-12`}>Item</th>
-              <th className={`${headCls} w-60`}>Equipment</th>
+              <th className={`${headCls} w-44`}>Equipment</th>
               <th className={`${headCls} w-28`}>Schedule</th>
               <th className={`${headCls} w-[21rem]`}>Activities</th>
               <th className={`${headCls} w-32`}>Status</th>
@@ -861,6 +863,7 @@ export default function MiniPlanTable({
                         photos={item.photos}
                         onPhotosChange={(ph) => setPhotos(index, ph)}
                         onPhotoClick={onPhotoClick}
+                        onPhotoRemoved={(photo) => onPhotoRemoved?.(item, photo)}
                         isSelected={selectedCell === index}
                         onSelectSlot={() => setSelectedCell(index)}
                         readOnly={readOnly}

@@ -20,6 +20,8 @@ import {
   deleteReportPhotos,
   base64ToBlob,
 } from './firebase';
+import { MINI_PLAN_TYPE } from './miniPlan';
+import { mergeMiniPlanItems } from './miniPlanMerge';
 import {
   compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser, HARD_MAX_BYTES,
 } from './imageCompression';
@@ -142,11 +144,25 @@ export async function fetchReports() {
 
 // ─── Single Report (full data with items) ────────────────────────
 
+/**
+ * The last copy of a plan this device saw in the cloud, per report.
+ *
+ * It is the BASE of the three-way merge in saveReport: without it, saving is
+ * "write what I have", and an edit someone made through the share link while
+ * this app had the report open is erased on the next save (BUG-031).
+ */
+const lastRemote = new Map();
+
+function rememberRemote(id, items) {
+  if (id && Array.isArray(items)) lastRemote.set(id, items);
+}
+
 export async function fetchReport(id) {
   if (isFirebaseConfigured) {
     const snap = await withTimeout(getDoc(reportDoc(id)), READ_TIMEOUT_MS, 'Loading report');
     if (!snap.exists()) throw new Error('Report not found');
     const report = { id: snap.id, ...snap.data() };
+    rememberRemote(id, snap.data()?.items || []);
     return await _hydratePhotos(id, report);
   }
 
@@ -189,7 +205,27 @@ export async function saveReport(id, reportData) {
     // left pointing at bytes that were never written.
     await _pushPhotos(id, reportData);
     const row = _toFirestoreDoc({ ...reportData, id });
+
+    // A Mini Plan is edited from several devices at once (the app here, the
+    // share link on a phone in the field). Merge with what the cloud holds
+    // right now instead of overwriting it — row by row, field by field.
+    if (row.report_type === MINI_PLAN_TYPE && Array.isArray(row.items)) {
+      try {
+        const snap = await withTimeout(getDoc(reportDoc(id)), READ_TIMEOUT_MS, 'Reading the report');
+        const theirs = snap.exists() ? (snap.data()?.items || []) : [];
+        if (theirs.length) {
+          const merged = mergeMiniPlanItems(lastRemote.get(id) || theirs, row.items, theirs);
+          row.items = merged.items;
+        }
+      } catch (e) {
+        // Writing this device's copy is worse than a merge and much better
+        // than dropping the save.
+        console.warn('Merge skipped before saving:', e.message);
+      }
+    }
+
     await withTimeout(setDoc(reportDoc(id), row, { merge: true }), WRITE_TIMEOUT_MS, 'Saving report');
+    rememberRemote(id, row.items || []);
     return { ...row, id };
   }
 
@@ -414,6 +450,8 @@ function _toFirestoreDoc(report) {
       return {
         ...item,
         photos: item.photos.map((p, pIdx) => {
+          // `photo_missing` is a screen state, not data: never write it.
+          if (p && p.photo_missing) { const { photo_missing, ...rest } = p; p = rest; }
           if (!p || !p.url) return p;
           if (!p.url.startsWith('data:')) return p; // already a hosted URL
           const slot = p.slot_index ?? pIdx;
@@ -621,7 +659,11 @@ async function _hydratePhotos(reportId, report) {
         // Leaving the slot untouched and flagging the report lets the caller
         // prefer whatever it already holds.
         missing++;
-        return p;
+        // The read SUCCEEDED and there is no such photo document: this slot is
+        // not "still loading", it is broken. Say so, so the cell can offer to
+        // delete it instead of spinning for ever (BUG-036). The flag is never
+        // written back - _toFirestoreDoc rebuilds photos from explicit fields.
+        return hydrationOk ? { ...p, photo_missing: true } : p;
       }),
     };
   });

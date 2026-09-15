@@ -220,19 +220,68 @@ export function attachmentUrl(shareId, key) {
 }
 
 /** Open a Blob in a new tab, falling back to a download for exotic types. */
-export function openBlob(blob, filename) {
+/**
+ * Types a browser will actually DISPLAY. Everything else is downloaded.
+ *
+ * Opening a blob of any other type in a tab is what produced "This file type
+ * cannot be opened." — Chrome cannot render a .docx, a .zip or an unknown
+ * application/octet-stream, so it shows an error page instead of the file the
+ * user asked for (BUG-034). A download always works.
+ */
+const INLINE_TYPES = /^(application\/pdf|image\/|text\/plain|text\/csv|audio\/|video\/)/i;
+
+const EXT_BY_TYPE = {
+  'application/pdf': 'pdf',
+  'application/zip': 'zip',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'image/jpeg': 'jpg', 'image/png': 'png', 'text/plain': 'txt', 'text/csv': 'csv',
+};
+
+/** A download needs a name with an extension, or Windows cannot open it later. */
+export function downloadName(filename, type) {
+  const name = String(filename || '').trim() || 'attachment';
+  if (/\.[A-Za-z0-9]{1,8}$/.test(name)) return name;
+  const ext = EXT_BY_TYPE[String(type || '').toLowerCase()];
+  return ext ? `${name}.${ext}` : name;
+}
+
+export function canOpenInline(type) {
+  return INLINE_TYPES.test(String(type || ''));
+}
+
+function saveBlob(url, filename, type) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = downloadName(filename, type);
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/**
+ * Open an attachment: in a tab when the browser can render it, as a download
+ * otherwise — and as a download too when a popup blocker eats the tab.
+ */
+export function openBlob(blob, filename, { forceDownload = false } = {}) {
+  const type = blob?.type || '';
   const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if (!win) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || 'attachment';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+
+  if (forceDownload || !canOpenInline(type)) {
+    saveBlob(url, filename, type);
+  } else {
+    const win = window.open(url, '_blank', 'noopener');
+    if (!win) saveBlob(url, filename, type);
   }
+
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
 
 /** Every attachment descriptor in a report, with its slot coordinates. */
 export function collectAttachments(report) {
