@@ -125,6 +125,10 @@ export function applyChecksheetUpdate(items, makeRow) {
         const [t, code] = key.split('|');
         if (t !== tag || seen.has(code)) return;
         const row = makeRow(groupId, equipment);
+        // A DETERMINISTIC id: the same row created on two devices is ONE row.
+        // A random id would be duplicated by the merge every time a second
+        // device ran the same update.
+        row.id = `cs1_${tag}_${code}`.toLowerCase();
         row.activity = `Complete and NFI for ${code}`;
         row.schedule = CHECKSHEET_A[key];
         row[CS_STAMP] = 1;

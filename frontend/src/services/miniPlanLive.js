@@ -232,7 +232,17 @@ function applyCache(items, cache, shareId = '', missing = null) {
  * @returns {() => void} unsubscribe
  */
 export function subscribeSharedMiniPlan(shareId, onData, onError) {
-  if (!isFirebaseConfigured || !shareId) return () => {};
+  // A silent no-op here is what left the share link on "Connecting to the
+  // live plan…" for ever: no data, no error, nothing to act on (BUG-037).
+  // Whatever the reason, SAY it.
+  if (!isFirebaseConfigured) {
+    if (onError) setTimeout(() => onError(new Error('Cloud is not configured for this build.')), 0);
+    return () => {};
+  }
+  if (!shareId) {
+    if (onError) setTimeout(() => onError(new Error('This link has no plan id.')), 0);
+    return () => {};
+  }
 
   const cache = new Map();   // photo_ref -> base64 url
   const missing = new Set();  // photo_ref that HAS been read and does not exist
@@ -252,12 +262,22 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
 
       const gen = ++generation;
       const data = snap.data() || {};
-      const items = normalizeMiniPlanItems(data.items || []);
-      const base = { ...data, id: shareId, share_id: shareId, items };
 
-      // Emit at once with whatever is already cached, so a status change
-      // appears immediately instead of waiting on photo reads.
-      onData({ ...base, items: applyCache(items, cache, shareId, missing) });
+      // Firestore SWALLOWS an exception thrown by a snapshot callback, so a
+      // failure in here showed up as a page that never finished loading.
+      let items;
+      let base;
+      try {
+        items = normalizeMiniPlanItems(data.items || []);
+        base = { ...data, id: shareId, share_id: shareId, items };
+        // Emit at once with whatever is already cached, so a status change
+        // appears immediately instead of waiting on photo reads.
+        onData({ ...base, items: applyCache(items, cache, shareId, missing) });
+      } catch (e) {
+        console.error('Shared plan could not be read:', e);
+        if (onError) onError(new Error(`The plan could not be read: ${e.message}`));
+        return;
+      }
 
       // Then fetch only the photo documents never seen before.
       const needed = collectRefs(items);

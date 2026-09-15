@@ -14,6 +14,7 @@ import {
   deletePhotoBytes, refOf,
 } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
+import { isFirebaseConfigured } from '../services/firebase';
 import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from '../services/miniPlanAuth';
@@ -50,6 +51,7 @@ export default function MiniPlanViewer({ shareId }) {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [subKey, setSubKey] = useState(0);     // bump to re-open the listener
+  const [stalled, setStalled] = useState('');  // why nothing arrived, if nothing did
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
@@ -125,11 +127,22 @@ export default function MiniPlanViewer({ shareId }) {
     // landed on the dashboard. A refresh must never move the user (BUG-026).
     if (!report) setLoading(true);
 
+    // A listener that never answers must not leave the reader staring at a
+    // spinner. After 15 seconds, say so and offer a retry (BUG-037).
+    const silent = setTimeout(() => {
+      setLoading((wasLoading) => {
+        if (wasLoading) setStalled('The live plan did not answer. The network may be blocking it.');
+        return false;
+      });
+    }, 15_000);
+
     const unsub = subscribeSharedMiniPlan(
       shareId,
       (data) => {
+        clearTimeout(silent);
         setLoading(false);
         setLive(true);
+        setStalled('');
         setNotFound(false);
         document.title = data.title || MINI_PLAN_LABEL;
         const remote = data.items || [];
@@ -166,14 +179,19 @@ export default function MiniPlanViewer({ shareId }) {
         setReport(data);
       },
       (err) => {
+        clearTimeout(silent);
         setLoading(false);
         setLive(false);
         if (String(err?.message || '').includes('not found')) setNotFound(true);
-        else showToast('Live connection lost — the plan may be out of date', 'error');
+        else {
+          setStalled(err?.message || 'The live plan could not be opened.');
+          showToast('Live connection lost — the plan may be out of date', 'error');
+        }
       }
     );
 
     return () => {
+      clearTimeout(silent);
       unsub();
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     };
@@ -394,6 +412,34 @@ export default function MiniPlanViewer({ shareId }) {
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3 p-4">
         <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />
         <p className="text-sm font-medium text-slate-300">Connecting to the live plan…</p>
+      </div>
+    );
+  }
+
+  if (stalled && !report) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3 p-6 text-center">
+        <RefreshCw className="w-8 h-8 text-amber-400" />
+        <p className="text-base font-bold">The plan did not load</p>
+        <p className="text-sm text-slate-300 max-w-md">{stalled}</p>
+        <div className="flex gap-2 mt-2">
+          <button
+            type="button"
+            onClick={() => { setStalled(''); setLoading(true); setSubKey((k) => k + 1); }}
+            className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold"
+          >
+            Try again
+          </button>
+          <a
+            href="#/"
+            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-bold"
+          >
+            Open the app
+          </a>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-2">
+          Plan id: {shareId} · cloud settings: {isFirebaseConfigured ? 'present' : 'MISSING in this build'}
+        </p>
       </div>
     );
   }
