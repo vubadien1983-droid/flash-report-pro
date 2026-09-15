@@ -5,12 +5,10 @@ import {
 } from 'lucide-react';
 import SearchBox from './SearchBox';
 import WeeklyProgressChart from './WeeklyProgressChart';
-import {
-  dashboardView, summaryTiles, describeFilter,
-} from '../services/miniPlanDashboard';
+import { dashboardView, describeFilter } from '../services/miniPlanDashboard';
 import {
   STATUS_STYLE, ROW_STATE_STYLE, rowState, normalizeStatus, scheduleKey,
-  todayKey, WEEK_MODE, FOCUS, EMPTY_FILTER, completedKey, isCompletedDateInferred,
+  todayKey, WEEK_MODE, EMPTY_FILTER, completedKey, isCompletedDateInferred,
   needsPlanDate, NO_DATE_CELL,
 } from '../services/miniPlan';
 import {
@@ -39,14 +37,6 @@ import {
  * the share link useless to the people it is sent to.
  */
 
-const TONE = {
-  slate:   { box: 'bg-slate-50 border-slate-200 hover:border-slate-400',     text: 'text-slate-900',   on: 'ring-slate-500 bg-slate-100' },
-  emerald: { box: 'bg-emerald-50 border-emerald-200 hover:border-emerald-400', text: 'text-emerald-700', on: 'ring-emerald-500 bg-emerald-100' },
-  sky:     { box: 'bg-sky-50 border-sky-200 hover:border-sky-400',           text: 'text-sky-700',     on: 'ring-sky-500 bg-sky-100' },
-  violet:  { box: 'bg-violet-50 border-violet-200 hover:border-violet-400',  text: 'text-violet-700',  on: 'ring-violet-500 bg-violet-100' },
-  teal:    { box: 'bg-teal-50 border-teal-200 hover:border-teal-400',        text: 'text-teal-700',    on: 'ring-teal-500 bg-teal-100' },
-  amber:   { box: 'bg-amber-50 border-amber-200 hover:border-amber-400',     text: 'text-amber-700',   on: 'ring-amber-500 bg-amber-100' },
-};
 
 function fmtDate(key) {
   const k = scheduleKey(key);
@@ -68,16 +58,9 @@ export default function MiniPlanDashboard({
   const [busy, setBusy] = useState('');
   const today = todayKey();
   const view = dashboardView(items, filter, today);
-  const { stats, equipmentRows, previewRows, range } = view;
-  const tiles = summaryTiles(view);
+  const { equipmentRows, previewRows, range } = view;
 
   const setFilter = (patch) => onFilterChange({ ...view.filter, ...patch });
-
-  /** A tile is a toggle: clicking the selected one puts the list back. */
-  const clickTile = (tile) => {
-    if (tile.key === 'equipment') { setFilter({ equipment: '', focus: FOCUS.ALL }); return; }
-    setFilter({ focus: view.filter.focus === tile.focus ? FOCUS.ALL : tile.focus });
-  };
 
   const clickEquipment = (row) => {
     setFilter({ equipment: view.filter.equipment === row.key ? '' : row.key });
@@ -218,40 +201,7 @@ export default function MiniPlanDashboard({
         </div>
       </div>
 
-      {/* The six figures. Each one is also a filter — the number and the rows
-          behind it are the same query, so a user can always get from a figure
-          to the work it counts. */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5 px-2 pt-2 pb-1">
-        {tiles.map((tile) => {
-          const tone = TONE[tile.tone] || TONE.slate;
-          const on = tile.key !== 'equipment' && tile.key !== 'total' && view.filter.focus === tile.focus;
-          const value = tile.signed && tile.value > 0 ? `+${tile.value}` : String(tile.value);
-          return (
-            <button
-              key={tile.key}
-              type="button"
-              onClick={() => clickTile(tile)}
-              title={tile.hint}
-              className={`text-left px-2 py-1 rounded-lg border transition-all ${tone.box} ${on ? `ring-2 ${tone.on}` : ''}`}
-            >
-              <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-500 leading-tight truncate">
-                {tile.label}
-              </p>
-              <p className={`text-[19px] font-extrabold tabular-nums leading-tight ${
-                tile.signed
-                  ? (tile.value < 0 ? 'text-rose-600' : tile.value > 0 ? 'text-emerald-600' : 'text-slate-700')
-                  : tone.text
-              }`}>
-                {value}
-              </p>
-            </button>
-          );
-        })}
-      </div>
-
       <div className="px-3 pb-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-slate-500">
-        <span><strong className="text-slate-700">{stats.percent}%</strong> of the activities in view are done</span>
-        <span className="text-slate-300">|</span>
         <span>{view.weekLabel}: {range.start} → {range.end}</span>
         <span className="text-slate-300">|</span>
         <span>Showing: <strong className="text-slate-700">{describeFilter(view)}</strong></span>
@@ -319,7 +269,7 @@ export default function MiniPlanDashboard({
         // The header row is sticky and the BODY scrolls: on a 500-row plan the
         // column titles have to stay on screen or the table is unreadable.
         <div className={`overflow-auto ${
-          isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-560px)] min-h-[220px]' : 'max-h-[calc(100vh-625px)] min-h-[220px]')
+          isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-500px)] min-h-[220px]' : 'max-h-[calc(100vh-565px)] min-h-[220px]')
         }`}>
           <table className="w-full min-w-[900px] text-left border-collapse">
             <thead>{previewHead}</thead>

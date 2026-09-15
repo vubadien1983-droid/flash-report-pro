@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Table2, Filter, X } from 'lucide-react';
+import { LayoutDashboard, Table2 } from 'lucide-react';
 import MiniPlanDashboard from './MiniPlanDashboard';
 import MiniPlanTable from './MiniPlanTable';
+import MiniPlanSummaryStrip from './MiniPlanSummaryStrip';
 import {
-  EMPTY_FILTER, isFilterActive, normalizeFilter, MINI_PLAN_LABEL,
+  EMPTY_FILTER, normalizeFilter, MINI_PLAN_LABEL,
 } from '../services/miniPlan';
 
 export const TAB_DASHBOARD = 'status';
@@ -84,7 +85,6 @@ export default function MiniPlanWorkspace({
     store(FILTER_KEY, JSON.stringify(normalizeFilter(next)));
   };
 
-  const active = isFilterActive(filter);
   const safeFilter = normalizeFilter(filter);
 
   const tabButton = (key, label, Icon) => {
@@ -93,7 +93,7 @@ export default function MiniPlanWorkspace({
       <button
         type="button"
         onClick={() => setTab(key)}
-        className={`inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-bold rounded-t-xl border-b-2 transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-bold rounded-t-xl border-b-2 transition-colors ${
           on
             ? 'bg-white text-brand-700 border-brand-600 shadow-2xs'
             : 'bg-slate-100/70 text-slate-600 border-transparent hover:bg-white hover:text-slate-900'
@@ -111,22 +111,16 @@ export default function MiniPlanWorkspace({
         {tabButton(TAB_DASHBOARD, 'Equipment installation status', LayoutDashboard)}
         {tabButton(TAB_MONITORING, 'Monitoring', Table2)}
 
-        {/* One filter, both tabs - so it is stated once, where switching tabs
-            cannot hide it. */}
-        {active && (
-          <span className="inline-flex items-center gap-1.5 ml-auto mb-1.5 px-2.5 py-1 text-[11.5px] font-bold text-violet-900 bg-violet-100 border border-violet-300 rounded-md">
-            <Filter className="w-3.5 h-3.5" />
-            Filter applies to both tabs
-            <button
-              type="button"
-              onClick={() => setFilter({ ...EMPTY_FILTER })}
-              title="Clear the filter"
-              className="ml-0.5 p-0.5 rounded hover:bg-violet-200"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </span>
-        )}
+        {/* The six figures sit HERE, not inside a tab: they describe the whole
+            job, both tabs are worked from them, and on the tab row they cost
+            one line instead of a band. The filter chip rides with them,
+            because every figure is also a filter over both tabs. */}
+        <MiniPlanSummaryStrip
+          items={items}
+          filter={safeFilter}
+          onFilterChange={setFilter}
+          className="ml-auto mb-1 justify-end"
+        />
       </div>
 
       {tab === TAB_DASHBOARD ? (
