@@ -280,10 +280,17 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
       }
 
       // Then fetch only the photo documents never seen before.
+      // NAME THIS ANYTHING BUT `missing`. It used to be called that, which
+      // re-declared the outer `missing` Set INSIDE this same block — so the
+      // `applyCache(..., missing)` call a few lines above sat in the temporal
+      // dead zone and threw "Cannot access 'missing' before initialization"
+      // on the very first snapshot, killing the share link (BUG-031). The two
+      // are different things: this is the fetch QUEUE, `missing` is the set of
+      // refs already read and known not to exist.
       const needed = collectRefs(items);
-      const missing = [...needed].filter((k) => !cache.has(k));
+      const toFetch = [...needed].filter((k) => !cache.has(k));
 
-      for (const key of missing) {
+      for (const key of toFetch) {
         if (stopped || gen !== generation) return;   // a newer snapshot took over
         try {
           const psnap = await withTimeout(

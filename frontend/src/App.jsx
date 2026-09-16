@@ -42,6 +42,7 @@ import {
   MINI_PLAN_TYPE, MINI_PLAN_LABEL, isMiniPlan,
   normalizeMiniPlanItems, makeMiniPlanRow, makeGroupId,
 } from './services/miniPlan';
+import { deletePhotoBytes, refOf } from './services/miniPlanLive';
 import { MINI_PLAN_SEED, MINI_PLAN_DEFAULT_TITLE } from './services/miniPlanSeed';
 import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
@@ -772,17 +773,28 @@ export default function App() {
    * same image (the same detail photographed for two activities), and matching
    * on the url would delete whichever came first.
    */
+  /** Delete the stored bytes of a photo that has just been removed. */
+  const dropPlanPhotoBytes = (item, photo) => {
+    const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
+    deletePhotoBytes(currentReport?.share_id || '', currentReport?.id || '', ref)
+      .catch((e) => console.warn('Photo bytes not removed:', e?.message));
+  };
+
   const handleDeletePhoto = (photo) => {
     if (!currentReport || !photo || planLocked) return;
     const items = currentReport.items || [];
     const item = items[photo.itemIndex];
     if (!item) return;
 
+    const gone = (item.photos || []).find((p, idx) =>
+      p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex
+    );
     const photos = (item.photos || []).filter((p, idx) =>
       !(p && (p.slot_index ?? idx) === photo.slotIndex && idx === photo.photoIndex)
     );
     const nextItems = items.map((it, i) => (i === photo.itemIndex ? { ...it, photos } : it));
     handleItemsChange(nextItems);
+    if (gone) dropPlanPhotoBytes(item, gone);
 
     // Keep the viewer on something sensible instead of a dangling index.
     const remaining = galleryPhotos.length - 1;
@@ -1575,6 +1587,7 @@ export default function App() {
                     items={normalizeMiniPlanItems(currentReport.items)}
                     onItemsChange={handleItemsChange}
                     onPhotoClick={openLightboxByUrl}
+                    onPhotoRemoved={dropPlanPhotoBytes}
                     isMobileMode={isPhoneView}
                     readOnly={planLocked}
                     onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}
