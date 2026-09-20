@@ -185,6 +185,27 @@ async function pushPhotoBytes(shareId, sourceReportId, items) {
  * push megabytes of base64 into a document that caps at 1 MiB and would fail
  * — or worse, partially succeed on a smaller plan and quietly bloat it.
  */
+/**
+ * Drop every undefined value, at any depth.
+ *
+ * Firestore rejects a WHOLE document that contains one undefined field, and
+ * the message names the document, not the field — so one stray key silently
+ * stops every save for that plan (BUG-041). This is the last gate before a
+ * write: whatever produced the value, it does not leave here.
+ */
+export function withoutUndefined(value) {
+  if (Array.isArray(value)) return value.map(withoutUndefined);
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v === undefined) continue;
+      out[k] = withoutUndefined(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function stripPhotosToRefs(items) {
   return (items || []).map((item, itemIdx) => {
     const itemId = item?.id || `item_${itemIdx}`;
@@ -367,7 +388,7 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
   // 2. Merge with whatever the cloud holds right now, instead of overwriting
   //    it. Another device may have saved between our last snapshot and this
   //    write; a plain write would erase that work (BUG-031).
-  let toWrite = stripPhotosToRefs(items);
+  let toWrite = withoutUndefined(stripPhotosToRefs(items));
   let mergeStats = null;
   let cloudItems = null;
   try {
@@ -380,7 +401,7 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
         toWrite,
         theirs,
       );
-      toWrite = merged.items;
+      toWrite = withoutUndefined(merged.items);
       mergeStats = merged.stats;
     }
   } catch (e) {

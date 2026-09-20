@@ -68,14 +68,29 @@ function mergePhotos(basePhotos, minePhotos, theirPhotos) {
 
 function mergeRow(base, mine, theirs, stats) {
   const out = { ...theirs, ...mine };                   // start from mine, keep unknown keys
+
+  /**
+   * Set a field, or REMOVE it when the winning side does not have one.
+   *
+   * `out[f] = undefined` looks harmless in JavaScript and is fatal in
+   * Firestore: setDoc refuses the whole document with "Unsupported field
+   * value: undefined", so a photo pasted through the link was never saved and
+   * the picture was lost with it (BUG-041). A row that never carried a field
+   * must come out of the merge still not carrying it.
+   */
+  const put = (f, v) => {
+    if (v === undefined) delete out[f];
+    else out[f] = v;
+  };
+
   FIELDS.forEach((f) => {
     const b = base ? base[f] : undefined;
     const m = mine[f];
     const t = theirs[f];
-    if (same(m, t)) { out[f] = m; return; }
-    if (base && same(m, b)) { out[f] = t; stats.fromTheirs += 1; return; }   // I did not touch it
-    if (base && same(t, b)) { out[f] = m; stats.fromMine += 1; return; }     // they did not touch it
-    out[f] = m;                                                             // both did: local wins
+    if (same(m, t)) { put(f, m); return; }
+    if (base && same(m, b)) { put(f, t); stats.fromTheirs += 1; return; }    // I did not touch it
+    if (base && same(t, b)) { put(f, m); stats.fromMine += 1; return; }      // they did not touch it
+    put(f, m);                                                              // both did: local wins
     stats.conflicts += 1;
   });
   out.photos = mergePhotos(base?.photos, mine.photos, theirs.photos);
