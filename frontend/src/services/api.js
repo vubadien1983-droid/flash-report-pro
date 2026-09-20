@@ -76,6 +76,29 @@ export function invalidatePhotoCache(reportId) {
   try { localStorage.removeItem(_hashKey(reportId)); } catch { /* ignore */ }
 }
 
+/**
+ * Record photos PROVEN to be in the cloud (they were just read back from it).
+ *
+ * Without this the app re-uploaded every picture in the plan on every save —
+ * "Uploading photo 14 of 94" for three new photos — which is what made saving
+ * crawl and the app stutter (BUG-042).
+ */
+export function rememberPhotoHashes(reportId, entries) {
+  if (!reportId || !entries || !Object.keys(entries).length) return;
+  const map = _readUploadedHashes(reportId);
+  Object.assign(map, entries);
+  _writeUploadedHashes(reportId, map);
+}
+
+/** Forget only the photos the cloud turned out NOT to have. */
+export function forgetPhotoHashes(reportId, keys) {
+  if (!reportId || !keys || !keys.length) return;
+  const map = _readUploadedHashes(reportId);
+  let changed = false;
+  for (const k of keys) if (k in map) { delete map[k]; changed = true; }
+  if (changed) _writeUploadedHashes(reportId, map);
+}
+
 function _emitUploadProgress(detail) {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('flashreport:upload-progress', { detail }));
@@ -639,6 +662,8 @@ async function _hydratePhotos(reportId, report) {
   }
 
   let missing = 0;
+  const proven = {};            // key -> fingerprint, straight from the cloud
+  const absent = [];            // keys the cloud does not have
 
   const items = report.items.map((item, itemIdx) => {
     if (!item.photos || item.photos.length === 0) return item;
@@ -651,7 +676,12 @@ async function _hydratePhotos(reportId, report) {
         if (!_isMissingImage(p.url)) return p; // already has real data
         const key = p.photo_ref || photoKey(itemId, p.slot_index ?? pIdx);
         const stored = byKey.get(key);
-        if (stored) return { ...p, url: stored.url };
+        if (stored) {
+          // Proof that these exact bytes are already stored: the next save
+          // must not send them again (BUG-042).
+          if (stored.url) proven[key] = photoFingerprint(stored.url);
+          return { ...p, url: stored.url };
+        }
 
         // The pointer resolved to nothing. Do NOT invent a url of any kind —
         // an earlier version wrote '' here, and callers then saved that over
@@ -672,10 +702,13 @@ async function _hydratePhotos(reportId, report) {
   // authoritative version of this report's photos.
   const incomplete = !hydrationOk || missing > 0;
 
-  // The cloud does not hold what this device believed it uploaded, so the
-  // fingerprint cache is wrong. Drop it: the next push re-sends everything
-  // rather than skipping a photo that is not actually there.
-  if (missing > 0) invalidatePhotoCache(reportId);
+  // Keep the cache HONEST rather than empty. Wiping it whole because one
+  // pointer was broken made every later save re-upload the entire plan
+  // (BUG-042); what is actually wrong is that one key.
+  if (hydrationOk) {
+    rememberPhotoHashes(reportId, proven);
+    forgetPhotoHashes(reportId, absent);
+  }
 
   return { ...report, items, _photosIncomplete: incomplete };
 }
