@@ -56,6 +56,10 @@ export default function MiniPlanDashboard({
   fullScreen = false,
 }) {
   const [busy, setBusy] = useState('');
+  // What the export buttons write: what the panel is showing, or the lot.
+  // Both are legitimate — a weekly meeting wants THIS WEEK, a monthly report
+  // wants the plan — and guessing wrong costs the user a re-export.
+  const [scope, setScope] = useState('view');   // 'view' | 'all'
   const today = todayKey();
   const view = dashboardView(items, filter, today);
   const { equipmentRows, previewRows, range } = view;
@@ -94,7 +98,10 @@ export default function MiniPlanDashboard({
     setBusy(kind);
     try {
       const fn = kind === 'excel' ? exportDashboardExcel : exportDashboardPdf;
-      await fn({ title, view });
+      // 'all' rebuilds the same view with no filter, so the file has the same
+      // shape either way — only the rows differ.
+      const target = scope === 'all' ? dashboardView(items, EMPTY_FILTER, today) : view;
+      await fn({ title, view: target });
     } catch (e) {
       console.error('Dashboard export failed:', e);
     } finally {
@@ -178,11 +185,33 @@ export default function MiniPlanDashboard({
         )}
 
         <div className="flex items-center gap-1.5 ml-auto">
+          {/* Export scope: shown next to the buttons it governs, so nobody has
+              to remember what the last export contained. */}
+          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden">
+            {[
+              ['view', 'Filtered', `Export what this panel shows now (${previewRows.length} rows)`],
+              ['all', 'Whole plan', 'Export every row of the plan, ignoring the filter'],
+            ].map(([key, label, hint]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setScope(key)}
+                title={hint}
+                className={`px-2 py-1 text-[11px] font-bold transition-colors ${
+                  scope === key
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => runExport('excel')}
             disabled={Boolean(busy)}
-            title="Export exactly what this panel shows"
+            title="Excel — uses the scope selected on the left"
             className="inline-flex items-center gap-1 px-2 py-1 text-[11.5px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg disabled:opacity-60"
           >
             {busy === 'excel' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
@@ -192,7 +221,7 @@ export default function MiniPlanDashboard({
             type="button"
             onClick={() => runExport('pdf')}
             disabled={Boolean(busy)}
-            title="Export exactly what this panel shows"
+            title="PDF — uses the scope selected on the left"
             className="inline-flex items-center gap-1 px-2 py-1 text-[11.5px] font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg disabled:opacity-60"
           >
             {busy === 'pdf' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
@@ -238,6 +267,7 @@ export default function MiniPlanDashboard({
       <th className="w-28 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Schedule</th>
       <th className="w-28 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Status</th>
       <th className="w-32 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Completed Date</th>
+      <th className="w-52 px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Note</th>
     </tr>
   );
 
@@ -271,7 +301,7 @@ export default function MiniPlanDashboard({
         <div className={`overflow-auto ${
           isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-500px)] min-h-[220px]' : 'max-h-[calc(100vh-565px)] min-h-[220px]')
         }`}>
-          <table className="w-full min-w-[900px] text-left border-collapse">
+          <table className="w-full min-w-[1050px] text-left border-collapse">
             <thead>{previewHead}</thead>
             <tbody>
               {previewRows.map((row) => {
@@ -317,6 +347,11 @@ export default function MiniPlanDashboard({
                       <span className={isCompletedDateInferred(row.item) ? 'text-slate-500 italic' : 'text-black'}>
                         {fmtDate(done) || '—'}
                       </span>
+                    </td>
+                    {/* The note written on the Monitoring tab, read-only here:
+                        the reason a row is where it is usually lives in it. */}
+                    <td className="px-2 py-1.5 text-[12px] text-black align-top leading-snug whitespace-pre-wrap break-words">
+                      {row.item.note || <span className="text-slate-300">—</span>}
                     </td>
                   </tr>
                 );

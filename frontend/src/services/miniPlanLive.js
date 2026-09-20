@@ -45,7 +45,7 @@ import {
 } from './firebase';
 import { withTimeout, yieldToBrowser } from './imageCompression';
 import { normalizeMiniPlanItems } from './miniPlan';
-import { mergeMiniPlanItems } from './miniPlanMerge';
+import { mergeMiniPlanItems, samePlan } from './miniPlanMerge';
 
 const READ_TIMEOUT_MS = 30_000;
 const WRITE_TIMEOUT_MS = 45_000;
@@ -61,7 +61,17 @@ const PHOTO_TIMEOUT_MS = 25_000;
  * viewer could look (BUG-030).
  */
 const localBytes = new Map();          // `${shareId}|${ref}` -> data URL
-const uploaded = new Set();            // `${shareId}|${ref}|${bytes}` already written
+const uploaded = new Set();            // `${shareId}|${ref}|${bytes}` written this session
+/**
+ * What the CLOUD already holds, `${shareId}|${ref}` -> byte length.
+ *
+ * Photos live as base64 in their own documents, so a photo READ BACK from the
+ * cloud arrives as a `data:` url — indistinguishable from one just pasted.
+ * Every save therefore re-uploaded EVERY picture in the plan: dozens of
+ * documents written for an edit that touched none of them, which is what made
+ * saving through the link crawl (BUG-040).
+ */
+const remoteBytes = new Map();
 
 export function rememberLocalPhoto(shareId, ref, url) {
   if (shareId && ref && url) localBytes.set(`${shareId}|${ref}`, url);
@@ -95,6 +105,7 @@ export async function deletePhotoBytes(shareId, sourceReportId, ref) {
   if (!isFirebaseConfigured || !ref) return { shared: false, source: false };
   const out = { shared: false, source: false };
   localBytes.delete(`${shareId}|${ref}`);
+  remoteBytes.delete(`${shareId}|${ref}`);
   for (const key of [...uploaded]) if (key.startsWith(`${shareId}|${ref}|`)) uploaded.delete(key);
 
   if (shareId) {
@@ -133,6 +144,8 @@ async function pushPhotoBytes(shareId, sourceReportId, items) {
 
       const stamp = `${shareId}|${ref}|${p.url.length}`;
       if (uploaded.has(stamp)) continue;
+      // Already in the cloud, byte for byte: nothing to write.
+      if (remoteBytes.get(`${shareId}|${ref}`) === p.url.length) continue;
 
       const row = {
         url: p.url,
@@ -145,6 +158,7 @@ async function pushPhotoBytes(shareId, sourceReportId, items) {
         await withTimeout(setDoc(sharedPhotoDoc(shareId, ref), row), PHOTO_TIMEOUT_MS, 'Saving photo');
         written += 1;
         uploaded.add(stamp);
+        remoteBytes.set(`${shareId}|${ref}`, p.url.length);
         if (sourceReportId) {
           // Best effort: the author's own copy. A failure here costs nobody
           // the picture — the shared copy already has it.
@@ -297,7 +311,12 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
             getDoc(sharedPhotoDoc(shareId, key)), READ_TIMEOUT_MS, 'Loading shared photo'
           );
           const url = psnap.exists() ? (psnap.data()?.url || '') : '';
-          if (url) { cache.set(key, url); missing.delete(key); }
+          if (url) {
+            cache.set(key, url);
+            missing.delete(key);
+            // These bytes are already stored: never send them back (BUG-040).
+            remoteBytes.set(`${shareId}|${key}`, url.length);
+          }
           else if (!localPhoto(shareId, key)) missing.add(key);
         } catch (e) {
           // Leave it uncached: the next snapshot retries, and until then the
@@ -350,10 +369,12 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
   //    write; a plain write would erase that work (BUG-031).
   let toWrite = stripPhotosToRefs(items);
   let mergeStats = null;
+  let cloudItems = null;
   try {
     const snap = await withTimeout(getDoc(sharedDoc(shareId)), READ_TIMEOUT_MS, 'Reading the shared plan');
     if (snap.exists()) {
       const theirs = normalizeMiniPlanItems(snap.data()?.items || []);
+      cloudItems = theirs;
       const merged = mergeMiniPlanItems(
         base ? stripPhotosToRefs(base) : theirs,   // no base: treat theirs as the base
         toWrite,
@@ -366,6 +387,12 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
     // If the read fails we still save. Writing our own copy is worse than a
     // merge and better than losing the edit.
     console.warn('Merge skipped, writing this device\'s copy:', e.message);
+  }
+
+  // Nothing to say? Then say nothing. Writing the same rows back costs the
+  // phone a full upload of the plan for no reason at all.
+  if (!photos.written && cloudItems && samePlan(cloudItems, toWrite)) {
+    return { shared: true, source: true, items: toWrite, photos, merge: mergeStats, skipped: true };
   }
 
   const updated_at = new Date().toISOString();

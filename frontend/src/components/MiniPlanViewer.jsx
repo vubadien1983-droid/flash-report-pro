@@ -225,6 +225,8 @@ export default function MiniPlanViewer({ shareId }) {
       if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
       clearBackup();
 
+      if (res.skipped) { showToast('Already up to date', 'success'); return; }
+
       const m = res.merge;
       const fromThem = m ? (m.fromTheirs + m.addedRemote) : 0;
       showToast(
@@ -278,7 +280,7 @@ export default function MiniPlanViewer({ shareId }) {
     // (BUG-004): typing an activity should not be one Firestore write per
     // keystroke.
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-    pushTimerRef.current = setTimeout(() => pushEdit(items), 1800);
+    pushTimerRef.current = setTimeout(() => pushEdit(items), 2500);
   };
 
   const flushNow = () => {

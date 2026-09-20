@@ -32,7 +32,7 @@ import {
 
 const COLS = {
   no: 6, equipment: 38, activities: 56, schedule: 13,
-  status: 13, completed: 14, state: 22,
+  status: 13, completed: 14, note: 30, state: 22,
 };
 
 function formatDate(iso) {
@@ -104,10 +104,10 @@ export async function exportDashboardExcel({ title, view }) {
   ws.columns = [
     { width: COLS.no }, { width: COLS.equipment }, { width: COLS.activities },
     { width: COLS.schedule }, { width: COLS.status }, { width: COLS.completed },
-    { width: COLS.state },
+    { width: COLS.note }, { width: COLS.state },
   ];
 
-  ws.mergeCells('A1:G1');
+  ws.mergeCells('A1:H1');
   const t = ws.getCell('A1');
   t.value = `${title || MINI_PLAN_LABEL} — data`;
   t.font = { name: FONT, size: 13, bold: true, color: { argb: INK.onDark.argb } };
@@ -115,7 +115,7 @@ export async function exportDashboardExcel({ title, view }) {
   t.fill = fill(PAPER.header.argb);
   ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:G2');
+  ws.mergeCells('A2:H2');
   const sub = ws.getCell('A2');
   sub.value = subtitle(view);
   sub.font = { name: FONT, size: 9, color: { argb: INK.secondary.argb } };
@@ -132,6 +132,7 @@ export async function exportDashboardExcel({ title, view }) {
       excelDate(scheduleKey(item.schedule)),
       normalizeStatus(item.status) || 'Not started',
       excelDate(doneOn),
+      item.note || '',
       reportState(item, today).label,
     ];
   });
@@ -148,9 +149,10 @@ export async function exportDashboardExcel({ title, view }) {
       { name: 'Schedule', filterButton: true },
       { name: 'Status', filterButton: true },
       { name: 'Completed Date', filterButton: true },
+      { name: 'Note', filterButton: true },
       { name: 'State', filterButton: true },
     ],
-    rows: tableRows.length ? tableRows : [['', '', 'No rows in this view', null, '', null, '']],
+    rows: tableRows.length ? tableRows : [['', '', 'No rows in this view', null, '', null, '', '']],
   });
 
   // Cell-level formatting on top of the table style: dates as dates, the
@@ -168,13 +170,13 @@ export async function exportDashboardExcel({ title, view }) {
       linesFor(row.equipment, COLS.equipment)
     ) * 12.5 + 3);
 
-    for (let c = 1; c <= 7; c++) {
+    for (let c = 1; c <= 8; c++) {
       const cell = ws.getCell(r, c);
       cell.font = bodyFont(9.5);
       cell.alignment = {
-        horizontal: c === 1 || c >= 4 ? 'center' : 'left',
+        horizontal: c === 1 || (c >= 4 && c !== 7) ? 'center' : 'left',
         vertical: 'middle',
-        wrapText: c === 2 || c === 3,
+        wrapText: c === 2 || c === 3 || c === 7,
         indent: c === 2 || c === 3 ? 1 : 0,
       };
       if (c === 4 || c === 6) cell.numFmt = 'd-mmm-yy';
@@ -189,7 +191,7 @@ export async function exportDashboardExcel({ title, view }) {
     // on screen it looks like any other future work. It is not future work,
     // it is work nobody has dated.
     const rs = reportState(item, today);
-    const stateCell = ws.getCell(r, 7);
+    const stateCell = ws.getCell(r, 8);
     stateCell.font = { name: FONT, size: 9, bold: true, color: { argb: rs.argb } };
     if (tint) stateCell.fill = fill(tint);
 
@@ -300,13 +302,14 @@ export async function exportDashboardPdf({ title, view }) {
       formatDate(item.schedule),
       normalizeStatus(item.status) || '',
       formatDate(completedKey(item)),
+      item.note || '',
     ]);
   }
 
   doc.autoTable({
     startY: tableTop,
     margin: { left: 24, right: 24, bottom: 30 },
-    head: [['No', 'Equipment', 'Activities', 'Schedule', 'Status', 'Completed']],
+    head: [['No', 'Equipment', 'Activities', 'Schedule', 'Status', 'Completed', 'Note']],
     body,
     theme: 'grid',
     rowPageBreak: 'avoid',
@@ -319,15 +322,18 @@ export async function exportDashboardPdf({ title, view }) {
       fillColor: [31, 58, 95], textColor: [255, 255, 255],
       fontStyle: 'bold', halign: 'center', fontSize: 7.5,
     },
-    // 24 + 130 + 197 + 54 + 52 + 54 = 511pt, inside the 547pt of printable
-    // width A4 portrait leaves after the 24pt margins.
+    // 24 + 112 + 150 + 54 + 52 + 54 + 80 = 526pt, inside the 547pt of
+    // printable width A4 portrait leaves after the 24pt margins. Equipment and
+    // Activities each gave up room for the Note, because a note is written to
+    // be read and truncating it would defeat carrying it at all.
     columnStyles: {
       0: { cellWidth: 24, halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: 130, fontStyle: 'bold' },
-      2: { cellWidth: 197 },
+      1: { cellWidth: 112, fontStyle: 'bold' },
+      2: { cellWidth: 150 },
       3: { cellWidth: 54, halign: 'center' },
       4: { cellWidth: 52, halign: 'center', fontStyle: 'bold' },
       5: { cellWidth: 54, halign: 'center' },
+      6: { cellWidth: 80 },
     },
     didParseCell: (data) => {
       if (data.section !== 'body') return;
