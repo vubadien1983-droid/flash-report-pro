@@ -46,7 +46,7 @@ export function dashboardView(items, filter = {}, today = todayKey()) {
 
   const stats = {
     equipment: 0, done: 0, total: 0, percent: 0,
-    planWeek: 0, doneWeek: 0, variance: 0,
+    planWeek: 0, doneWeek: 0, variance: 0, behind: 0,
   };
 
   for (const group of groups) {
@@ -76,8 +76,12 @@ export function dashboardView(items, filter = {}, today = todayKey()) {
 
         stats.total++;
         if (isDone) stats.done++;
-        if (inRange(scheduleKey(item.schedule), range)) stats.planWeek++;
-        if (inRange(completedKey(item), range)) stats.doneWeek++;
+        const plannedThisWeek = inRange(scheduleKey(item.schedule), range);
+        const doneThisWeek = inRange(completedKey(item), range);
+        if (plannedThisWeek) stats.planWeek++;
+        if (doneThisWeek) stats.doneWeek++;
+        // The tasks the VAR figure stands for, counted one by one.
+        if (plannedThisWeek && !isDone) stats.behind++;
       }
 
       const listable = miniActivityHasContent(item)
@@ -109,9 +113,22 @@ export function dashboardView(items, filter = {}, today = todayKey()) {
   }
 
   stats.percent = stats.total ? Math.round((stats.done / stats.total) * 100) : 0;
-  // Variance = delivered − planned, for the week in view. Negative means the
-  // week is behind its own plan, which is the number a site meeting asks for.
-  stats.variance = stats.doneWeek - stats.planWeek;
+  /**
+   * VAR is the work of THIS WEEK'S PLAN that the week did not deliver.
+   *
+   * It used to be `doneWeek - planWeek`, and that number counts two different
+   * populations: a task finished this week may have been planned for another
+   * week entirely. The figure said -7 while clicking it produced 27 rows —
+   * both correct, about different things, which makes the tile useless
+   * (BUG-043). A figure on this panel must be the SIZE OF THE LIST it opens.
+   *
+   * So VAR = -(scheduled in the week and NOT Done): click it and you get
+   * exactly those rows. A task finished early is delivered, and a task from
+   * another week that is merely under way is not this week's variance — both
+   * stay out. Plan against delivery is still readable next to it, in the PLAN
+   * WK and DONE WK tiles.
+   */
+  stats.variance = -stats.behind;
 
   return {
     filter: f,
@@ -142,7 +159,7 @@ export function summaryTiles(view) {
     { key: 'total',     label: 'Total tasks',      value: stats.total,     focus: FOCUS.ALL,       tone: 'sky',     hint: 'All planned activities in view' },
     { key: 'planWeek',  label: `Plan ${wk}`,       value: stats.planWeek,  focus: FOCUS.PLAN_WEEK, tone: 'violet',  hint: `Scheduled ${view.range.start} to ${view.range.end}` },
     { key: 'doneWeek',  label: `Done ${wk}`,       value: stats.doneWeek,  focus: FOCUS.DONE_WEEK, tone: 'teal',    hint: `Completed ${view.range.start} to ${view.range.end}` },
-    { key: 'variance',  label: 'Var',              value: stats.variance,  focus: FOCUS.VAR,       tone: 'amber',   hint: 'Done minus Plan for that week — click for the tasks that slipped', signed: true },
+    { key: 'variance',  label: 'Var',              value: stats.variance,  focus: FOCUS.VAR,       tone: 'amber',   hint: "Tasks planned in that week that the week did not finish — click for exactly those rows", signed: true },
   ];
 }
 

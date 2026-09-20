@@ -70,6 +70,7 @@ const STATE_ORDER = [
 export function overviewFigures(rows, { today = todayKey(), range = null } = {}) {
   const counts = { done: 0, today: 0, overdue: 0, missed: 0, unplanned: 0, none: 0 };
   let planWeek = 0;
+  let behind = 0;
   let doneWeek = 0;
 
   for (const item of rows || []) {
@@ -82,8 +83,11 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
     else counts.none++;
 
     if (range) {
-      if (inRange(scheduleKey(item.schedule), range)) planWeek++;
-      if (inRange(completedKey(item), range)) doneWeek++;
+      const plannedThisWeek = inRange(scheduleKey(item.schedule), range);
+      const doneThisWeek = inRange(completedKey(item), range);
+      if (plannedThisWeek) planWeek++;
+      if (doneThisWeek) doneWeek++;
+      if (plannedThisWeek && normalizeStatus(item.status) !== STATUS_DONE) behind++;
     }
   }
 
@@ -97,7 +101,10 @@ export function overviewFigures(rows, { today = todayKey(), range = null } = {})
     percent: total ? Math.round((counts.done / total) * 100) : 0,
     planWeek,
     doneWeek,
-    variance: doneWeek - planWeek,
+    behind,
+    // Same definition as the dashboard tile: the work of this week's plan the
+    // week did not deliver, so the figure equals the list behind it (BUG-043).
+    variance: -behind,
     overdueAll: counts.overdue + counts.missed,
   };
 }
@@ -161,7 +168,7 @@ export function writeOverviewSheet(wb, {
     ['Unplanned', f.unplanned],
     [`Plan ${weekLabel.toLowerCase()}`, f.planWeek],
     [`Done ${weekLabel.toLowerCase()}`, f.doneWeek],
-    ['Var (Done - Plan)', f.variance > 0 ? `+${f.variance}` : String(f.variance)],
+    ['Var (plan not met)', f.variance > 0 ? `+${f.variance}` : String(f.variance)],
   ];
 
   ws.getRow(4).height = 15;

@@ -689,11 +689,12 @@ export function itemInFocus(item, filter, today = todayKey()) {
     case FOCUS.OPEN:      return status !== STATUS_DONE;
     case FOCUS.PLAN_WEEK: return inRange(scheduleKey(item?.schedule), range);
     case FOCUS.DONE_WEEK: return inRange(completedKey(item), range);
-    // The variance IS the gap: planned inside the week and not completed
-    // inside it. Clicking Var should hand the user the work that slipped,
-    // not a number they then have to find by eye.
+    // VAR is the week's OWN plan that is still not finished: scheduled inside
+    // the week and not Done. Work that was finished early, and work started
+    // early that belongs to another week, is not this week's variance — it is
+    // either delivered or not this week's business.
     case FOCUS.VAR:
-      return inRange(scheduleKey(item?.schedule), range) && !inRange(completedKey(item), range);
+      return inRange(scheduleKey(item?.schedule), range) && status !== STATUS_DONE;
     default: return true;
   }
 }
