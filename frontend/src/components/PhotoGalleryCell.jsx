@@ -239,7 +239,7 @@ export default function PhotoGalleryCell({
           <input
             ref={galleryInputRef}
             type="file"
-            accept="image/*"
+            accept={onAttachFile ? undefined : "image/*"}
             multiple
             onChange={(e) => addFiles(e.target.files)}
             className="hidden"
@@ -248,7 +248,7 @@ export default function PhotoGalleryCell({
             <input
               ref={cameraInputRef}
               type="file"
-              accept={onAttachFile ? undefined : "image/*"}
+              accept="image/*"
               capture="environment"
               onChange={(e) => addFiles(e.target.files)}
               className="hidden"
@@ -362,7 +362,7 @@ export default function PhotoGalleryCell({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); galleryInputRef.current?.click(); }}
-              title="Add photos (you can pick several at once)"
+              title={onAttachFile ? "Add photos or files (PDF, Word, Excel…) — several at once" : "Add photos (you can pick several at once)"}
               className="flex-1 w-full flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-500 hover:bg-brand-50 text-slate-500 hover:text-brand-700 transition-colors"
             >
               <ImagePlus className="w-4 h-4" />
@@ -401,7 +401,7 @@ export default function PhotoGalleryCell({
           {isSelected ? (
             <span className="font-bold text-brand-600">Ctrl + V to paste here</span>
           ) : (
-            <span>Click cell, then Ctrl+V - or drop / pick several images</span>
+            <span>Click cell, then Ctrl+V - or drop / pick {onAttachFile ? 'images and files' : 'several images'}</span>
           )}
         </div>
       )}
