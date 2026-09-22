@@ -55,6 +55,7 @@ export default function MiniPlanViewer({ shareId }) {
   const [stalled, setStalled] = useState('');  // why nothing arrived, if nothing did
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [lightboxList, setLightboxList] = useState(null);   // the clicked ROW
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   const [viewMode, setViewMode] = useState('auto');
@@ -389,7 +390,11 @@ export default function MiniPlanViewer({ shareId }) {
   const openAttachmentFromLink = async (photo) => {
     if (!photo?.file_ref) return;
     try {
-      const got = await getAttachmentBlob('shared', shareId, photo.file_ref);
+      let got = await getAttachmentBlob('shared', shareId, photo.file_ref);
+      // A file attached from the app may not have reached the shared copy yet.
+      if (!got && report?.source_report_id) {
+        got = await getAttachmentBlob('report', report.source_report_id, photo.file_ref);
+      }
       if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
       openBlob(got.blob, got.meta.filename);
     } catch (e) {
@@ -413,6 +418,20 @@ export default function MiniPlanViewer({ shareId }) {
     if (gone) dropPhotoBytes(item, gone);
     setLightboxIndex(null);
     showToast('Photo deleted', 'success');
+  };
+
+  /** Open the viewer on the clicked row: its pictures AND its files, nothing else. */
+  const openRowLightbox = (entry, rowEntries, itemIndex) => {
+    const list = (rowEntries || []).filter(Boolean).map((p, i) => ({
+      ...p,
+      itemIndex,
+      photoIndex: i,
+      slotIndex: p.slot_index ?? i,
+    }));
+    if (!list.length) return;
+    const at = list.findIndex((p) => (entry?.id ? p.id === entry.id : p.url === entry?.url));
+    setLightboxList(list);
+    setLightboxIndex(at < 0 ? 0 : at);
   };
 
   const openLightbox = (url) => {
@@ -652,12 +671,13 @@ export default function MiniPlanViewer({ shareId }) {
 
       <ImageModal
         isOpen={lightboxIndex !== null}
-        photos={galleryPhotos}
+        photos={lightboxList || galleryPhotos}
         index={lightboxIndex ?? 0}
         onIndexChange={setLightboxIndex}
         title={report.title}
-        onClose={() => setLightboxIndex(null)}
+        onClose={() => { setLightboxIndex(null); setLightboxList(null); }}
         onDelete={unlocked ? deletePhoto : undefined}
+        onOpenAttachment={openAttachmentFromLink}
       />
 
       <Toast

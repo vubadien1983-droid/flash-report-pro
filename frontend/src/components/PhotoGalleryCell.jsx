@@ -29,7 +29,7 @@ import { nextPhotoSlot } from '../services/miniPlan';
 export default function PhotoGalleryCell({
   photos = [],
   onPhotosChange,      // (nextPhotosArray) => void
-  onPhotoClick,        // (url) => void  - opens the lightbox
+  onPhotoClick,        // (entry, rowEntries) => void - opens the viewer on THIS row
   isSelected = false,
   onSelectSlot,
   readOnly = false,
@@ -268,8 +268,14 @@ export default function PhotoGalleryCell({
                  and on the share link and in the exported report. */
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenAttachment?.(p); }}
-                title={`${p.filename || 'file'}${p.size ? ` — ${Math.round(p.size / 1024)} KB` : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // A file opens; a picture opens the viewer. Same click, the
+                  // thing the user asked for either way.
+                  if (onOpenAttachment) onOpenAttachment(p);
+                  else onPhotoClick?.(p, list);
+                }}
+                title={`Open ${p.filename || 'file'}${p.size ? ` — ${Math.round(p.size / 1024)} KB` : ''}`}
                 className="w-full h-full flex flex-col items-center justify-center gap-0.5 px-1 bg-sky-50 hover:bg-sky-100 text-sky-700"
               >
                 <Paperclip className="w-4 h-4" />
@@ -281,7 +287,7 @@ export default function PhotoGalleryCell({
               <img
                 src={p.url}
                 alt={p.filename || `Photo ${i + 1}`}
-                onClick={(e) => { e.stopPropagation(); if (onPhotoClick) onPhotoClick(p.url); }}
+                onClick={(e) => { e.stopPropagation(); onPhotoClick?.(p, list); }}
                 className="w-full h-full object-cover cursor-zoom-in"
               />
             ) : p.photo_missing ? (
@@ -347,7 +353,7 @@ export default function PhotoGalleryCell({
 
             {!isMobileView && (
               <div
-                onClick={(e) => { e.stopPropagation(); if (onPhotoClick) onPhotoClick(p.url); }}
+                onClick={(e) => { e.stopPropagation(); onPhotoClick?.(p, list); }}
                 className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center cursor-zoom-in"
               >
                 <ZoomIn className="w-4 h-4 text-white" />

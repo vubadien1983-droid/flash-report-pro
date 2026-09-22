@@ -620,7 +620,7 @@ export default function MiniPlanTable({
                         <PhotoGalleryCell
                           photos={item.photos}
                           onPhotosChange={(ph) => setPhotos(index, ph)}
-                          onPhotoClick={onPhotoClick}
+                          onPhotoClick={(entry, rowList) => onPhotoClick?.(entry, rowList, index)}
                           onPhotoRemoved={(photo) => onPhotoRemoved?.(item, photo)}
                           onAttachFile={onAttachFile ? (file, slot) => onAttachFile(item, index, file, slot) : undefined}
                           onOpenAttachment={onOpenAttachment}
@@ -866,7 +866,7 @@ export default function MiniPlanTable({
                       <PhotoGalleryCell
                         photos={item.photos}
                         onPhotosChange={(ph) => setPhotos(index, ph)}
-                        onPhotoClick={onPhotoClick}
+                        onPhotoClick={(entry, rowList) => onPhotoClick?.(entry, rowList, index)}
                         onPhotoRemoved={(photo) => onPhotoRemoved?.(item, photo)}
                         onAttachFile={onAttachFile ? (file, slot) => onAttachFile(item, index, file, slot) : undefined}
                         onOpenAttachment={onOpenAttachment}

@@ -831,6 +831,25 @@ export default function App() {
     showToast('Photo deleted', 'success');
   };
 
+  /**
+   * Open the viewer on the row that was clicked, and on nothing else.
+   *
+   * Sliding used to run through every picture in the plan — hundreds of them —
+   * when what the user wanted was the two or three attached to THIS activity.
+   * Files slide with the pictures: a slot holds either.
+   */
+  const openPlanLightbox = (entry, rowEntries, itemIndex) => {
+    const list = (rowEntries || []).filter(Boolean).map((p, i) => ({
+      ...p,
+      itemIndex,
+      photoIndex: i,
+      slotIndex: p.slot_index ?? i,
+    }));
+    if (!list.length) return;
+    const at = list.findIndex((p) => (entry?.id ? p.id === entry.id : p.url === entry?.url));
+    setImageModalState({ isOpen: true, index: at < 0 ? 0 : at, photos: list });
+  };
+
   const openLightboxByUrl = (url) => {
     const idx = galleryPhotos.findIndex((g) => g.url === url);
     setImageModalState({ isOpen: true, index: idx >= 0 ? idx : 0 });
@@ -869,7 +888,11 @@ export default function App() {
     if (!photo?.file_ref || !currentReport) return;
     showToast(`Opening ${photo.filename || 'file'}…`, 'info');
     try {
-      const got = await getAttachmentBlob('report', currentReport.id, photo.file_ref);
+      // Look in BOTH copies: a file attached through the share link lands in
+      // the shared one first, and a file attached here is copied there.
+      let got = await getAttachmentBlob('report', currentReport.id, photo.file_ref);
+      const shareId = currentReport.share_id || currentReport.cloud_code || '';
+      if (!got && shareId) got = await getAttachmentBlob('shared', shareId, photo.file_ref);
       if (!got) {
         showToast('That file is not fully uploaded yet — try again in a moment.', 'error');
         return;
@@ -1614,7 +1637,7 @@ export default function App() {
                   <MiniPlanWorkspace
                     items={normalizeMiniPlanItems(currentReport.items)}
                     onItemsChange={handleItemsChange}
-                    onPhotoClick={openLightboxByUrl}
+                    onPhotoClick={openPlanLightbox}
                     onPhotoRemoved={dropPlanPhotoBytes}
                     onAttachFile={handlePlanAttach}
                     onOpenAttachment={handleOpenAttachment}
@@ -1691,12 +1714,13 @@ export default function App() {
       {/* Image Lightbox Modal */}
       <ImageModal
         isOpen={imageModalState.isOpen}
-        photos={galleryPhotos}
+        photos={imageModalState.photos || galleryPhotos}
         index={imageModalState.index}
         onIndexChange={(i) => setImageModalState((st) => ({ ...st, index: i }))}
         title={currentReport?.title}
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
         onDelete={planLocked ? undefined : handleDeletePhoto}
+        onOpenAttachment={handleOpenAttachment}
       />
 
       {/* Share Modal.

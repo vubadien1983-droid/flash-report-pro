@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { X, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Trash2 } from 'lucide-react';
+import { X, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Trash2, Paperclip } from 'lucide-react';
 
 /**
  * Full-screen photo lightbox with gallery navigation.
@@ -24,6 +24,7 @@ export default function ImageModal({
   title,
   onClose,
   onDelete,          // (photo) => void — only passed when the plan is unlocked
+  onOpenAttachment,  // (photo) => void — for entries that are files, not images
 }) {
   const list = Array.isArray(photos) && photos.length
     ? photos
@@ -40,6 +41,8 @@ export default function ImageModal({
 
   const current = list[localIndex] || list[0] || null;
   const count = list.length;
+  /** A slot can hold a document instead of a picture; it slides with the rest. */
+  const isFile = Boolean(current && !current.url && (current.kind === 'file' || current.file_ref));
 
   const go = useCallback((delta) => {
     if (count < 2) return;
@@ -103,24 +106,37 @@ export default function ImageModal({
           )}
         </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setZoomed((z) => !z)}
-            title={zoomed ? 'Fit to screen' : 'Zoom in'}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-          >
-            {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
-          </button>
-          <a
-            href={current.url}
-            download={current.filename || 'photo.jpg'}
-            target="_blank"
-            rel="noreferrer"
-            title="Download"
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-          >
-            <Download className="w-5 h-5" />
-          </a>
+          {!isFile && (
+            <button
+              type="button"
+              onClick={() => setZoomed((z) => !z)}
+              title={zoomed ? 'Fit to screen' : 'Zoom in'}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              {zoomed ? <ZoomOut className="w-5 h-5" /> : <ZoomIn className="w-5 h-5" />}
+            </button>
+          )}
+          {isFile ? (
+            <button
+              type="button"
+              onClick={() => onOpenAttachment?.(current)}
+              title="Open this file"
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+          ) : (
+            <a
+              href={current.url}
+              download={current.filename || 'photo.jpg'}
+              target="_blank"
+              rel="noreferrer"
+              title="Download"
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <Download className="w-5 h-5" />
+            </a>
+          )}
           {/* Deleting the photo you are LOOKING AT is the only way to be sure
               you deleted the right one — which is the whole point when the
               wrong image has just been pasted into a cell. Two steps, because
@@ -177,8 +193,31 @@ export default function ImageModal({
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
+        {isFile ? (
+          <div className="flex flex-col items-center gap-4 text-center px-6">
+            <div className="w-24 h-24 rounded-2xl bg-white/10 flex items-center justify-center">
+              <Paperclip className="w-10 h-10 text-sky-300" />
+            </div>
+            <div>
+              <p className="text-white text-base font-bold break-all max-w-[80vw]">{current.filename || 'file'}</p>
+              {current.size ? (
+                <p className="text-white/60 text-xs mt-1">{Math.round(current.size / 1024)} KB</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenAttachment?.(current)}
+              className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-bold"
+            >
+              Open file
+            </button>
+            <p className="text-white/40 text-[11px] max-w-xs">
+              Opens in a new tab, or downloads when the browser cannot display it.
+            </p>
+          </div>
+        ) : (
         <img
-          key={current.url.slice(0, 64) + localIndex}
+          key={String(current.url).slice(0, 64) + localIndex}
           src={current.url}
           alt={label}
           onClick={(e) => { e.stopPropagation(); setZoomed((z) => !z); }}
@@ -188,6 +227,7 @@ export default function ImageModal({
               : 'max-h-full max-w-full w-auto h-auto object-contain cursor-zoom-in'
           }
         />
+        )}
 
         {count > 1 && (
           <>
@@ -226,7 +266,13 @@ export default function ImageModal({
                 i === localIndex ? 'border-sky-400 opacity-100' : 'border-transparent opacity-50 hover:opacity-90'
               }`}
             >
-              <img src={p.url} alt="" className="w-full h-full object-cover" />
+              {p.url ? (
+                <img src={p.url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="w-full h-full flex items-center justify-center bg-slate-800 text-sky-300">
+                  <Paperclip className="w-4 h-4" />
+                </span>
+              )}
             </button>
           ))}
         </div>
