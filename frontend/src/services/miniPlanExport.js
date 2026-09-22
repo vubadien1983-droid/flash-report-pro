@@ -22,7 +22,8 @@ import {
   completedKey, miniActivityHasContent, weekRange, needsPlanDate, NO_DATE_CELL,
 } from './miniPlan';
 import { writeOverviewSheet } from './miniPlanReportSheets';
-import { INK, PAPER } from './excelTheme';
+import { INK, PAPER, FONT } from './excelTheme';
+import { attachmentUrl } from './fileAttachments';
 
 // --- Column geometry, shared by both exporters --------------------
 // Excel width units. colWidthToPx() is the ONLY conversion to pixels; the
@@ -295,6 +296,25 @@ export async function exportMiniPlanExcel(report) {
         } else if (rowFill) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowFill } };
         }
+      }
+
+      // Attached documents: their NAME goes in the Photo cell as a link the
+      // recipient can click. The bytes live in the shared copy, which is what
+      // the public file page reads, so the link works for anyone holding the
+      // report — no sign-in, no app.
+      const files = (item.photos || []).filter((p) => p && p.kind === 'file' && p.file_ref);
+      if (files.length) {
+        const cell = ws.getCell(excelRow, PHOTO_COL_INDEX + 1);
+        const names = files.map((f) => f.filename || 'file').join('\n');
+        const shareId = report?.share_id || report?.cloud_code || '';
+        if (shareId) {
+          cell.value = { text: names, hyperlink: attachmentUrl(shareId, files[0].file_ref) };
+          cell.font = { name: FONT, size: 9, underline: true, color: { argb: 'FF0563C1' } };
+        } else {
+          cell.value = names;
+          cell.font = { name: FONT, size: 9, color: { argb: INK.secondary.argb } };
+        }
+        cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true, indent: 1 };
       }
 
       // Tile the photos inside the single Photo cell.

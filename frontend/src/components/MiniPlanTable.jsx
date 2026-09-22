@@ -58,6 +58,8 @@ export default function MiniPlanTable({
   onItemsChange,
   onPhotoClick,
   onPhotoRemoved,
+  onAttachFile,
+  onOpenAttachment,
   isMobileMode = false,
   readOnly = false,
   onRequestUnlock,
@@ -620,6 +622,10 @@ export default function MiniPlanTable({
                           onPhotosChange={(ph) => setPhotos(index, ph)}
                           onPhotoClick={onPhotoClick}
                           onPhotoRemoved={(photo) => onPhotoRemoved?.(item, photo)}
+                        onAttachFile={onAttachFile ? (file, slot) => onAttachFile(item, index, file, slot) : undefined}
+                        onOpenAttachment={onOpenAttachment}
+                          onAttachFile={onAttachFile ? (file, slot) => onAttachFile(item, index, file, slot) : undefined}
+                          onOpenAttachment={onOpenAttachment}
                           isSelected={selectedCell === index}
                           onSelectSlot={() => setSelectedCell(index)}
                           readOnly={readOnly}

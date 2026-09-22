@@ -20,6 +20,7 @@ import { compactReportPhotos } from './services/imageCompression';
 import { fileKey } from './services/firebase';
 import {
   putAttachment, getAttachmentBlob, deleteAttachment, openBlob, formatBytes,
+  copyAttachmentToShare,
   collectAttachments,
 } from './services/fileAttachments';
 import SyncStatusIndicator from './components/SyncStatusIndicator';
@@ -778,6 +779,33 @@ export default function App() {
     const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
     deletePhotoBytes(currentReport?.share_id || '', currentReport?.id || '', ref)
       .catch((e) => console.warn('Photo bytes not removed:', e?.message));
+  };
+
+  /**
+   * Attach a document to a Mini Plan row.
+   *
+   * Same storage as every other attachment in the project: the bytes go to the
+   * report AND, when the plan is shared, to the shared copy — which is what
+   * the public file page reads, so a recipient of the link or of the exported
+   * report opens the file by clicking its name.
+   */
+  const handlePlanAttach = async (item, itemIndex, file, slotIndex) => {
+    if (!currentReport || !file) return null;
+    const key = fileKey(item?.id || `item_${itemIndex}`, slotIndex);
+    try {
+      const descriptor = await putAttachment('report', currentReport.id, key, file);
+      const shareId = currentReport.share_id || currentReport.cloud_code || '';
+      if (shareId) {
+        try { await copyAttachmentToShare(currentReport.id, shareId, key); }
+        catch (e) { console.warn('File not copied to the share:', e.message); }
+      }
+      showToast(`Attached ${file.name} (${formatBytes(file.size)})`, 'success');
+      return { ...descriptor, id: `file_${Date.now()}_${slotIndex}` };
+    } catch (err) {
+      console.error('Attach failed:', err);
+      showToast(err.message || 'Could not attach that file', 'error');
+      return null;
+    }
   };
 
   const handleDeletePhoto = (photo) => {
@@ -1588,6 +1616,8 @@ export default function App() {
                     onItemsChange={handleItemsChange}
                     onPhotoClick={openLightboxByUrl}
                     onPhotoRemoved={dropPlanPhotoBytes}
+                    onAttachFile={handlePlanAttach}
+                    onOpenAttachment={handleOpenAttachment}
                     isMobileMode={isPhoneView}
                     readOnly={planLocked}
                     onRequestUnlock={() => setPasswordPrompt({ then: () => {} })}

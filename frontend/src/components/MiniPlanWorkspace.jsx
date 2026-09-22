@@ -70,6 +70,8 @@ export default function MiniPlanWorkspace({
   onItemsChange,
   onPhotoClick,
   onPhotoRemoved,
+  onAttachFile,
+  onOpenAttachment,
   isMobileMode = false,
   readOnly = false,
   onRequestUnlock,
@@ -144,6 +146,8 @@ export default function MiniPlanWorkspace({
           onItemsChange={onItemsChange}
           onPhotoClick={onPhotoClick}
           onPhotoRemoved={onPhotoRemoved}
+          onAttachFile={onAttachFile}
+          onOpenAttachment={onOpenAttachment}
           isMobileMode={isMobileMode}
           readOnly={readOnly}
           onRequestUnlock={onRequestUnlock}

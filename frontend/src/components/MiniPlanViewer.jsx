@@ -14,7 +14,8 @@ import {
   deletePhotoBytes, refOf,
 } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
-import { isFirebaseConfigured } from '../services/firebase';
+import { isFirebaseConfigured, fileKey } from '../services/firebase';
+import { putAttachment, getAttachmentBlob, openBlob, formatBytes } from '../services/fileAttachments';
 import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from '../services/miniPlanAuth';
@@ -358,6 +359,42 @@ export default function MiniPlanViewer({ shareId }) {
     const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
     deletePhotoBytes(shareId, report?.source_report_id, ref)
       .catch((e) => console.warn('Photo bytes not removed:', e?.message));
+  };
+
+  /**
+   * Attach a document from the SHARE LINK.
+   *
+   * The bytes go to the shared copy first — that is the one the public file
+   * page reads — and then, best effort, to the author's report so the app
+   * holds the same file. Whoever opens the link or the exported report clicks
+   * the file name and gets the file.
+   */
+  const attachFromLink = async (item, itemIndex, file, slotIndex) => {
+    if (!file) return null;
+    const key = fileKey(item?.id || `item_${itemIndex}`, slotIndex);
+    try {
+      const descriptor = await putAttachment('shared', shareId, key, file);
+      if (report?.source_report_id) {
+        try { await putAttachment('report', report.source_report_id, key, file); }
+        catch (e) { console.warn('File not copied to the report:', e.message); }
+      }
+      showToast(`Attached ${file.name} (${formatBytes(file.size)})`, 'success');
+      return { ...descriptor, id: `file_${Date.now()}_${slotIndex}` };
+    } catch (e) {
+      showToast(e.message || 'Could not attach that file', 'error');
+      return null;
+    }
+  };
+
+  const openAttachmentFromLink = async (photo) => {
+    if (!photo?.file_ref) return;
+    try {
+      const got = await getAttachmentBlob('shared', shareId, photo.file_ref);
+      if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
+      openBlob(got.blob, got.meta.filename);
+    } catch (e) {
+      showToast(`Could not open the file: ${e.message}`, 'error');
+    }
   };
 
   const deletePhoto = (photo) => {

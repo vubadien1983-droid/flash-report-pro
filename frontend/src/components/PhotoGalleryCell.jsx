@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Camera, ImagePlus, Trash2, ZoomIn, RefreshCw, Plus, ImageOff } from 'lucide-react';
+import { Camera, ImagePlus, Trash2, ZoomIn, RefreshCw, Plus, ImageOff, Paperclip } from 'lucide-react';
 import { compressForStorage, compressDataUrl, yieldToBrowser } from '../services/imageCompression';
 import { nextPhotoSlot } from '../services/miniPlan';
 
@@ -34,6 +34,8 @@ export default function PhotoGalleryCell({
   onSelectSlot,
   readOnly = false,
   onPhotoRemoved,
+  onAttachFile,        // async (file, slotIndex) => descriptor | null
+  onOpenAttachment,    // (photo) => void
   isMobileView = false,
   compact = false,
 }) {
@@ -49,15 +51,38 @@ export default function PhotoGalleryCell({
    * collection, so adding four photos to a cell that holds three leaves seven.
    */
   const addFiles = async (files) => {
-    const images = Array.from(files || []).filter(
-      (f) => f && (f.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(f.name || ''))
-    );
-    if (images.length === 0) return;
+    const all = Array.from(files || []).filter(Boolean);
+    const isImage = (f) => f.type?.startsWith('image/')
+      || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(f.name || '');
+    const images = all.filter(isImage);
+    // Anything that is not a picture — a PDF, a Word file, a certificate scan
+    // — is ATTACHED instead: stored whole, opened by name, and synced with
+    // the plan so the share link and the exported report can open it too.
+    const documents = onAttachFile ? all.filter((f) => !isImage(f)) : [];
+    if (images.length === 0 && documents.length === 0) return;
 
-    setBusy({ done: 0, total: images.length });
+    setBusy({ done: 0, total: images.length + documents.length });
     const added = [];
 
     try {
+      for (const [i, file] of documents.entries()) {
+        try {
+          const slot = nextPhotoSlot([...list, ...added]);
+          const descriptor = await onAttachFile(file, slot);
+          if (descriptor) {
+            added.push({
+              ...descriptor,
+              id: descriptor.id || `file_${Date.now()}_${i}`,
+              slot_index: slot,
+            });
+          }
+        } catch (err) {
+          console.error('Failed to attach file:', err);
+        }
+        setBusy((b) => (b ? { ...b, done: b.done + 1 } : b));
+        await yieldToBrowser();
+      }
+
       for (const [i, file] of images.entries()) {
         try {
           const url = await compressForStorage(file);
@@ -223,7 +248,7 @@ export default function PhotoGalleryCell({
             <input
               ref={cameraInputRef}
               type="file"
-              accept="image/*"
+              accept={onAttachFile ? undefined : "image/*"}
               capture="environment"
               onChange={(e) => addFiles(e.target.files)}
               className="hidden"
@@ -238,7 +263,21 @@ export default function PhotoGalleryCell({
             key={p.id || `${p.slot_index}_${i}`}
             className={`${thumbSize} relative group/thumb rounded-lg overflow-hidden border border-slate-200 bg-white shadow-2xs flex-shrink-0`}
           >
-            {p.url ? (
+            {p.kind === 'file' ? (
+              /* An attached document: its NAME is the thing to click, here
+                 and on the share link and in the exported report. */
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenAttachment?.(p); }}
+                title={`${p.filename || 'file'}${p.size ? ` — ${Math.round(p.size / 1024)} KB` : ''}`}
+                className="w-full h-full flex flex-col items-center justify-center gap-0.5 px-1 bg-sky-50 hover:bg-sky-100 text-sky-700"
+              >
+                <Paperclip className="w-4 h-4" />
+                <span className="text-[8px] font-bold leading-tight text-center break-all line-clamp-2">
+                  {p.filename || 'file'}
+                </span>
+              </button>
+            ) : p.url ? (
               <img
                 src={p.url}
                 alt={p.filename || `Photo ${i + 1}`}
