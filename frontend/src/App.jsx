@@ -884,15 +884,20 @@ export default function App() {
     }
   };
 
-  const handleOpenAttachment = async (photo) => {
-    if (!photo?.file_ref || !currentReport) return;
-    showToast(`Opening ${photo.filename || 'file'}…`, 'info');
+  const handleOpenAttachment = async (photo, item, itemIndex) => {
+    if (!currentReport) return;
+    // An older descriptor may carry no pointer; it can still be rebuilt from
+    // the row it sits in, which is how it was stored in the first place.
+    const ref = photo?.file_ref
+      || (item ? fileKey(item.id || `item_${itemIndex}`, photo?.slot_index ?? 0) : '');
+    if (!ref) { showToast('That attachment has no file reference.', 'error'); return; }
+    showToast(`Opening ${photo?.filename || 'file'}…`, 'info');
     try {
       // Look in BOTH copies: a file attached through the share link lands in
       // the shared one first, and a file attached here is copied there.
-      let got = await getAttachmentBlob('report', currentReport.id, photo.file_ref);
+      let got = await getAttachmentBlob('report', currentReport.id, ref);
       const shareId = currentReport.share_id || currentReport.cloud_code || '';
-      if (!got && shareId) got = await getAttachmentBlob('shared', shareId, photo.file_ref);
+      if (!got && shareId) got = await getAttachmentBlob('shared', shareId, ref);
       if (!got) {
         showToast('That file is not fully uploaded yet — try again in a moment.', 'error');
         return;

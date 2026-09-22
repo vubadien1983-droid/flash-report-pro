@@ -46,6 +46,25 @@ export default function PhotoGalleryCell({
 
   const list = Array.isArray(photos) ? photos.filter(Boolean) : [];
 
+  /** A slot holds either a picture or a document. */
+  const isFileEntry = (p) => Boolean(p && (p.kind === 'file' || (!p.url && p.file_ref)));
+
+  /**
+   * ONE way in. A document opens; a picture opens the viewer.
+   *
+   * This exists because the hover overlay used to sit on top of a document's
+   * chip and send the click to the picture viewer with no picture in it — so
+   * the file simply did not open, with no error either (BUG-044).
+   */
+  const openEntry = (p) => {
+    if (isFileEntry(p)) {
+      if (onOpenAttachment) onOpenAttachment(p);
+      else onPhotoClick?.(p, list);
+      return;
+    }
+    onPhotoClick?.(p, list);
+  };
+
   /**
    * THE single ingest point. Appends, never replaces - this cell is a
    * collection, so adding four photos to a cell that holds three leaves seven.
@@ -263,18 +282,12 @@ export default function PhotoGalleryCell({
             key={p.id || `${p.slot_index}_${i}`}
             className={`${thumbSize} relative group/thumb rounded-lg overflow-hidden border border-slate-200 bg-white shadow-2xs flex-shrink-0`}
           >
-            {p.kind === 'file' ? (
+            {isFileEntry(p) ? (
               /* An attached document: its NAME is the thing to click, here
                  and on the share link and in the exported report. */
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // A file opens; a picture opens the viewer. Same click, the
-                  // thing the user asked for either way.
-                  if (onOpenAttachment) onOpenAttachment(p);
-                  else onPhotoClick?.(p, list);
-                }}
+                onClick={(e) => { e.stopPropagation(); openEntry(p); }}
                 title={`Open ${p.filename || 'file'}${p.size ? ` — ${Math.round(p.size / 1024)} KB` : ''}`}
                 className="w-full h-full flex flex-col items-center justify-center gap-0.5 px-1 bg-sky-50 hover:bg-sky-100 text-sky-700"
               >
@@ -287,7 +300,7 @@ export default function PhotoGalleryCell({
               <img
                 src={p.url}
                 alt={p.filename || `Photo ${i + 1}`}
-                onClick={(e) => { e.stopPropagation(); onPhotoClick?.(p, list); }}
+                onClick={(e) => { e.stopPropagation(); openEntry(p); }}
                 className="w-full h-full object-cover cursor-zoom-in"
               />
             ) : p.photo_missing ? (
@@ -353,10 +366,15 @@ export default function PhotoGalleryCell({
 
             {!isMobileView && (
               <div
-                onClick={(e) => { e.stopPropagation(); onPhotoClick?.(p, list); }}
-                className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center cursor-zoom-in"
+                onClick={(e) => { e.stopPropagation(); openEntry(p); }}
+                title={isFileEntry(p) ? `Open ${p.filename || 'file'}` : 'View'}
+                className={`absolute inset-0 bg-slate-950/45 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center ${
+                  isFileEntry(p) ? 'cursor-pointer' : 'cursor-zoom-in'
+                }`}
               >
-                <ZoomIn className="w-4 h-4 text-white" />
+                {isFileEntry(p)
+                  ? <Paperclip className="w-4 h-4 text-white" />
+                  : <ZoomIn className="w-4 h-4 text-white" />}
               </div>
             )}
           </div>

@@ -387,13 +387,16 @@ export default function MiniPlanViewer({ shareId }) {
     }
   };
 
-  const openAttachmentFromLink = async (photo) => {
-    if (!photo?.file_ref) return;
+  const openAttachmentFromLink = async (photo, item, itemIndex) => {
+    const ref = photo?.file_ref
+      || (item ? fileKey(item.id || `item_${itemIndex}`, photo?.slot_index ?? 0) : '');
+    if (!ref) { showToast('That attachment has no file reference.', 'error'); return; }
+    showToast(`Opening ${photo?.filename || 'file'}…`, 'success');
     try {
-      let got = await getAttachmentBlob('shared', shareId, photo.file_ref);
+      let got = await getAttachmentBlob('shared', shareId, ref);
       // A file attached from the app may not have reached the shared copy yet.
       if (!got && report?.source_report_id) {
-        got = await getAttachmentBlob('report', report.source_report_id, photo.file_ref);
+        got = await getAttachmentBlob('report', report.source_report_id, ref);
       }
       if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
       openBlob(got.blob, got.meta.filename);
