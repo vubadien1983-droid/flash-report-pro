@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import MiniPlanWorkspace from './MiniPlanWorkspace';
 import ImageModal from './ImageModal';
+import FilePreviewModal from './FilePreviewModal';
 import PasswordModal from './PasswordModal';
 import Toast from './Toast';
 import { exportExcelClient, exportPdfClient } from '../services/clientExport';
@@ -56,6 +57,7 @@ export default function MiniPlanViewer({ shareId }) {
   const [copied, setCopied] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [lightboxList, setLightboxList] = useState(null);   // the clicked ROW
+  const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0 });
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   const [viewMode, setViewMode] = useState('auto');
@@ -399,7 +401,13 @@ export default function MiniPlanViewer({ shareId }) {
         got = await getAttachmentBlob('report', report.source_report_id, ref);
       }
       if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
-      openBlob(got.blob, got.meta.filename);
+      setFilePreview({
+        isOpen: true,
+        blob: got.blob,
+        filename: got.meta?.filename || photo?.filename || 'file',
+        mime: got.meta?.mime || got.blob.type || '',
+        size: got.meta?.size || got.blob.size || 0,
+      });
     } catch (e) {
       showToast(`Could not open the file: ${e.message}`, 'error');
     }
@@ -681,6 +689,15 @@ export default function MiniPlanViewer({ shareId }) {
         onClose={() => { setLightboxIndex(null); setLightboxList(null); }}
         onDelete={unlocked ? deletePhoto : undefined}
         onOpenAttachment={openAttachmentFromLink}
+      />
+
+      <FilePreviewModal
+        isOpen={filePreview.isOpen}
+        blob={filePreview.blob}
+        filename={filePreview.filename}
+        mime={filePreview.mime}
+        size={filePreview.size}
+        onClose={() => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0 })}
       />
 
       <Toast

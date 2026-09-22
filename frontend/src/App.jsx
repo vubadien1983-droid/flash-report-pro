@@ -10,6 +10,7 @@ import HeaderForm from './components/HeaderForm';
 import InspectionTable from './components/InspectionTable';
 import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
+import FilePreviewModal from './components/FilePreviewModal';
 import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
 import SharedViewRouter from './components/SharedViewRouter';
@@ -884,6 +885,8 @@ export default function App() {
     }
   };
 
+  const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0 });
+
   const handleOpenAttachment = async (photo, item, itemIndex) => {
     if (!currentReport) return;
     // An older descriptor may carry no pointer; it can still be rebuilt from
@@ -902,7 +905,15 @@ export default function App() {
         showToast('That file is not fully uploaded yet — try again in a moment.', 'error');
         return;
       }
-      openBlob(got.blob, got.meta.filename);
+      // Shown in the app, not written to disk. Downloading is a button the
+      // user presses, not a side effect of looking (BUG-045).
+      setFilePreview({
+        isOpen: true,
+        blob: got.blob,
+        filename: got.meta?.filename || photo?.filename || 'file',
+        mime: got.meta?.mime || got.blob.type || '',
+        size: got.meta?.size || got.blob.size || 0,
+      });
     } catch (err) {
       showToast(`Could not open the file: ${err.message}`, 'error');
     }
@@ -1726,6 +1737,15 @@ export default function App() {
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
         onDelete={planLocked ? undefined : handleDeletePhoto}
         onOpenAttachment={handleOpenAttachment}
+      />
+
+      <FilePreviewModal
+        isOpen={filePreview.isOpen}
+        blob={filePreview.blob}
+        filename={filePreview.filename}
+        mime={filePreview.mime}
+        size={filePreview.size}
+        onClose={() => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0 })}
       />
 
       {/* Share Modal.
