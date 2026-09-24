@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import {
   Plus, Search, FileSpreadsheet, Copy, Trash2, Calendar, Tag,
   Clock, CheckCircle2, ChevronRight, Layers, FileText, X, RefreshCw,
-  CalendarRange, ChevronDown
+  CalendarRange, ChevronDown, ClipboardList
 } from 'lucide-react';
 import { ReportSyncDot } from './SyncStatusIndicator';
 import { MINI_PLAN_TYPE, MINI_PLAN_LABEL } from '../services/miniPlan';
+import { OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL } from '../services/opsFindings';
 
 export default function Sidebar({
   reports,
@@ -122,6 +123,17 @@ export default function Sidebar({
                     <span className="block text-[10px] text-slate-400 leading-snug">Schedule · colour by status · many photos per row · live link</span>
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { startNew(OPS_FINDINGS_TYPE); }}
+                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-slate-700/80 transition-colors border-t border-slate-700/70"
+                >
+                  <ClipboardList className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <span>
+                    <span className="block text-xs font-bold text-white">{OPS_FINDINGS_LABEL}</span>
+                    <span className="block text-[10px] text-slate-400 leading-snug">Findings A–O · Open / On-going / Closed · import Excel · live read-only link</span>
+                  </span>
+                </button>
               </div>
             </>
           )}
@@ -214,6 +226,12 @@ export default function Sidebar({
 
                 {/* Sub info tags */}
                 <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                  {report.report_type === OPS_FINDINGS_TYPE && (
+                    <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-1">
+                      <ClipboardList className="w-2.5 h-2.5" />
+                      OPS Findings
+                    </span>
+                  )}
                   {report.report_type === MINI_PLAN_TYPE && (
                     <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded text-[9px] font-bold inline-flex items-center gap-1">
                       <CalendarRange className="w-2.5 h-2.5" />

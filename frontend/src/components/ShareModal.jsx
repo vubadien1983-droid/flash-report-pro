@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { exportStandaloneHtml } from '../services/htmlExporter';
 import { isMiniPlan, MINI_PLAN_LABEL } from '../services/miniPlan';
+import { isOpsFindings } from '../services/opsFindings';
 
 export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
   const [copied, setCopied] = useState(false);
@@ -47,6 +48,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
   // one the user is about to send, because the two promise different things to
   // whoever receives them.
   const plan = isMiniPlan(report);
+  const ops = isOpsFindings(report);
   const reportTitle = report?.title || (plan ? MINI_PLAN_LABEL : 'Flash Inspection Report');
 
   const handleCopy = async () => {
@@ -110,7 +112,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
         {/* Report Title Badge */}
         <div className="mb-4 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center gap-2">
           <span className="px-2 py-0.5 bg-brand-100 text-brand-700 text-[10px] font-bold rounded-md uppercase">
-            {plan ? 'Mini Plan' : 'Report'}
+            {plan ? 'Mini Plan' : ops ? 'OPS Findings' : 'Report'}
           </span>
           <span className="text-xs font-semibold text-slate-800 truncate">
             {reportTitle}
@@ -120,6 +122,14 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
         {/* What the recipient gets. Stated plainly so the sender knows what
             they are handing over — a live document, editable only with the
             project password. */}
+        {ops && (
+          <div className="mb-4 p-3 bg-emerald-50/70 border border-emerald-200/70 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
+            <strong className="font-bold">This link is live and read-only.</strong> Whoever opens it
+            sees the findings as last saved, and the page keeps updating as you save — no need to
+            resend it. They can search, filter and export Excel / PDF, but cannot change anything.
+          </div>
+        )}
+
         {plan && (
           <div className="mb-4 p-3 bg-emerald-50/70 border border-emerald-200/70 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
             <strong className="font-bold">This link is live.</strong> Whoever opens it sees the
@@ -191,7 +201,9 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
           </div>
         </div>
 
-        {/* Option 2: Download Standalone HTML Web Report */}
+        {/* Option 2: Download Standalone HTML Web Report (not for OPS Findings:
+            its link and its Excel / PDF are the formats that report offers). */}
+        {!ops && (
         <div className="mb-4 p-3 bg-brand-50/60 border border-brand-200/60 rounded-xl flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-bold text-brand-900 flex items-center gap-1.5">
@@ -211,6 +223,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
             Download HTML
           </button>
         </div>
+        )}
 
         {/* Bottom Actions */}
         <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">

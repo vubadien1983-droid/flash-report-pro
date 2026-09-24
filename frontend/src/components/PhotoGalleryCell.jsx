@@ -38,6 +38,11 @@ export default function PhotoGalleryCell({
   onOpenAttachment,    // (photo) => void
   isMobileView = false,
   compact = false,
+  // How the next slot number is chosen. The Mini Plan counts from 0; the OPS
+  // Findings report keeps its two photo columns apart by slot range, so it
+  // passes its own allocator (services/opsFindings.js nextSlotFor).
+  nextSlot = nextPhotoSlot,
+  emptyLabel = 'No photo',
 }) {
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -86,7 +91,7 @@ export default function PhotoGalleryCell({
     try {
       for (const [i, file] of documents.entries()) {
         try {
-          const slot = nextPhotoSlot([...list, ...added]);
+          const slot = nextSlot([...list, ...added]);
           const descriptor = await onAttachFile(file, slot);
           if (descriptor) {
             added.push({
@@ -111,7 +116,7 @@ export default function PhotoGalleryCell({
             url,
             // Slot indices are allocated once and never reused, so deleting a
             // photo cannot renumber the others and force a full re-upload.
-            slot_index: nextPhotoSlot([...list, ...added]),
+            slot_index: nextSlot([...list, ...added]),
           });
         } catch (err) {
           console.error('Failed to process image:', err);
@@ -138,7 +143,7 @@ export default function PhotoGalleryCell({
           id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           filename: filename || `paste_${Date.now()}.jpg`,
           url,
-          slot_index: nextPhotoSlot(list),
+          slot_index: nextSlot(list),
         },
       ]);
     } catch (err) {
@@ -407,7 +412,7 @@ export default function PhotoGalleryCell({
         )}
 
         {list.length === 0 && readOnly && (
-          <span className="text-[12px] text-slate-500 px-1 py-2">No photo</span>
+          <span className="text-[12px] text-slate-500 px-1 py-2">{emptyLabel}</span>
         )}
       </div>
 

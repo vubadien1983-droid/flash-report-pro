@@ -66,7 +66,38 @@ function mergePhotos(basePhotos, minePhotos, theirPhotos) {
     .map(([, v]) => v.photo);
 }
 
-function mergeRow(base, mine, theirs, stats) {
+/**
+ * Three-way photo merge (used by the OPS Findings report).
+ *
+ * `mergePhotos` above is a UNION: a slot present on any side survives. That
+ * means a photo deleted on this device comes straight back from the cloud copy
+ * on the next save. Here a slot that the base had and one side no longer has
+ * was DELETED by that side, and stays deleted; a slot neither base nor the
+ * other side knew about was ADDED, and is kept. When both sides hold the slot
+ * the copy carrying bytes wins, ties to this device.
+ */
+function mergePhotos3(basePhotos, minePhotos, theirPhotos) {
+  const bySlot = (list) => {
+    const m = new Map();
+    (list || []).forEach((p, i) => { if (p) m.set(p.slot_index ?? i, p); });
+    return m;
+  };
+  const b = bySlot(basePhotos);
+  const m = bySlot(minePhotos);
+  const t = bySlot(theirPhotos);
+  const slots = new Set([...m.keys(), ...t.keys()]);
+  const out = [];
+  for (const slot of slots) {
+    const pm = m.get(slot);
+    const pt = t.get(slot);
+    if (pm && pt) out.push([slot, (pt.url && !pm.url) ? pt : pm]);
+    else if (pm) { if (!b.has(slot)) out.push([slot, pm]); }        // they deleted it if base had it
+    else if (pt) { if (!b.has(slot)) out.push([slot, pt]); }        // I deleted it if base had it
+  }
+  return out.sort((x, y) => x[0] - y[0]).map(([, p]) => p);
+}
+
+function mergeRow(base, mine, theirs, stats, fields = FIELDS, threeWayPhotos = false) {
   const out = { ...theirs, ...mine };                   // start from mine, keep unknown keys
 
   /**
@@ -83,7 +114,7 @@ function mergeRow(base, mine, theirs, stats) {
     else out[f] = v;
   };
 
-  FIELDS.forEach((f) => {
+  fields.forEach((f) => {
     const b = base ? base[f] : undefined;
     const m = mine[f];
     const t = theirs[f];
@@ -93,7 +124,9 @@ function mergeRow(base, mine, theirs, stats) {
     put(f, m);                                                              // both did: local wins
     stats.conflicts += 1;
   });
-  out.photos = mergePhotos(base?.photos, mine.photos, theirs.photos);
+  out.photos = threeWayPhotos && base
+    ? mergePhotos3(base.photos, mine.photos, theirs.photos)
+    : mergePhotos(base?.photos, mine.photos, theirs.photos);
   return out;
 }
 
@@ -103,7 +136,12 @@ function mergeRow(base, mine, theirs, stats) {
  * @param {Array} theirs what the cloud holds now
  * @returns {{items:Array, stats:object}}
  */
-export function mergeMiniPlanItems(base, mine, theirs) {
+export function mergeMiniPlanItems(base, mine, theirs, opts = {}) {
+  // The OPS Findings report reuses this merge with its own field list and no
+  // equipment regrouping (its rows have no group_id).
+  const fields = Array.isArray(opts.fields) && opts.fields.length ? opts.fields : FIELDS;
+  const doRegroup = opts.regroup !== false;
+  const threeWay = opts.threeWayPhotos === true;
   const mineList = Array.isArray(mine) ? mine : [];
   const theirList = Array.isArray(theirs) ? theirs : [];
   if (!theirList.length) return { items: mineList, stats: empty('no remote rows') };
@@ -127,11 +165,11 @@ export function mergeMiniPlanItems(base, mine, theirs) {
     const mineRow = mineMap.get(key);
     const baseRow = baseMap.get(key);
 
-    if (mineRow) { out.push(mergeRow(baseRow, mineRow, theirRow, stats)); return; }
+    if (mineRow) { out.push(mergeRow(baseRow, mineRow, theirRow, stats, fields, threeWay)); return; }
     if (!baseRow) { out.push(theirRow); stats.addedRemote += 1; return; }   // they added it
 
     // I deleted it. Honour that only if they left it alone (rule 4).
-    const theyEdited = FIELDS.some((f) => !same(theirRow[f], baseRow[f]));
+    const theyEdited = fields.some((f) => !same(theirRow[f], baseRow[f]));
     if (theyEdited) { out.push(theirRow); stats.keptOverDelete += 1; }
     else stats.deleted += 1;
   });
@@ -146,14 +184,14 @@ export function mergeMiniPlanItems(base, mine, theirs) {
       stats.addedLocal += 1;
       return;
     }
-    const iEdited = FIELDS.some((f) => !same(mineRow[f], baseRow[f]));
+    const iEdited = fields.some((f) => !same(mineRow[f], baseRow[f]));
     if (iEdited) { out.push(mineRow); stats.keptOverDelete += 1; }          // rule 4
     else stats.deleted += 1;
   });
 
   // Keep each equipment's rows together: a row added on one device must not
   // land at the bottom of the plan, away from its own equipment.
-  return { items: regroup(out), stats };
+  return { items: doRegroup ? regroup(out) : out, stats };
 }
 
 function empty(note) {

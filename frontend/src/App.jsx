@@ -16,6 +16,7 @@ import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
 import SharedViewRouter from './components/SharedViewRouter';
 import MiniPlanWorkspace from './components/MiniPlanWorkspace';
+import OpsFindingsWorkspace from './components/OpsFindingsWorkspace';
 import PasswordModal from './components/PasswordModal';
 import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
@@ -51,6 +52,10 @@ import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from './services/miniPlanAuth';
 import { lockApp } from './services/appLock';
+import {
+  OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL, OPS_DEFAULT_SUBTITLE, OPS_DEFAULT_SECTION,
+  isOpsFindings, normalizeOpsItems, makeOpsFinding, todayKeyLocal,
+} from './services/opsFindings';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -135,6 +140,13 @@ export default function App() {
   // editing and ISSUING THE SHARE LINK sit behind it - handing somebody a live
   // link is as consequential as changing the plan, so it is gated the same way.
   const isPlanReport = isMiniPlan(currentReport);
+  // OPS Findings & Action Tracking — not password locked in the app; its
+  // share link is read-only instead.
+  const isOpsReport = isOpsFindings(currentReport);
+  // What the OPS table is showing right now (filter + rows), so an export
+  // follows the screen. A ref: it changes on every keystroke in the search box
+  // and nothing needs to re-render for it.
+  const opsViewRef = useRef(null);
   const planLocked = isPlanReport && !miniPlanUnlocked;
 
   /** Run `action` now, or after the password is accepted. */
@@ -828,9 +840,23 @@ export default function App() {
     if (gone) dropPlanPhotoBytes(item, gone);
 
     // Keep the viewer on something sensible instead of a dangling index.
-    const remaining = galleryPhotos.length - 1;
-    if (remaining <= 0) setImageModalState({ isOpen: false, index: 0 });
-    else setImageModalState((st) => ({ ...st, index: Math.min(st.index, remaining - 1) }));
+    // A viewer opened on ONE ROW (Mini Plan, OPS Findings) carries its own
+    // list: drop the deleted entry from it — otherwise the picture just
+    // deleted stays on screen — and shift the positions of the ones after it
+    // in the same row, since the row's photos array has just closed up.
+    setImageModalState((st) => {
+      if (Array.isArray(st.photos)) {
+        const rest = st.photos
+          .filter((x) => !(x.itemIndex === photo.itemIndex && x.photoIndex === photo.photoIndex))
+          .map((x) => (x.itemIndex === photo.itemIndex && x.photoIndex > photo.photoIndex
+            ? { ...x, photoIndex: x.photoIndex - 1 } : x));
+        if (!rest.length) return { isOpen: false, index: 0 };
+        return { ...st, photos: rest, index: Math.min(st.index, rest.length - 1) };
+      }
+      const remaining = galleryPhotos.length - 1;
+      if (remaining <= 0) return { isOpen: false, index: 0 };
+      return { ...st, index: Math.min(st.index, remaining - 1) };
+    });
     showToast('Photo deleted', 'success');
   };
 
@@ -1102,6 +1128,33 @@ export default function App() {
     triggerAutoSave(updated);
   };
 
+  /** Several fields in ONE write (an OPS import sets items and header together). */
+  const handleReportPatch = (patch) => {
+    if (!currentReport || !patch) return;
+    const updated = { ...currentReport, ...patch };
+    setCurrentReport(updated);
+    triggerAutoSave(updated);
+  };
+
+  /**
+   * Open the viewer on one OPS cell's pictures and documents. Each entry
+   * carries its index in the item's WHOLE photos array — the lightbox delete
+   * (handleDeletePhoto) addresses the photo by that index, and a cell shows
+   * only one column's share of the array.
+   */
+  const openOpsLightbox = (entry, rowEntries, itemIndex) => {
+    const item = (currentReport?.items || [])[itemIndex];
+    if (!item) return;
+    const all = item.photos || [];
+    const list = (rowEntries || []).filter(Boolean).map((p, i) => {
+      const at = all.findIndex((x) => x && (p.id ? x.id === p.id : x === p));
+      return { ...p, itemIndex, photoIndex: at, slotIndex: p.slot_index ?? at, _i: i };
+    }).filter((p) => p.photoIndex >= 0);
+    if (!list.length) return;
+    const at = list.findIndex((p) => (entry?.id ? p.id === entry.id : p.url === entry?.url));
+    setImageModalState({ isOpen: true, index: at < 0 ? 0 : at, photos: list });
+  };
+
   /**
    * Build the rows a brand-new Mini Plan starts with.
    *
@@ -1133,8 +1186,20 @@ export default function App() {
       setIsSaving(true);
       const newId = `rep_${Date.now()}`;
       const isPlan = reportType === MINI_PLAN_TYPE;
+      const isOps = reportType === OPS_FINDINGS_TYPE;
 
-      const defaultNew = isPlan ? {
+      const defaultNew = isOps ? {
+        id: newId,
+        title: OPS_FINDINGS_LABEL,
+        report_type: OPS_FINDINGS_TYPE,
+        system_tag: '',                       // "Updated by"
+        location: OPS_DEFAULT_SUBTITLE,       // the area line under the title
+        inspection_date: todayKeyLocal(),     // "Updated date"
+        discipline: 'Mechanical',
+        items: [makeOpsFinding(OPS_DEFAULT_SECTION, { open_date: todayKeyLocal() })],
+        _version: 1,
+        _syncStatus: SyncStatus.PENDING,
+      } : isPlan ? {
         id: newId,
         title: MINI_PLAN_DEFAULT_TITLE,
         report_type: MINI_PLAN_TYPE,
@@ -1172,7 +1237,9 @@ export default function App() {
       localStorage.setItem('flash_report_last_active_id', saved.id);
       setHasUnsavedChanges(false);
       showToast(
-        isPlan ? `${MINI_PLAN_LABEL} created with ${MINI_PLAN_SEED.length} equipment items` : 'New report created',
+        isPlan ? `${MINI_PLAN_LABEL} created with ${MINI_PLAN_SEED.length} equipment items`
+          : isOps ? `${OPS_FINDINGS_LABEL} created — use Import Excel to load the findings`
+          : 'New report created',
         'success'
       );
     } catch (err) {
@@ -1391,7 +1458,13 @@ export default function App() {
     if (!currentReport) return;
     setIsExporting(true);
     try {
-      await exportExcelClient(await reportForExport(currentReport));
+      if (isOpsReport) {
+        const { exportOpsExcel } = await import('./services/opsFindingsExport');
+        const rep = await reportForExport(currentReport);
+        await exportOpsExcel({ ...rep, items: normalizeOpsItems(rep.items) }, opsViewRef.current);
+      } else {
+        await exportExcelClient(await reportForExport(currentReport));
+      }
       showToast('Excel export successful', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
@@ -1406,7 +1479,13 @@ export default function App() {
     if (!currentReport) return;
     setIsExporting(true);
     try {
-      await exportPdfClient(await reportForExport(currentReport));
+      if (isOpsReport) {
+        const { exportOpsPdf } = await import('./services/opsFindingsExport');
+        const rep = await reportForExport(currentReport);
+        await exportOpsPdf({ ...rep, items: normalizeOpsItems(rep.items) }, opsViewRef.current);
+      } else {
+        await exportPdfClient(await reportForExport(currentReport));
+      }
       showToast('PDF export successful', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
@@ -1542,7 +1621,7 @@ export default function App() {
             title="Generate shareable web link with QR code"
           >
             {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 text-brand-600" />}
-            <span className="hidden sm:inline">{isPlanReport ? 'Live Link' : 'Share Link'}</span>
+            <span className="hidden sm:inline">{isPlanReport || isOpsReport ? 'Live Link' : 'Share Link'}</span>
             <span className="sm:hidden">Share</span>
           </button>
 
@@ -1695,7 +1774,24 @@ export default function App() {
               </div>
             )}
 
-            {currentReport && (
+            {currentReport && isOpsReport && (
+              <OpsFindingsWorkspace
+                report={currentReport}
+                items={normalizeOpsItems(currentReport.items)}
+                onItemsChange={handleItemsChange}
+                onHeaderChange={handleHeaderChange}
+                onReportPatch={handleReportPatch}
+                onPhotoClick={openOpsLightbox}
+                onPhotoRemoved={dropPlanPhotoBytes}
+                onAttachFile={handlePlanAttach}
+                onOpenAttachment={handleOpenAttachment}
+                onViewChange={(v) => { opsViewRef.current = v; }}
+                isMobileMode={isPhoneView}
+                notify={showToast}
+              />
+            )}
+
+            {currentReport && !isOpsReport && (
               <>
                 <HeaderForm
                   report={currentReport}
