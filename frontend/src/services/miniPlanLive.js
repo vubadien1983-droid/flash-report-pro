@@ -266,7 +266,11 @@ function applyCache(items, cache, shareId = '', missing = null) {
  * @param {(err:Error)=>void}    [onError]
  * @returns {() => void} unsubscribe
  */
-export function subscribeSharedMiniPlan(shareId, onData, onError) {
+export function subscribeSharedMiniPlan(shareId, onData, onError, opts = {}) {
+  // The OPS Findings live link reuses this listener with its own normaliser
+  // (services/opsFindingsLive.js), so the photo cache and the "already in the
+  // cloud" byte map are shared by both reports.
+  const normalizeRows = typeof opts.normalize === 'function' ? opts.normalize : normalizeMiniPlanItems;
   // A silent no-op here is what left the share link on "Connecting to the
   // live plan…" for ever: no data, no error, nothing to act on (BUG-037).
   // Whatever the reason, SAY it.
@@ -303,7 +307,7 @@ export function subscribeSharedMiniPlan(shareId, onData, onError) {
       let items;
       let base;
       try {
-        items = normalizeMiniPlanItems(data.items || []);
+        items = normalizeRows(data.items || []);
         base = { ...data, id: shareId, share_id: shareId, items };
         // Emit at once with whatever is already cached, so a status change
         // appears immediately instead of waiting on photo reads.
@@ -379,7 +383,12 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
   if (!isFirebaseConfigured) throw new Error('Cloud is not configured.');
   if (!shareId) throw new Error('Missing share id.');
 
-  const { base = null, extra = {}, ...rest } = options;
+  const {
+    base = null, extra = {},
+    // OPS Findings: its own row normaliser, merge options and compare fields.
+    normalize = normalizeMiniPlanItems, mergeOpts = undefined, compareFields = undefined,
+    ...rest
+  } = options;
   const meta = { ...rest, ...extra };
 
   // 1. BYTES FIRST. The documents below hold pointers only.
@@ -394,12 +403,13 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
   try {
     const snap = await withTimeout(getDoc(sharedDoc(shareId)), READ_TIMEOUT_MS, 'Reading the shared plan');
     if (snap.exists()) {
-      const theirs = normalizeMiniPlanItems(snap.data()?.items || []);
+      const theirs = normalize(snap.data()?.items || []);
       cloudItems = theirs;
       const merged = mergeMiniPlanItems(
         base ? stripPhotosToRefs(base) : theirs,   // no base: treat theirs as the base
         toWrite,
         theirs,
+        mergeOpts,
       );
       toWrite = withoutUndefined(merged.items);
       mergeStats = merged.stats;
@@ -412,7 +422,7 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
 
   // Nothing to say? Then say nothing. Writing the same rows back costs the
   // phone a full upload of the plan for no reason at all.
-  if (!photos.written && cloudItems && samePlan(cloudItems, toWrite)) {
+  if (!photos.written && cloudItems && samePlan(cloudItems, toWrite, compareFields)) {
     return { shared: true, source: true, items: toWrite, photos, merge: mergeStats, skipped: true };
   }
 

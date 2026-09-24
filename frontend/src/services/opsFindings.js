@@ -237,13 +237,19 @@ export function opsRowHasContent(item) {
 
 /**
  * The finding number (column A). NOT stored: it is the row's position among
- * the findings, 1..N across every section, so inserting or deleting a row can
+ * the findings of its section, 1..N, so inserting or deleting a row can
  * never leave a gap or a duplicate (BUG-014's rule, the Mini Plan's too).
  */
 export function opsRowNumbers(items) {
+  // Numbered WITHIN each section (A 1..40, B 1..16, …), as the source sheet is.
   const out = [];
-  let n = 0;
-  (items || []).forEach((it, i) => { n += 1; out[i] = n; });
+  const count = new Map();
+  (items || []).forEach((it, i) => {
+    const sec = it?.section || OPS_DEFAULT_SECTION;
+    const n = (count.get(sec) || 0) + 1;
+    count.set(sec, n);
+    out[i] = n;
+  });
   return out;
 }
 
@@ -496,8 +502,99 @@ export function mergeOpsImport(existing, imported, { makeId = makeOpsId } = {}) 
     }
     stats.added += 1;
     stats.photosAdded += fresh.photos.length;
-    stats.addedRows.push({ id: fresh.id, system: fresh.system, description: fresh.description });
+    stats.addedRows.push({ id: fresh.id, section, system: fresh.system, description: fresh.description });
   }
 
   return { items, stats };
+}
+
+// ─── Sections as tabs (v3.20.0) ──────────────────────────────────
+
+export { sectionLetter } from './opsAuth';
+import { sectionLetter as letterOf } from './opsAuth';
+
+/** One entry per section, in report order, with its own statistics. */
+export function opsSectionSummary(items) {
+  const order = opsSections(items);
+  return order.map((section) => {
+    const rows = (items || []).filter((it) => (it?.section || OPS_DEFAULT_SECTION) === section);
+    return { section, letter: letterOf(section), rows: rows.length, stats: opsStats(rows) };
+  });
+}
+
+/** Indices of the rows of one section (all sections when `section` is falsy). */
+export function sectionIndices(items, section) {
+  const out = [];
+  (items || []).forEach((it, i) => {
+    if (!it) return;
+    if (!section || (it.section || OPS_DEFAULT_SECTION) === section) out.push(i);
+  });
+  return out;
+}
+
+/** The next free section letter: A, B, C, D in use → "E". */
+export function nextSectionLetter(items) {
+  const used = new Set(opsSections(items).map(letterOf).filter(Boolean));
+  for (const L of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') if (!used.has(L)) return L;
+  return '';
+}
+
+// ─── Closure over time (Summary chart) ───────────────────────────
+
+const DAY = 86400000;
+const keyToUtc = (k) => { const [y, m, d] = k.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+const utcToKey = (t) => new Date(t).toISOString().slice(0, 10);
+
+/** Monday of the week holding `key` (weeks start on Monday). */
+export function opsWeekStart(key) {
+  const t = keyToUtc(key);
+  const dow = (new Date(t).getUTCDay() + 6) % 7;
+  return utcToKey(t - dow * DAY);
+}
+
+/** The date a Closed finding counts as closed on: its Close-out Date, else its Updated Date. */
+export function closedOn(item) {
+  if (normalizeOpsStatus(item?.status) !== OPS_STATUS.CLOSED) return '';
+  return opsDateKey(item?.closeout_date) || opsDateKey(item?.updated_date);
+}
+
+/**
+ * Week-by-week: findings opened, findings closed, cumulative closed and the
+ * open backlog at the end of each week. Runs from the week of the first
+ * finding to the current week (the last `maxWeeks` of it).
+ */
+export function opsClosureSeries(items, { today = todayKeyLocal(), maxWeeks = 26 } = {}) {
+  const rows = (items || []).filter(Boolean);
+  const opened = new Map();
+  const closed = new Map();
+  let first = '';
+  let undatedOpen = 0;
+  let closedNoDate = 0;
+  for (const it of rows) {
+    const o = opsDateKey(it.open_date);
+    if (o) { const w = opsWeekStart(o); opened.set(w, (opened.get(w) || 0) + 1); if (!first || w < first) first = w; }
+    else undatedOpen += 1;
+    if (normalizeOpsStatus(it.status) === OPS_STATUS.CLOSED) {
+      const c = closedOn(it);
+      if (c) { const w = opsWeekStart(c); closed.set(w, (closed.get(w) || 0) + 1); if (!first || w < first) first = w; }
+      else closedNoDate += 1;
+    }
+  }
+  const nowWeek = opsWeekStart(today);
+  if (!first) first = nowWeek;
+  const all = [];
+  let cumOpened = undatedOpen;
+  let cumClosed = closedNoDate;
+  for (let t = keyToUtc(first); t <= keyToUtc(nowWeek); t += 7 * DAY) {
+    const w = utcToKey(t);
+    const o = opened.get(w) || 0;
+    const c = closed.get(w) || 0;
+    cumOpened += o;
+    cumClosed += c;
+    all.push({ week: w, label: formatOpsDate(w).slice(0, 6), opened: o, closed: c, cumClosed, backlog: cumOpened - cumClosed, isNow: w === nowWeek });
+  }
+  return {
+    weeks: all.slice(-maxWeeks),
+    totals: { total: rows.length, closed: cumClosed, open: rows.length - cumClosed, closedNoDate, undatedOpen },
+  };
 }

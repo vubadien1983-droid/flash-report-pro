@@ -300,6 +300,7 @@ export default function OpsFindingsTable({
   selected,          // { id, col } | null
   api,
   emptyText = 'No findings match the filter.',
+  showSections = true,   // false on a section tab: the tab IS the section
 }) {
   const colSpan = HEAD.length + (readOnly ? 0 : 1);
 
@@ -316,7 +317,7 @@ export default function OpsFindingsTable({
       <div className="space-y-3">
         {groups.map((g, gi) => (
           <div key={`${g.section}_${gi}`} className="space-y-2">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 text-white">
+            {showSections && <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 text-white">
               <FolderPlus className="w-4 h-4 text-brand-300" />
               <span className="flex-1 text-[13px] font-bold">{g.section}</span>
               {!readOnly && (
@@ -325,7 +326,7 @@ export default function OpsFindingsTable({
                   <Plus className="w-3 h-3" /> Add
                 </button>
               )}
-            </div>
+            </div>}
             {g.rows.map(({ item, index, no }) => (
               <Card key={item.id} item={item} index={index} no={no} readOnly={readOnly}
                 editingField={editing?.id === item.id ? editing.field : null}
@@ -355,14 +356,14 @@ export default function OpsFindingsTable({
         <tbody>
           {groups.map((g, gi) => (
             <React.Fragment key={`${g.section}_${gi}`}>
-              <SectionHeader
+              {showSections && <SectionHeader
                 section={g.section}
                 colSpan={colSpan}
                 readOnly={readOnly}
                 count={g.rows.length}
                 onRename={(name) => api.renameSection(g.rows.map((r) => r.index), name)}
                 onAddRow={() => api.addToSection(g.section, g.rows[g.rows.length - 1]?.index)}
-              />
+              />}
               {g.rows.map(({ item, index, no }) => (
                 <Row key={item.id} item={item} index={index} no={no} readOnly={readOnly}
                   isMobileMode={false}

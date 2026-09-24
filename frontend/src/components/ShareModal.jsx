@@ -124,9 +124,10 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
             project password. */}
         {ops && (
           <div className="mb-4 p-3 bg-emerald-50/70 border border-emerald-200/70 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
-            <strong className="font-bold">This link is live and read-only.</strong> Whoever opens it
-            sees the findings as last saved, and the page keeps updating as you save — no need to
-            resend it. They can search, filter and export Excel / PDF, but cannot change anything.
+            <strong className="font-bold">This link is live.</strong> Whoever opens it sees the findings as
+            they are right now, and the page keeps updating — no need to resend it. The Summary tab is open to
+            everyone; <strong className="font-bold">editing a section tab needs that section's password</strong>.
+            A link ending in <code>?tab=B</code> opens on that tab.
           </div>
         )}
 

@@ -279,8 +279,22 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     throw new Error('Could not find the header row (a "No" column and a "Finding Description" column). Is this the Findings & Action Tracking workbook?');
   }
 
+  // A finding written over SEVERAL sheet rows (A54:A55, B54:B55, … N54:N55) is
+  // ONE finding: its extra rows are a continuation, never a copy. A vertical
+  // merge that covers the No column marks such a block.
+  const spanEnd = new Map();     // first row -> last row of a multi-row finding
+  const ownerOf = new Map();     // continuation row -> first row
+  for (const m of merges) {
+    if (m.r2 <= m.r1 || m.r1 <= headerRow) continue;
+    if (colOf.no !== undefined && m.c1 <= colOf.no && colOf.no <= m.c2) {
+      spanEnd.set(m.r1, Math.max(spanEnd.get(m.r1) || m.r1, m.r2));
+      for (let r = m.r1 + 1; r <= m.r2; r += 1) ownerOf.set(r, m.r1);
+    }
+  }
+
   for (const m of merges) {
     if (m.r2 <= m.r1 || m.r1 <= headerRow) continue;           // single-row or header merges
+    if (ownerOf.has(m.r1 + 1) && ownerOf.get(m.r1 + 1) === m.r1) continue;   // one multi-row finding
     for (let c = m.c1; c <= m.c2; c += 1) {
       if (c === colOf.no || c === colOf.photos_g || c === colOf.photos_o) continue;
       const v = get(m.r1, c);
@@ -317,6 +331,7 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
   let sawSection = false;
 
   for (let r = headerRow + 1; r <= maxRow; r += 1) {
+    if (ownerOf.has(r)) continue;                                  // continuation of the finding above
     const noVal = get(r, colOf.no);
     const system = textField(r, 'system');
     const description = textField(r, 'description');
@@ -368,7 +383,8 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
   const nearestDataRow = (top, bottom) => {
     let best = null; let bestOverlap = 0;
     for (const { excelRow } of records) {
-      const rt = topOf(excelRow - 1); const rb = rt + rowPt(excelRow);
+      const last = spanEnd.get(excelRow) || excelRow;
+      const rt = topOf(excelRow - 1); const rb = topOf(last - 1) + rowPt(last);
       const ov = Math.min(bottom, rb) - Math.max(top, rt);
       if (ov > bestOverlap) { bestOverlap = ov; best = excelRow; }
     }
@@ -436,8 +452,9 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
       const relIdx = Number(rv.v[k >= 0 ? k : 0]);
       const media = rels[relIdx];
       if (!media) continue;
-      if (!byExcelRow.has(row)) { warnings.push(`An in-cell picture at row ${row} is not on a finding row and was skipped.`); continue; }
-      pending.push({ excelRow: row, col: colForPicture(col), top: topOf(row - 1), left: col, media });
+      const owner = ownerOf.get(row) || row;
+      if (!byExcelRow.has(owner)) { warnings.push(`An in-cell picture at row ${row} is not on a finding row and was skipped.`); continue; }
+      pending.push({ excelRow: owner, col: colForPicture(col), top: topOf(row - 1), left: col, media });
     }
   }
 

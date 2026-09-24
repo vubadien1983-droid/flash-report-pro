@@ -56,6 +56,9 @@ import {
   OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL, OPS_DEFAULT_SUBTITLE, OPS_DEFAULT_SECTION,
   isOpsFindings, normalizeOpsItems, makeOpsFinding, todayKeyLocal,
 } from './services/opsFindings';
+import {
+  isOpsSectionUnlocked, unlockOpsSection, lockOpsSection, onOpsLockChange, sectionLetter,
+} from './services/opsAuth';
 
 export default function App() {
   // Check if current route is a shared viewer link e.g. #/view/:id
@@ -147,6 +150,11 @@ export default function App() {
   // follows the screen. A ref: it changes on every keystroke in the search box
   // and nothing needs to re-render for it.
   const opsViewRef = useRef(null);
+  // Per-section edit locks of the OPS report (services/opsAuth.js). The tick
+  // re-renders the workspace when a tab is unlocked or locked anywhere.
+  const [, setOpsLockTick] = useState(0);
+  useEffect(() => onOpsLockChange(() => setOpsLockTick((n) => n + 1)), []);
+  const [opsAsk, setOpsAsk] = useState(null);     // { letter, section }
   const planLocked = isPlanReport && !miniPlanUnlocked;
 
   /** Run `action` now, or after the password is accepted. */
@@ -1397,13 +1405,15 @@ export default function App() {
 
 
   // Share Link Handler
-  const handleOpenShareModal = async () => {
+  const handleOpenShareModal = async (opsTab = '') => {
     if (!currentReport) return;
     if (planLocked) {
       // Ask for the password, then come back and publish.
       setPasswordPrompt({ then: () => handleOpenShareModal() });
       return;
     }
+    // Called from a button's onClick, the argument is an event, not a tab.
+    const tab = typeof opsTab === 'string' ? opsTab : '';
     setIsPublishing(true);
     try {
       const { shareUrl, shareId } = await publishReportForSharing(currentReport);
@@ -1420,7 +1430,7 @@ export default function App() {
 
       setShareModalState({
         isOpen: true,
-        shareUrl,
+        shareUrl: tab && tab !== 'summary' ? `${shareUrl}?tab=${encodeURIComponent(tab)}` : shareUrl,
         reportTitle: currentReport.title
       });
     } catch (err) {
@@ -1786,6 +1796,12 @@ export default function App() {
                 onAttachFile={handlePlanAttach}
                 onOpenAttachment={handleOpenAttachment}
                 onViewChange={(v) => { opsViewRef.current = v; }}
+                isUnlocked={(L) => isOpsSectionUnlocked(L)}
+                onRequestUnlock={(letter, section) => setOpsAsk({ letter, section })}
+                onLockSection={(L) => { lockOpsSection(L); showToast(`Section ${L} locked`, 'info'); }}
+                onExport={(kind, view) => { opsViewRef.current = view; if (kind === 'xlsx') handleExportExcel(); else handleExportPdf(); }}
+                onTabLink={(tab) => handleOpenShareModal(tab)}
+                canImport
                 isMobileMode={isPhoneView}
                 notify={showToast}
               />
@@ -1887,7 +1903,11 @@ export default function App() {
         onIndexChange={(i) => setImageModalState((st) => ({ ...st, index: i }))}
         title={currentReport?.title}
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
-        onDelete={planLocked ? undefined : handleDeletePhoto}
+        onDelete={planLocked ? undefined : (isOpsReport ? (() => {
+          const first = (imageModalState.photos || [])[0];
+          const it = first ? (currentReport?.items || [])[first.itemIndex] : null;
+          return isOpsSectionUnlocked(sectionLetter(it?.section)) ? handleDeletePhoto : undefined;
+        })() : handleDeletePhoto)}
         onOpenAttachment={handleOpenAttachment}
       />
 
@@ -1940,6 +1960,19 @@ export default function App() {
           return ok;
         }}
         onClose={() => setPasswordPrompt(null)}
+      />
+
+      {/* OPS Findings: one password per section tab. */}
+      <PasswordModal
+        isOpen={Boolean(opsAsk)}
+        title={`Unlock section ${opsAsk?.letter || ''}`}
+        message={`Editing "${opsAsk?.section || ''}" needs this section's password.`}
+        onSubmit={(pw) => {
+          const ok = unlockOpsSection(opsAsk?.letter, pw);
+          if (ok) { setOpsAsk(null); showToast('Editing unlocked for this tab', 'success'); }
+          return ok;
+        }}
+        onClose={() => setOpsAsk(null)}
       />
 
       {/* Upload progress. A long first sync is normal; a long sync with no

@@ -1,154 +1,481 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { RefreshCw, FileSpreadsheet, FileText, Radio, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  FileText, RefreshCw, ArrowLeft, Radio, Laptop, Smartphone, Save,
+} from 'lucide-react';
 import OpsFindingsWorkspace from './OpsFindingsWorkspace';
 import ImageModal from './ImageModal';
 import FilePreviewModal from './FilePreviewModal';
-import { subscribeSharedOps } from '../services/opsFindingsLive';
-import { getAttachmentBlob } from '../services/fileAttachments';
-import { isFirebaseConfigured } from '../services/firebase';
+import PasswordModal from './PasswordModal';
+import Toast from './Toast';
+import { subscribeSharedOps, pushSharedOpsEdit, OPS_MERGE_OPTS } from '../services/opsFindingsLive';
+import { hydrateWithLocalPhotos, deletePhotoBytes, refOf } from '../services/miniPlanLive';
+import { mergeMiniPlanItems } from '../services/miniPlanMerge';
+import { isFirebaseConfigured, fileKey } from '../services/firebase';
+import { putAttachment, getAttachmentBlob, formatBytes } from '../services/fileAttachments';
+import {
+  isOpsSectionUnlocked, unlockOpsSection, lockOpsSection, onOpsLockChange,
+} from '../services/opsAuth';
 import { normalizeOpsItems, OPS_FINDINGS_LABEL } from '../services/opsFindings';
 
 /**
- * The public, READ-ONLY, LIVE view of an OPS Findings report.
+ * The public, LIVE share link of the OPS Findings report — built exactly like
+ * the Mini Plan's (MiniPlanViewer) and sharing its engine:
  *
- * No password: nothing on it can change the report (the user's decision —
- * editing happens in the app). It follows the shared document live, so the
- * reader always sees the latest the author has saved. Search, filters and
- * the Excel / PDF exports work here too; exporting is reading, not editing.
+ *  - LIVE: a Firestore listener keeps every open link in step (seconds);
+ *  - EDITABLE PER TAB: each section tab unlocks with its own password
+ *    (CPP-OPS-<letter>, checked against salted digests — services/opsAuth.js);
+ *    the Summary tab needs none because it edits nothing;
+ *  - photos pasted / uploaded / deleted and documents attached right here, with
+ *    the BYTES written first (BUG-032) and a deletion removing the bytes too
+ *    (BUG-035);
+ *  - every save is a three-way MERGE with what the cloud holds (BUG-033), with
+ *    a local draft, automatic retry, Save and Sync, and a leave-page guard;
+ *  - Excel / PDF / Link on every tab.
+ *
+ * `#/view/<shareId>?tab=B` opens on section B's tab.
  */
+function tabFromHash() {
+  const m = /[?&]tab=([^&]+)/.exec(window.location.hash || '');
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
 export default function OpsFindingsViewer({ shareId }) {
   const [report, setReport] = useState(null);
-  const [error, setError] = useState('');
-  const [stalled, setStalled] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [live, setLive] = useState(false);
+  const [, setLockTick] = useState(0);
+  const [askPassword, setAskPassword] = useState(null);   // { letter, section }
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [subKey, setSubKey] = useState(0);
-  const [exporting, setExporting] = useState('');
-  const [lightbox, setLightbox] = useState({ isOpen: false, index: 0, photos: [] });
+  const [stalled, setStalled] = useState('');
+  const [lightbox, setLightbox] = useState(null);           // { list, index }
   const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0 });
-  const [toast, setToast] = useState('');
-  const [width, setWidth] = useState(window.innerWidth);
-  const viewRef = useRef(null);
+  const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [viewMode, setViewMode] = useState('auto');
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [unsaved, setUnsaved] = useState(false);
+
+  const dirtyRef = useRef(false);
+  const pushTimerRef = useRef(null);
+  const baseRef = useRef([]);
+  const itemsRef = useRef([]);
+  const retryRef = useRef({ timer: null, tries: 0 });
+  const reportRef = useRef(null);
+  reportRef.current = report;
+
+  const showToast = (message, type = 'success') => setToast({ message, type });
 
   useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
+    const onResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  useEffect(() => onOpsLockChange(() => setLockTick((n) => n + 1)), []);
+  const isPhoneView = viewMode === 'phone' || (viewMode === 'auto' && windowWidth < 768);
 
+  // ── Local draft: a refresh or a dead phone must not take an edit with it ──
+  const backupKey = `fr_share_pending_${shareId}`;
+  const writeBackup = (items) => {
+    try {
+      const light = (items || []).map((it) => ({
+        ...it,
+        photos: (it.photos || []).map((p) => (p && p.url && p.url.startsWith('data:') ? { ...p, url: '' } : p)),
+      }));
+      localStorage.setItem(backupKey, JSON.stringify({ items: light, base: baseRef.current, at: Date.now() }));
+    } catch { /* storage full or blocked: the in-memory copy still stands */ }
+  };
+  const readBackup = () => {
+    try {
+      const data = JSON.parse(localStorage.getItem(backupKey) || 'null');
+      if (!data?.items?.length || Date.now() - (data.at || 0) > 24 * 3600 * 1000) return null;
+      return data;
+    } catch { return null; }
+  };
+  const clearBackup = () => { try { localStorage.removeItem(backupKey); } catch { /* nothing */ } };
+
+  // ── Live subscription ──────────────────────────────────────────
   useEffect(() => {
-    setError('');
-    setStalled(false);
-    const timer = setTimeout(() => setStalled(true), 15000);
+    if (!shareId) return undefined;
+    if (!reportRef.current) setLoading(true);     // only the FIRST load shows a loading screen (BUG-026)
+    const silent = setTimeout(() => {
+      setLoading((was) => {
+        if (was) setStalled('The live report did not answer. The network may be blocking it.');
+        return false;
+      });
+    }, 15_000);
+
     const unsub = subscribeSharedOps(
       shareId,
-      (data) => { clearTimeout(timer); setStalled(false); setReport(data); setUpdatedAt(new Date()); },
-      (err) => { clearTimeout(timer); setError(err?.message || String(err)); },
+      (data) => {
+        clearTimeout(silent);
+        setLoading(false);
+        setLive(true);
+        setStalled('');
+        setNotFound(false);
+        document.title = data.title || OPS_FINDINGS_LABEL;
+        const remote = data.items || [];
+
+        if (dirtyRef.current && itemsRef.current.length) {
+          const merged = mergeMiniPlanItems(baseRef.current, itemsRef.current, remote, OPS_MERGE_OPTS);
+          baseRef.current = remote;
+          itemsRef.current = merged.items;
+          setReport({ ...data, items: merged.items });
+          return;
+        }
+        const backup = !baseRef.current.length ? readBackup() : null;
+        if (backup) {
+          const merged = mergeMiniPlanItems(backup.base || remote, backup.items, remote, OPS_MERGE_OPTS);
+          baseRef.current = remote;
+          itemsRef.current = merged.items;
+          dirtyRef.current = true;
+          setUnsaved(true);
+          setReport({ ...data, items: merged.items });
+          showToast('Draft from this device restored — saving it now', 'success');
+          if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+          pushTimerRef.current = setTimeout(() => pushEditRef.current(merged.items), 800);
+          return;
+        }
+        baseRef.current = remote;
+        itemsRef.current = remote;
+        setReport(data);
+      },
+      (err) => {
+        clearTimeout(silent);
+        setLoading(false);
+        setLive(false);
+        if (String(err?.message || '').toLowerCase().includes('not found')) setNotFound(true);
+        else {
+          setStalled(err?.message || 'The live report could not be opened.');
+          showToast('Live connection lost — the report may be out of date', 'error');
+        }
+      },
     );
-    return () => { clearTimeout(timer); unsub(); };
+    return () => { clearTimeout(silent); unsub(); if (pushTimerRef.current) clearTimeout(pushTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareId, subKey]);
 
-  useEffect(() => { if (report?.title) document.title = report.title; }, [report?.title]);
-
-  const say = (m) => { setToast(m); setTimeout(() => setToast(''), 3500); };
-
-  const openFile = async (photo) => {
-    const ref = photo?.file_ref;
-    if (!ref) return;
-    say(`Opening ${photo.filename || 'file'}…`);
+  // ── Saving through the link ────────────────────────────────────
+  const pushEdit = useCallback(async (items) => {
+    const rep = reportRef.current;
+    if (!rep) return;
+    const rows = items || itemsRef.current;
+    writeBackup(rows);
+    setSaving(true);
     try {
-      const got = await getAttachmentBlob('shared', shareId, ref);
-      if (!got) { say('That file is not available on the link yet.'); return; }
-      setFilePreview({
-        isOpen: true, blob: got.blob,
-        filename: got.meta?.filename || photo.filename || 'file',
-        mime: got.meta?.mime || got.blob.type || '', size: got.meta?.size || got.blob.size || 0,
-      });
-    } catch (e) { say(`Could not open the file: ${e.message}`); }
+      const res = await pushSharedOpsEdit(shareId, rep.source_report_id, rows, { base: baseRef.current });
+      const saved = hydrateWithLocalPhotos(shareId, res.items || rows);
+      baseRef.current = res.items || rows;
+      itemsRef.current = saved;
+      setReport((r) => (r ? { ...r, items: saved } : r));
+      dirtyRef.current = false;
+      setUnsaved(false);
+      retryRef.current.tries = 0;
+      if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
+      clearBackup();
+      if (res.skipped) { showToast('Already up to date', 'success'); return; }
+      const m = res.merge;
+      const fromThem = m ? (m.fromTheirs + m.addedRemote) : 0;
+      showToast(
+        fromThem
+          ? `Saved — and ${fromThem} change${fromThem === 1 ? '' : 's'} from another device kept`
+          : (res.photos?.written ? `Saved with ${res.photos.written} photo${res.photos.written === 1 ? '' : 's'}` : 'Saved — everyone on this link sees it'),
+        'success',
+      );
+      if (res.photos?.failed) {
+        showToast(`${res.photos.failed} photo could not be saved — will retry`, 'error');
+        dirtyRef.current = true;
+        setUnsaved(true);
+        scheduleRetry();
+      }
+    } catch (e) {
+      console.error('Live edit failed:', e);
+      dirtyRef.current = true;
+      setUnsaved(true);
+      if (retryRef.current.tries === 0) showToast(`Not saved yet: ${e.message} — retrying`, 'error');
+      scheduleRetry();
+    } finally {
+      setSaving(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareId]);
+
+  const pushEditRef = useRef(pushEdit);
+  useEffect(() => { pushEditRef.current = pushEdit; }, [pushEdit]);
+
+  function scheduleRetry() {
+    const tries = Math.min(retryRef.current.tries + 1, 6);
+    retryRef.current.tries = tries;
+    if (retryRef.current.timer) clearTimeout(retryRef.current.timer);
+    retryRef.current.timer = setTimeout(() => pushEditRef.current(itemsRef.current), Math.min(30_000, 4_000 * tries));
+  }
+
+  const handleItemsChange = (items) => {
+    dirtyRef.current = true;
+    setUnsaved(true);
+    itemsRef.current = items;
+    writeBackup(items);
+    setReport((r) => (r ? { ...r, items } : r));
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => pushEditRef.current(items), 2500);
   };
 
-  const doExport = async (kind) => {
+  const flushNow = () => {
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
+    retryRef.current.tries = 0;
+    pushEditRef.current(itemsRef.current.length ? itemsRef.current : report?.items);
+  };
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      if (dirtyRef.current && itemsRef.current.length) {
+        if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+        await pushEditRef.current(itemsRef.current);
+      }
+      dirtyRef.current = false;
+      setSubKey((k) => k + 1);
+      showToast('Synced with the live report', 'success');
+    } catch (e) {
+      showToast(`Sync failed: ${e.message}`, 'error');
+    } finally {
+      setTimeout(() => setSyncing(false), 600);
+    }
+  };
+
+  useEffect(() => {
+    const warn = (e) => {
+      if (!dirtyRef.current) return undefined;
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
+
+  // ── Photos and documents ──────────────────────────────────────
+  const dropPhotoBytes = (item, photo) => {
+    const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
+    deletePhotoBytes(shareId, reportRef.current?.source_report_id, ref)
+      .catch((e) => console.warn('Photo bytes not removed:', e?.message));
+  };
+
+  const attachFromLink = async (item, itemIndex, file, slotIndex) => {
+    if (!file) return null;
+    const key = fileKey(item?.id || `item_${itemIndex}`, slotIndex);
+    try {
+      const descriptor = await putAttachment('shared', shareId, key, file);
+      const src = reportRef.current?.source_report_id;
+      if (src) {
+        try { await putAttachment('report', src, key, file); } catch (e) { console.warn('File not copied to the report:', e.message); }
+      }
+      showToast(`Attached ${file.name} (${formatBytes(file.size)})`, 'success');
+      return { ...descriptor, id: `file_${Date.now()}_${slotIndex}` };
+    } catch (e) {
+      showToast(e.message || 'Could not attach that file', 'error');
+      return null;
+    }
+  };
+
+  const openAttachment = async (photo, item, itemIndex) => {
+    const ref = photo?.file_ref || (item ? fileKey(item.id || `item_${itemIndex}`, photo?.slot_index ?? 0) : '');
+    if (!ref) { showToast('That attachment has no file reference.', 'error'); return; }
+    showToast(`Opening ${photo?.filename || 'file'}…`, 'success');
+    try {
+      let got = await getAttachmentBlob('shared', shareId, ref);
+      const src = reportRef.current?.source_report_id;
+      if (!got && src) got = await getAttachmentBlob('report', src, ref);
+      if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
+      setFilePreview({
+        isOpen: true, blob: got.blob,
+        filename: got.meta?.filename || photo?.filename || 'file',
+        mime: got.meta?.mime || got.blob.type || '', size: got.meta?.size || got.blob.size || 0,
+      });
+    } catch (e) {
+      showToast(`Could not open the file: ${e.message}`, 'error');
+    }
+  };
+
+  const openRowLightbox = (entry, rowEntries, itemIndex) => {
+    const item = (itemsRef.current || [])[itemIndex];
+    const all = item?.photos || [];
+    const list = (rowEntries || []).filter(Boolean).map((p) => {
+      const at = all.findIndex((x) => x && (p.id ? x.id === p.id : x === p));
+      return { ...p, itemIndex, photoIndex: at, slotIndex: p.slot_index ?? at };
+    });
+    if (!list.length) return;
+    const at = list.findIndex((p) => (entry?.id ? p.id === entry.id : p.url === entry?.url));
+    setLightbox({ list, index: at < 0 ? 0 : at });
+  };
+
+  const lightboxItemLetter = () => {
+    const it = lightbox?.list?.[0] ? itemsRef.current[lightbox.list[0].itemIndex] : null;
+    const m = /^\s*([A-Za-z])\s*[.)\-:]/.exec(it?.section || '');
+    return m ? m[1].toUpperCase() : '';
+  };
+
+  const deletePhoto = (photo) => {
+    const items = itemsRef.current || [];
+    const item = items[photo.itemIndex];
+    if (!item) return;
+    const gone = (item.photos || [])[photo.photoIndex];
+    const photos = (item.photos || []).filter((_, idx) => idx !== photo.photoIndex);
+    handleItemsChange(items.map((it, i) => (i === photo.itemIndex ? { ...it, photos } : it)));
+    if (gone) dropPhotoBytes(item, gone);
+    setLightbox((lb) => {
+      if (!lb) return lb;
+      const rest = lb.list.filter((x) => x.photoIndex !== photo.photoIndex)
+        .map((x) => (x.photoIndex > photo.photoIndex ? { ...x, photoIndex: x.photoIndex - 1 } : x));
+      return rest.length ? { list: rest, index: Math.min(lb.index, rest.length - 1) } : null;
+    });
+    showToast('Photo deleted', 'success');
+  };
+
+  // ── Export and link ───────────────────────────────────────────
+  const exportFile = async (kind, view) => {
     if (!report) return;
-    setExporting(kind);
     try {
       const mod = await import('../services/opsFindingsExport');
       const rep = { ...report, items: normalizeOpsItems(report.items) };
-      if (kind === 'xlsx') await mod.exportOpsExcel(rep, viewRef.current);
-      else await mod.exportOpsPdf(rep, viewRef.current);
+      if (kind === 'xlsx') await mod.exportOpsExcel(rep, view);
+      else await mod.exportOpsPdf(rep, view);
+      showToast(`${kind === 'xlsx' ? 'Excel' : 'PDF'} downloaded`, 'success');
     } catch (e) {
       console.error(e);
-      say(`Export failed: ${e.message}`);
-    } finally { setExporting(''); }
+      showToast(`Export failed: ${e.message}`, 'error');
+    }
   };
 
-  if (!report) {
-    const failed = error || stalled;
+  const copyTabLink = async (tab) => {
+    const base = window.location.href.split('#')[0];
+    const url = `${base}#/view/${shareId}${tab && tab !== 'summary' ? `?tab=${encodeURIComponent(tab)}` : ''}`;
+    try { await navigator.clipboard.writeText(url); showToast('Link to this tab copied', 'success'); }
+    catch { showToast(url, 'info'); }
+  };
+
+  // ── States ─────────────────────────────────────────────────────
+  if (loading && !report) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3 p-4">
+        <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />
+        <p className="text-sm font-medium text-slate-300">Connecting to the live report…</p>
+      </div>
+    );
+  }
+  if (stalled && !report) {
     return (
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-3 p-6 text-center">
-        {failed ? <AlertTriangle className="w-8 h-8 text-amber-400" /> : <RefreshCw className="w-8 h-8 text-brand-400 animate-spin" />}
-        <p className="text-sm font-semibold">{failed ? 'The report did not load' : 'Opening the findings report…'}</p>
-        {failed && (
-          <>
-            <p className="text-[13px] text-slate-300 max-w-md">{error || 'No answer from the cloud after 15 seconds. Check the connection and try again.'}</p>
-            <button type="button" onClick={() => setSubKey((k) => k + 1)} className="mt-2 px-4 py-2 rounded-lg bg-brand-600 text-sm font-bold">Try again</button>
-            <p className="text-[11px] text-slate-500 mt-2">Report id: {shareId} · cloud settings: {isFirebaseConfigured ? 'present' : 'MISSING in this build'}</p>
-          </>
-        )}
+        <RefreshCw className="w-8 h-8 text-amber-400" />
+        <p className="text-base font-bold">The report did not load</p>
+        <p className="text-sm text-slate-300 max-w-md">{stalled}</p>
+        <div className="flex gap-2 mt-2">
+          <button type="button" onClick={() => { setStalled(''); setLoading(true); setSubKey((k) => k + 1); }}
+            className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold">Try again</button>
+          <a href="#/" className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-bold">Open the app</a>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-2">Report id: {shareId} · cloud settings: {isFirebaseConfigured ? 'present' : 'MISSING in this build'}</p>
+      </div>
+    );
+  }
+  if (notFound || !report) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-100 p-4">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-lg border border-slate-200">
+          <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4"><FileText className="w-6 h-6" /></div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Report Not Found</h2>
+          <p className="text-xs text-slate-500 mb-6">This link may have been withdrawn or mistyped. Check it with whoever sent it.</p>
+          <a href="#/" className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl"><ArrowLeft className="w-4 h-4" /> Go to the app</a>
+        </div>
       </div>
     );
   }
 
-  const items = normalizeOpsItems(report.items);
-  const exportBtns = (
-    <>
-      <button type="button" disabled={Boolean(exporting)} onClick={() => doExport('xlsx')}
-        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg">
-        {exporting === 'xlsx' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />} Excel
-      </button>
-      <button type="button" disabled={Boolean(exporting)} onClick={() => doExport('pdf')}
-        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg">
-        {exporting === 'pdf' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />} PDF
-      </button>
-    </>
-  );
+  const anyUnlocked = (normalizeOpsItems(report.items) || []).some((it) => {
+    const m = /^\s*([A-Za-z])\s*[.)\-:]/.exec(it?.section || '');
+    return m && isOpsSectionUnlocked(m[1]);
+  });
 
   return (
-    <div className="min-h-screen w-full bg-slate-100">
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-3 py-1.5 flex items-center gap-2 text-[12px]">
-        <Radio className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-        <span className="font-bold text-slate-800">Live · read-only</span>
-        <span className="text-slate-500 truncate">
-          {report.title || OPS_FINDINGS_LABEL}
-          {updatedAt ? ` · refreshed ${updatedAt.toLocaleTimeString()}` : ''}
-        </span>
-      </div>
-      <div className="p-2 md:p-4">
+    <div className="h-screen w-full bg-slate-100 flex flex-col overflow-hidden">
+      <header className="px-3 sm:px-5 py-2 bg-white border-b border-slate-200/90 flex items-center justify-between gap-2 shadow-2xs">
+        <div className="min-w-0">
+          <h1 className="text-xs sm:text-sm font-bold text-slate-900 truncate">{report.title || OPS_FINDINGS_LABEL}</h1>
+          <p className="text-[10px] text-slate-500 flex items-center gap-1.5">
+            {live
+              ? <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold"><Radio className="w-3 h-3 animate-pulse" /> Live</span>
+              : <span className="text-amber-600 font-semibold">Reconnecting…</span>}
+            <span className="text-slate-300">|</span> Block B - EPC#1
+            {saving && <><span className="text-slate-300">|</span><span className="text-sky-600 font-semibold">Saving…</span></>}
+            {!saving && unsaved && <><span className="text-slate-300">|</span><span className="text-amber-600 font-semibold">Unsaved — retrying</span></>}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="hidden md:flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button onClick={() => setViewMode('laptop')} title="Laptop view"
+              className={`p-1.5 rounded-md ${viewMode === 'laptop' ? 'bg-white text-brand-600 shadow-xs' : 'text-slate-500'}`}><Laptop className="w-3.5 h-3.5" /></button>
+            <button onClick={() => setViewMode('phone')} title="Phone view"
+              className={`p-1.5 rounded-md ${viewMode === 'phone' ? 'bg-white text-brand-600 shadow-xs' : 'text-slate-500'}`}><Smartphone className="w-3.5 h-3.5" /></button>
+          </div>
+          <button type="button" onClick={syncNow} disabled={syncing} title="Pull the latest version now"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} /><span className="hidden sm:inline">Sync</span>
+          </button>
+          {anyUnlocked && (
+            <button type="button" onClick={flushNow} disabled={saving} title="Save now"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">
+              {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}<span className="hidden sm:inline">Save</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="flex-1 min-h-0 w-full px-1 pt-1.5 pb-1 sm:px-2 sm:pb-2 flex flex-col">
         <OpsFindingsWorkspace
-          report={report}
-          items={items}
-          onItemsChange={() => {}}
-          readOnly
-          isMobileMode={width < 768}
-          onViewChange={(v) => { viewRef.current = v; }}
-          onPhotoClick={(entry, rowEntries) => {
-            const list = (rowEntries || []).filter(Boolean);
-            const at = list.findIndex((p) => (entry?.id ? p.id === entry.id : p.url === entry?.url));
-            setLightbox({ isOpen: true, index: at < 0 ? 0 : at, photos: list });
-          }}
-          onOpenAttachment={(p) => openFile(p)}
-          toolbarExtra={exportBtns}
-          notify={say}
+          report={{ ...report, id: `share_${shareId}` }}
+          items={normalizeOpsItems(report.items)}
+          onItemsChange={handleItemsChange}
+          isMobileMode={isPhoneView}
+          initialTab={tabFromHash()}
+          isUnlocked={(L) => isOpsSectionUnlocked(L)}
+          onRequestUnlock={(letter, section) => setAskPassword({ letter, section })}
+          onLockSection={(L) => { flushNow(); lockOpsSection(L); showToast(`Section ${L} locked`, 'info'); }}
+          onPhotoClick={openRowLightbox}
+          onPhotoRemoved={dropPhotoBytes}
+          onAttachFile={attachFromLink}
+          onOpenAttachment={openAttachment}
+          onExport={exportFile}
+          onTabLink={copyTabLink}
+          notify={showToast}
+          fullScreen
         />
-      </div>
+      </main>
+
+      <PasswordModal
+        isOpen={Boolean(askPassword)}
+        title={`Unlock section ${askPassword?.letter || ''}`}
+        message={`Editing "${askPassword?.section || ''}" needs this section's password.`}
+        onSubmit={(pw) => {
+          const ok = unlockOpsSection(askPassword?.letter, pw);
+          if (ok) { setAskPassword(null); showToast('Editing unlocked for this tab', 'success'); }
+          return ok;
+        }}
+        onClose={() => setAskPassword(null)}
+      />
 
       <ImageModal
-        isOpen={lightbox.isOpen}
-        photos={lightbox.photos}
-        index={lightbox.index}
-        onIndexChange={(i) => setLightbox((s) => ({ ...s, index: i }))}
+        isOpen={Boolean(lightbox)}
+        photos={lightbox?.list || []}
+        index={lightbox?.index ?? 0}
+        onIndexChange={(i) => setLightbox((lb) => (lb ? { ...lb, index: i } : lb))}
         title={report.title}
-        onClose={() => setLightbox({ isOpen: false, index: 0, photos: [] })}
-        onOpenAttachment={(p) => openFile(p)}
+        onClose={() => setLightbox(null)}
+        onDelete={lightbox && isOpsSectionUnlocked(lightboxItemLetter()) ? deletePhoto : undefined}
+        onOpenAttachment={(p) => openAttachment(p, itemsRef.current[p.itemIndex], p.itemIndex)}
       />
+
       <FilePreviewModal
         isOpen={filePreview.isOpen}
         blob={filePreview.blob}
@@ -157,9 +484,8 @@ export default function OpsFindingsViewer({ shareId }) {
         size={filePreview.size}
         onClose={() => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0 })}
       />
-      {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[90] px-4 py-2 rounded-xl bg-slate-900 text-white text-[12.5px] font-semibold shadow-xl">{toast}</div>
-      )}
+
+      <Toast message={toast.message} type={toast.type} duration={3000} onClose={() => setToast({ message: '', type: 'success' })} />
     </div>
   );
 }

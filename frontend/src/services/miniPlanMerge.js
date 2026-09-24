@@ -211,12 +211,12 @@ export function regroup(items) {
 }
 
 /** True when two plans would write the same thing — used to skip pointless writes. */
-export function samePlan(a, b) {
+export function samePlan(a, b, fields = FIELDS) {
   const fa = Array.isArray(a) ? a : [];
   const fb = Array.isArray(b) ? b : [];
   if (fa.length !== fb.length) return false;
   for (let i = 0; i < fa.length; i += 1) {
-    for (const f of FIELDS) if (!same(fa[i]?.[f], fb[i]?.[f])) return false;
+    for (const f of fields) if (!same(fa[i]?.[f], fb[i]?.[f])) return false;
     const pa = (fa[i]?.photos || []).filter(Boolean).length;
     const pb = (fb[i]?.photos || []).filter(Boolean).length;
     if (pa !== pb) return false;

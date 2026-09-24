@@ -24,6 +24,7 @@ import {
   OPS_FINDINGS_LABEL, OPS_STATUS_STYLE, OPS_STATUS_OPTIONS, OPS_COLUMNS,
   groupOpsSections, opsStats, normalizeOpsStatus, photosOf, isFileEntry,
   opsDateKey, formatOpsDate, todayKeyLocal,
+  opsSectionSummary, sectionIndices, sectionLetter, opsClosureSeries,
 } from './opsFindings';
 
 const NAVY = 'FF1F3A5F';
@@ -62,17 +63,14 @@ const COL_G = 6;
 const COL_O = 14;
 const HEADER_ROW = 9;
 
-export async function exportOpsExcel(report, view = null) {
-  if (!report) throw new Error('No report data provided');
-  const { default: ExcelJS } = await import('exceljs');
-  const { groups, rows, label } = scopeOf(report, view);
+/**
+ * One findings sheet (the source workbook's layout) for `groups`.
+ * @returns {{ sheetName, firstData, lastData }} — the Status range, for the Summary formulas.
+ */
+async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, subtitle }) {
   const stats = opsStats(rows);
   const shareId = report.share_id || report.cloud_code || '';
-
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'Flash Report Pro';
-  wb.created = new Date();
-  const ws = wb.addWorksheet('Findings Master', {
+  const ws = wb.addWorksheet(sheetName, {
     views: [{ state: 'frozen', ySplit: HEADER_ROW, xSplit: 0 }],
     pageSetup: { orientation: 'landscape', paperSize: 8, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
@@ -102,7 +100,7 @@ export async function exportOpsExcel(report, view = null) {
   ws.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(4).height = 26;
   ws.mergeCells('A5:O5');
-  ws.getCell('A5').value = report.location || '';
+  ws.getCell('A5').value = subtitle || report.location || '';
   ws.getCell('A5').font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF334155' } };
   ws.getCell('A5').alignment = { horizontal: 'center' };
 
@@ -125,7 +123,7 @@ export async function exportOpsExcel(report, view = null) {
 
   if (label) {
     ws.mergeCells('A8:O8');
-    ws.getCell('A8').value = `Filtered export — ${label} — ${rows.length} finding(s) of ${(report.items || []).length}`;
+    ws.getCell('A8').value = `${label} — ${rows.length} finding(s)`;
     ws.getCell('A8').font = font({ italic: true, color: { argb: 'FF9A3412' } });
   }
 
@@ -273,11 +271,209 @@ export async function exportOpsExcel(report, view = null) {
     };
   }
 
+  return { sheetName, firstData, lastData };
+}
+
+/** Excel sheet names: at most 31 characters, none of []:*?/\ . */
+function sheetNameFor(section, used) {
+  const L = sectionLetter(section);
+  let base = (L ? `Section ${L}` : String(section || 'Section')).replace(/[[\]:*?/\\]/g, ' ').slice(0, 31).trim() || 'Section';
+  let name = base;
+  let n = 2;
+  while (used.has(name.toLowerCase())) name = `${base.slice(0, 27)} (${n++})`;
+  used.add(name.toLowerCase());
+  return name;
+}
+
+/**
+ * Excel export.
+ *  - From a SECTION tab: one sheet — that section (and the tab's filter, when
+ *    one is on, named in the sheet).
+ *  - From the SUMMARY tab: the whole report — a Summary sheet (status by
+ *    section with LIVE COUNTIF formulas over the section sheets, a total line,
+ *    and the closed-over-time chart) followed by one sheet per section.
+ */
+export async function exportOpsExcel(report, view = null) {
+  if (!report) throw new Error('No report data provided');
+  const { default: ExcelJS } = await import('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Flash Report Pro';
+  wb.created = new Date();
+  const items = report.items || [];
+  const used = new Set();
+
+  if (view?.section) {
+    const { groups, rows } = scopeOf(report, view);
+    const filterOn = view.filter && Object.values(view.filter).some(Boolean);
+    await writeFindingsSheet(wb, report, {
+      groups, rows,
+      label: filterOn ? `Filtered — ${view.label}` : '',
+      sheetName: sheetNameFor(view.section, used),
+      subtitle: view.section,
+    });
+    await saveWorkbook(wb, `${fileBase(report)}_${sectionLetter(view.section) || 'section'}`);
+    return;
+  }
+
+  const sum = wb.addWorksheet('Summary', {
+    pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  const sections = opsSectionSummary(items);
+  const refs = [];
+  for (const s of sections) {
+    const groups = groupOpsSections(items, sectionIndices(items, s.section));
+    const rows = groups.flatMap((g) => g.rows.map((r) => r.item));
+    const at = await writeFindingsSheet(wb, report, {
+      groups, rows, label: '', sheetName: sheetNameFor(s.section, used), subtitle: s.section,
+    });
+    refs.push({ ...s, ...at });
+  }
+  await writeSummarySheet(wb, sum, report, refs, items);
+  await saveWorkbook(wb, fileBase(report));
+}
+
+async function saveWorkbook(wb, name) {
   const buffer = await wb.xlsx.writeBuffer();
   downloadBlob(
     new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    `${fileBase(report)}.xlsx`,
+    `${name}.xlsx`,
   );
+}
+
+async function writeSummarySheet(wb, ws, report, refs, items) {
+  const font = (o = {}) => ({ name: 'Arial', size: 10, color: { argb: 'FF1E293B' }, ...o });
+  const border = { top: { style: 'thin', color: { argb: 'FFBFC7D5' } }, left: { style: 'thin', color: { argb: 'FFBFC7D5' } },
+    bottom: { style: 'thin', color: { argb: 'FFBFC7D5' } }, right: { style: 'thin', color: { argb: 'FFBFC7D5' } } };
+  ws.columns = [{ width: 44 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 12 }, { width: 22 }];
+
+  ws.mergeCells('A1:G1');
+  ws.getCell('A1').value = report.title || OPS_FINDINGS_LABEL;
+  ws.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: NAVY } };
+  ws.getRow(1).height = 26;
+  ws.mergeCells('A2:G2');
+  ws.getCell('A2').value = [report.location, report.system_tag ? `Updated by: ${report.system_tag}` : '',
+    opsDateKey(report.inspection_date) ? `Updated date: ${formatOpsDate(report.inspection_date)}` : '',
+    `Exported ${formatOpsDate(todayKeyLocal())}`].filter(Boolean).join('   |   ');
+  ws.getCell('A2').font = font({ color: { argb: 'FF51607A' } });
+
+  const HEAD = 4;
+  ['Section', 'Total', 'Open', 'On-going', 'Closed', 'Closed %', 'Sheet'].forEach((h, i) => {
+    const c = ws.getCell(HEAD, i + 1);
+    c.value = h;
+    c.font = font({ bold: true, color: { argb: 'FFFFFFFF' } });
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+    c.alignment = { horizontal: i ? 'center' : 'left', vertical: 'middle' };
+    c.border = border;
+  });
+  ws.getRow(HEAD).height = 22;
+
+  const f = (formula, result) => ({ formula, result });
+  let r = HEAD + 1;
+  for (const s of refs) {
+    const J = `'${s.sheetName}'!$J$${s.firstData}:$J$${Math.max(s.firstData, s.lastData)}`;
+    ws.getCell(r, 1).value = s.section;
+    ws.getCell(r, 3).value = f(`COUNTIF(${J},"Open")`, s.stats.open);
+    ws.getCell(r, 4).value = f(`COUNTIF(${J},"On-going")`, s.stats.ongoing);
+    ws.getCell(r, 5).value = f(`COUNTIF(${J},"Closed")`, s.stats.closed);
+    ws.getCell(r, 2).value = f(`C${r}+D${r}+E${r}`, s.stats.total);
+    ws.getCell(r, 6).value = f(`IF(B${r}=0,0,E${r}/B${r})`, s.stats.total ? s.stats.closed / s.stats.total : 0);
+    ws.getCell(r, 7).value = { text: s.sheetName, hyperlink: `#'${s.sheetName}'!A1` };
+    r += 1;
+  }
+  const first = HEAD + 1;
+  const last = r - 1;
+  const all = opsStats(items);
+  ws.getCell(r, 1).value = 'Total';
+  ws.getCell(r, 2).value = f(`SUM(B${first}:B${last})`, all.total);
+  ws.getCell(r, 3).value = f(`SUM(C${first}:C${last})`, all.open);
+  ws.getCell(r, 4).value = f(`SUM(D${first}:D${last})`, all.ongoing);
+  ws.getCell(r, 5).value = f(`SUM(E${first}:E${last})`, all.closed);
+  ws.getCell(r, 6).value = f(`IF(B${r}=0,0,E${r}/B${r})`, all.total ? all.closed / all.total : 0);
+  for (let rr = first; rr <= r; rr += 1) {
+    const total = rr === r;
+    for (let c = 1; c <= 7; c += 1) {
+      const cell = ws.getCell(rr, c);
+      cell.border = border;
+      cell.alignment = { horizontal: c === 1 ? 'left' : 'center', vertical: 'middle' };
+      const colour = c === 3 ? 'FFB91C1C' : c === 4 ? 'FFB45309' : c === 5 ? 'FF047857' : c === 7 ? 'FF0563C1' : 'FF1E293B';
+      cell.font = font({ bold: total || c > 1, color: { argb: colour }, underline: c === 7 });
+      if (total) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+    }
+    ws.getCell(rr, 6).numFmt = '0%';
+    ws.getRow(rr).height = 20;
+  }
+
+  // The chart the Summary tab shows, drawn from the same series.
+  try {
+    const png = closureChartPng(items, { width: 980, height: 330 });
+    if (png) {
+      const top = r + 2;
+      ws.getCell(top, 1).value = 'FINDINGS CLOSED OVER TIME (BY WEEK)';
+      ws.getCell(top, 1).font = font({ bold: true, color: { argb: NAVY } });
+      const id = wb.addImage({ base64: png.split(',')[1], extension: 'png' });
+      ws.addImage(id, { tl: { col: 0.05, row: top + 0.2 }, ext: { width: 980, height: 330 }, editAs: 'oneCell' });
+    }
+  } catch (e) {
+    console.error('OPS summary chart not drawn:', e);   // the numbers above still stand
+  }
+}
+
+/** The Summary chart as a PNG data URL (canvas) — same series as the screen. */
+export function closureChartPng(items, { width = 980, height = 330 } = {}) {
+  if (typeof document === 'undefined') return '';
+  const { weeks } = opsClosureSeries(items, { maxWeeks: 30 });
+  const cv = document.createElement('canvas');
+  const k = 2;
+  cv.width = width * k; cv.height = height * k;
+  const ctx = cv.getContext('2d');
+  ctx.scale(k, k);
+  ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, width, height);
+  const pad = { l: 40, r: 44, t: 26, b: 44 };
+  const iw = width - pad.l - pad.r; const ih = height - pad.t - pad.b;
+  const n = Math.max(1, weeks.length); const slot = iw / n;
+  const barW = Math.max(3, Math.min(16, slot * 0.32));
+  const maxBar = Math.max(1, ...weeks.map((w) => Math.max(w.opened, w.closed)));
+  const maxLine = Math.max(1, ...weeks.map((w) => Math.max(w.cumClosed, w.backlog)));
+  const yb = (v) => pad.t + ih - (v / maxBar) * ih;
+  const yl = (v) => pad.t + ih - (v / maxLine) * ih;
+  const xc = (i) => pad.l + slot * i + slot / 2;
+  ctx.font = '11px Arial';
+  for (const fr of [0, 0.25, 0.5, 0.75, 1]) {
+    const y = pad.t + ih * (1 - fr);
+    ctx.strokeStyle = '#E2E8F0'; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(width - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#64748B'; ctx.textAlign = 'right'; ctx.fillText(String(Math.round(maxBar * fr)), pad.l - 5, y + 4);
+    ctx.textAlign = 'left'; ctx.fillText(String(Math.round(maxLine * fr)), width - pad.r + 5, y + 4);
+  }
+  const every = Math.max(1, Math.ceil(n / Math.max(4, Math.floor(iw / 58))));
+  weeks.forEach((w, i) => {
+    if (w.isNow) { ctx.fillStyle = '#EEF2FF'; ctx.fillRect(pad.l + slot * i, pad.t, slot, ih); }
+    ctx.fillStyle = '#CBD5E1'; ctx.fillRect(xc(i) - barW - 1, yb(w.opened), barW, pad.t + ih - yb(w.opened));
+    ctx.fillStyle = '#059669'; ctx.fillRect(xc(i) + 1, yb(w.closed), barW, pad.t + ih - yb(w.closed));
+    if (w.closed) { ctx.fillStyle = '#059669'; ctx.textAlign = 'center'; ctx.fillText(String(w.closed), xc(i) + 1 + barW / 2, yb(w.closed) - 3); }
+    if (i % every === 0 || w.isNow) {
+      ctx.fillStyle = w.isNow ? '#4338CA' : '#64748B'; ctx.textAlign = 'center';
+      ctx.fillText(w.isNow ? 'NOW' : w.label, xc(i), height - pad.b + 16);
+    }
+  });
+  const drawLine = (key, colour) => {
+    ctx.strokeStyle = colour; ctx.lineWidth = 2.2; ctx.beginPath();
+    weeks.forEach((w, i) => { if (i) ctx.lineTo(xc(i), yl(w[key])); else ctx.moveTo(xc(i), yl(w[key])); });
+    ctx.stroke(); ctx.lineWidth = 1;
+    const lastW = weeks[weeks.length - 1];
+    if (lastW) { ctx.fillStyle = colour; ctx.textAlign = 'center'; ctx.font = 'bold 11px Arial'; ctx.fillText(String(lastW[key]), xc(n - 1), yl(lastW[key]) - 7); ctx.font = '11px Arial'; }
+  };
+  drawLine('backlog', '#DC2626');
+  drawLine('cumClosed', '#047857');
+  const legend = [['#CBD5E1', 'Opened in week', 'bar'], ['#059669', 'Closed in week', 'bar'], ['#047857', 'Total closed (right)', 'line'], ['#DC2626', 'Still open (right)', 'line']];
+  let lx = pad.l; const ly = height - 12;
+  ctx.textAlign = 'left';
+  for (const [c, t, kind] of legend) {
+    ctx.fillStyle = c;
+    if (kind === 'bar') ctx.fillRect(lx, ly - 8, 12, 9); else ctx.fillRect(lx, ly - 4, 14, 2.5);
+    ctx.fillStyle = '#334155'; ctx.fillText(t, lx + 17, ly);
+    lx += 34 + ctx.measureText(t).width;
+  }
+  return cv.toDataURL('image/png');
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -309,7 +505,8 @@ export async function exportOpsPdf(report, view = null) {
   doc.text(report.title || OPS_FINDINGS_LABEL, 24, 34);
   doc.setFontSize(10.5);
   doc.setTextColor(51, 65, 85);
-  if (report.location) doc.text(report.location, 24, 50);
+  const sub = view?.section || report.location;
+  if (sub) doc.text(sub, 24, 50);
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(81, 96, 122);
@@ -342,7 +539,39 @@ export async function exportOpsPdf(report, view = null) {
     doc.setFont('Helvetica', 'italic');
     doc.setFontSize(8.5);
     doc.setTextColor(154, 52, 18);
-    doc.text(`Filtered export — ${label} — ${rows.length} of ${(report.items || []).length}`, x + 6, y + 10.5);
+    doc.text(`${label} — ${rows.length} finding(s)`, x + 6, y + 10.5);
+  }
+
+  // From the Summary tab: a first page with the status by section and the
+  // closed-over-time chart, then every section.
+  let tableStart = 94;
+  if (!view?.section) {
+    const secs = opsSectionSummary(report.items || []);
+    const all = opsStats(report.items || []);
+    doc.autoTable({
+      startY: 96,
+      margin: { left: 24, right: 24 },
+      tableWidth: 640,
+      head: [['Section', 'Total', 'Open', 'On-going', 'Closed', '% closed']],
+      body: [
+        ...secs.map((sx) => [sx.section, sx.stats.total, sx.stats.open, sx.stats.ongoing, sx.stats.closed, `${sx.stats.percentClosed}%`]),
+        ['Total', all.total, all.open, all.ongoing, all.closed, `${all.percentClosed}%`],
+      ],
+      theme: 'grid',
+      styles: { font: 'Helvetica', fontSize: 9, cellPadding: 4, lineColor: [203, 213, 225], lineWidth: 0.5 },
+      headStyles: { fillColor: NAVY_RGB, textColor: [255, 255, 255], fontStyle: 'bold' },
+      columnStyles: { 0: { cellWidth: 300 }, 1: { halign: 'center' }, 2: { halign: 'center', textColor: [185, 28, 28] }, 3: { halign: 'center', textColor: [180, 83, 9] }, 4: { halign: 'center', textColor: [4, 120, 87] }, 5: { halign: 'center' } },
+      didParseCell: (d) => { if (d.section === 'body' && d.row.index === secs.length) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [241, 245, 249]; } },
+    });
+    try {
+      const png = closureChartPng(report.items || [], { width: 980, height: 330 });
+      const top = (doc.lastAutoTable?.finalY || 200) + 24;
+      doc.setFont('Helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...NAVY_RGB);
+      doc.text('Findings closed over time (by week)', 24, top);
+      if (png) doc.addImage(png, 'PNG', 24, top + 8, 980 * 0.8, 330 * 0.8);
+    } catch (e) { console.error('OPS PDF chart:', e); }
+    doc.addPage();
+    tableStart = 30;
   }
 
   // Body, with images decoded up front (didDrawCell is synchronous).
@@ -370,7 +599,7 @@ export async function exportOpsPdf(report, view = null) {
   const gridFor = (n, w) => photoGrid(n, w - 6, { maxCols: 2 });
 
   doc.autoTable({
-    startY: 94,
+    startY: tableStart,
     margin: { left: 24, right: 24, bottom: 30 },
     head: [OPS_COLUMNS.map((c) => c.label)],
     body,
