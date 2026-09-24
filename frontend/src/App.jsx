@@ -11,6 +11,7 @@ import InspectionTable from './components/InspectionTable';
 import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
 import FilePreviewModal from './components/FilePreviewModal';
+import ConfirmModal from './components/ConfirmModal';
 import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
 import SharedViewRouter from './components/SharedViewRouter';
@@ -562,10 +563,11 @@ export default function App() {
 
       if (targetId) {
         await loadSingleReport(targetId);
-      } else if (mergedList.length === 0) {
-        // ONLY initialize a new report if there are strictly 0 reports anywhere
-        await handleNewReport();
       }
+      // NOTHING is created just because the app opened. An empty workspace is
+      // an empty workspace; a report appears when the user asks for one
+      // (BUG-046). This used to fire whenever the list came back empty — a
+      // slow first sync was enough — and left stray "Untitled" reports behind.
 
       // 4. Trigger background sync to push any pending local reports
       if (mergedList.some(r => r._syncStatus === SyncStatus.PENDING)) {
@@ -1181,7 +1183,25 @@ export default function App() {
     }
   };
 
-  const handleDuplicate = async (reportId) => {
+  /**
+   * Duplicating and deleting a report are both one click away in a list, and
+   * both are easy to hit by accident on a phone. Each now asks a plain
+   * question first, and the delete asks TWICE: the second question is the one
+   * that says the word "permanently" (BUG-046).
+   */
+  const [confirmAsk, setConfirmAsk] = useState(null);   // {title, message, confirmLabel, tone, onYes}
+
+  const askDuplicate = (reportId, reportTitle) => {
+    setConfirmAsk({
+      title: 'Duplicate this report?',
+      message: `A full copy of "${reportTitle || 'this report'}" will be created, including its rows and photos. The original is not changed.`,
+      confirmLabel: 'Yes, duplicate',
+      tone: 'brand',
+      onYes: () => { setConfirmAsk(null); runDuplicate(reportId); },
+    });
+  };
+
+  const runDuplicate = async (reportId) => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     try {
       setIsSaving(true);
@@ -1226,6 +1246,19 @@ export default function App() {
     setDeleteModalState({ isOpen: true, id, title });
   };
 
+  /** First Yes → ask once more, in the plainest words available. */
+  const askDeleteAgain = () => {
+    const { title } = deleteModalState;
+    setDeleteModalState((st) => ({ ...st, isOpen: false }));
+    setConfirmAsk({
+      title: 'Delete permanently?',
+      message: `"${title || 'This report'}" and all of its rows, photos and files will be removed from this device and from the cloud. This cannot be undone.`,
+      confirmLabel: 'Yes, delete permanently',
+      tone: 'danger',
+      onYes: () => { setConfirmAsk(null); confirmDelete(); },
+    });
+  };
+
   // Fixed Delete: Removes strictly the selected report from Cloud & Local
   const confirmDelete = async () => {
     const idToDelete = deleteModalState.id;
@@ -1257,7 +1290,10 @@ export default function App() {
       if (remaining.length > 0) {
         await loadSingleReport(remaining[0].id);
       } else {
-        await handleNewReport();
+        // The last report was deleted: show an empty workspace, do not
+        // conjure a replacement the user did not ask for.
+        setCurrentReport(null);
+        setActiveReportId(null);
       }
     }
 
@@ -1591,7 +1627,7 @@ export default function App() {
                 activeReportId={activeReportId}
                 onSelectReport={loadSingleReport}
                 onNewReport={handleNewReport}
-                onDuplicateReport={handleDuplicate}
+                onDuplicateReport={askDuplicate}
                 onDeleteReport={openDeleteModal}
                 isSaving={isSaving}
                 isSyncing={isSyncing}
@@ -1624,7 +1660,7 @@ export default function App() {
                 activeReportId={activeReportId}
                 onSelectReport={loadSingleReport}
                 onNewReport={handleNewReport}
-                onDuplicateReport={handleDuplicate}
+                onDuplicateReport={askDuplicate}
                 onDeleteReport={openDeleteModal}
                 isSaving={isSaving}
                 isSyncing={isSyncing}
@@ -1639,6 +1675,26 @@ export default function App() {
         {/* 3. Main Report Editor Area */}
         <main className="flex-1 h-full overflow-y-auto p-3 md:p-4 lg:p-5 pb-24 sm:pb-6 w-full">
           <div className="w-full">
+            {/* No report open, and none invented. The app no longer creates one
+                just because it was opened (BUG-046) — this says so, and offers
+                the button that does it deliberately. */}
+            {!currentReport && !loading && (
+              <div className="max-w-lg mx-auto mt-16 text-center bg-white border border-slate-200 rounded-2xl p-8 shadow-xs">
+                <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <h2 className="text-[15px] font-bold text-slate-800">No report is open</h2>
+                <p className="text-[13px] text-slate-500 mt-1.5">
+                  Pick one from the list, or create a new report when you are ready.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleNewReport()}
+                  className="mt-5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold"
+                >
+                  New report
+                </button>
+              </div>
+            )}
+
             {currentReport && (
               <>
                 <HeaderForm
@@ -1723,7 +1779,7 @@ export default function App() {
       <DeleteModal
         isOpen={deleteModalState.isOpen}
         reportTitle={deleteModalState.title}
-        onConfirm={confirmDelete}
+        onConfirm={askDeleteAgain}
         onCancel={() => setDeleteModalState({ isOpen: false, id: null, title: '' })}
       />
 
@@ -1737,6 +1793,17 @@ export default function App() {
         onClose={() => setImageModalState({ isOpen: false, index: 0 })}
         onDelete={planLocked ? undefined : handleDeletePhoto}
         onOpenAttachment={handleOpenAttachment}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmAsk)}
+        title={confirmAsk?.title}
+        message={confirmAsk?.message}
+        confirmLabel={confirmAsk?.confirmLabel}
+        cancelLabel="Cancel"
+        tone={confirmAsk?.tone}
+        onConfirm={() => confirmAsk?.onYes?.()}
+        onCancel={() => setConfirmAsk(null)}
       />
 
       <FilePreviewModal
