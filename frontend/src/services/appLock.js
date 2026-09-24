@@ -1,3 +1,4 @@
+import { shareIdFromAlias, shareIdFromHost } from './shareAliases';
 import { sha256Hex, digestsEqual } from './sha256.js';
 
 /**
@@ -142,6 +143,10 @@ export function isPublicRoute(href) {
   // Shared report / live Mini Plan link. Matches App.jsx's own loose test on
   // purpose: a link already in circulation must never fall into the app gate.
   if (hash.includes('view') || search.includes('view')) return true;
+  // A named share link (services/shareAliases.js), e.g. #/OPS-Finding-Status.
+  if (shareIdFromAlias(hash)) return true;
+  // The OPS report's own domain shows nothing but that report.
+  if (shareIdFromHost()) return true;
   return false;
 }
 

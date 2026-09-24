@@ -16,6 +16,7 @@ import {
   isOpsSectionUnlocked, unlockOpsSection, lockOpsSection, onOpsLockChange,
 } from '../services/opsAuth';
 import { normalizeOpsItems, OPS_FINDINGS_LABEL } from '../services/opsFindings';
+import { aliasForShareId, ALIAS_TITLES, aliasKeyFromHash, shareIdFromHost, publicShareUrl } from '../services/shareAliases';
 
 /**
  * The public, LIVE share link of the OPS Findings report — built exactly like
@@ -35,7 +36,7 @@ import { normalizeOpsItems, OPS_FINDINGS_LABEL } from '../services/opsFindings';
  * `#/view/<shareId>?tab=B` opens on section B's tab.
  */
 function tabFromHash() {
-  const m = /[?&]tab=([^&]+)/.exec(window.location.hash || '');
+  const m = /[?&]tab=([^&]+)/.exec(window.location.hash || '') || /[?&]tab=([^&]+)/.exec(window.location.search || '');
   return m ? decodeURIComponent(m[1]) : '';
 }
 
@@ -114,7 +115,8 @@ export default function OpsFindingsViewer({ shareId }) {
         setLive(true);
         setStalled('');
         setNotFound(false);
-        document.title = data.title || OPS_FINDINGS_LABEL;
+        // A named link carries its own name into the browser tab.
+        document.title = (shareIdFromHost() ? 'OPS Finding Status' : '') || ALIAS_TITLES[aliasKeyFromHash(window.location.hash)] || (aliasForShareId(shareId) ? aliasForShareId(shareId).replace(/-/g, ' ') : '') || data.title || OPS_FINDINGS_LABEL;
         const remote = data.items || [];
 
         if (dirtyRef.current && itemsRef.current.length) {
@@ -351,7 +353,7 @@ export default function OpsFindingsViewer({ shareId }) {
 
   const copyTabLink = async (tab) => {
     const base = window.location.href.split('#')[0];
-    const url = `${base}#/view/${shareId}${tab && tab !== 'summary' ? `?tab=${encodeURIComponent(tab)}` : ''}`;
+    const url = publicShareUrl(shareId, tab) || `${base}#/view/${shareId}`;
     try { await navigator.clipboard.writeText(url); showToast('Link to this tab copied', 'success'); }
     catch { showToast(url, 'info'); }
   };
@@ -374,7 +376,6 @@ export default function OpsFindingsViewer({ shareId }) {
         <div className="flex gap-2 mt-2">
           <button type="button" onClick={() => { setStalled(''); setLoading(true); setSubKey((k) => k + 1); }}
             className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold">Try again</button>
-          <a href="#/" className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-bold">Open the app</a>
         </div>
         <p className="text-[11px] text-slate-500 mt-2">Report id: {shareId} · cloud settings: {isFirebaseConfigured ? 'present' : 'MISSING in this build'}</p>
       </div>
@@ -387,7 +388,6 @@ export default function OpsFindingsViewer({ shareId }) {
           <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4"><FileText className="w-6 h-6" /></div>
           <h2 className="text-lg font-bold text-slate-900 mb-2">Report Not Found</h2>
           <p className="text-xs text-slate-500 mb-6">This link may have been withdrawn or mistyped. Check it with whoever sent it.</p>
-          <a href="#/" className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl"><ArrowLeft className="w-4 h-4" /> Go to the app</a>
         </div>
       </div>
     );

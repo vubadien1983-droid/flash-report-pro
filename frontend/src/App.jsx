@@ -52,6 +52,7 @@ import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from './services/miniPlanAuth';
 import { lockApp } from './services/appLock';
+import { shareIdFromAlias, shareIdFromHost, publicShareUrl } from './services/shareAliases';
 import {
   OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL, OPS_DEFAULT_SUBTITLE, OPS_DEFAULT_SECTION,
   isOpsFindings, normalizeOpsItems, makeOpsFinding, todayKeyLocal,
@@ -78,11 +79,18 @@ export default function App() {
   // not fall through to the (deliberately loose) shared-report test below.
   const fileRouteMatch = hash.match(/#\/file\/([^/?]+)\/([^/?]+)/);
 
-  const isViewRoute = !fileRouteMatch &&
-    (hash.includes('/view') || hash.includes('view') || search.includes('view'));
+  // A named share link, e.g. #/OPS-Finding-Status → the live OPS link.
+  // …and on the OPS report's own domain (ops-finding-status.vercel.app) the
+  // page is ALWAYS that report, never the app.
+  const aliasShareId = fileRouteMatch ? '' : (shareIdFromHost() || shareIdFromAlias(hash));
+
+  const isViewRoute = !fileRouteMatch && (Boolean(aliasShareId) ||
+    hash.includes('/view') || hash.includes('view') || search.includes('view'));
 
   let sharedReportId = null;
-  if (isViewRoute) {
+  if (aliasShareId) {
+    sharedReportId = aliasShareId;
+  } else if (isViewRoute) {
     if (hash.includes('/view/')) {
       sharedReportId = hash.split('/view/')[1].split('?')[0];
     } else if (hash.includes('/view')) {
@@ -1428,9 +1436,13 @@ export default function App() {
         saveLocalReport(withShare).catch(() => {});
       }
 
+      // A report with a named link (services/shareAliases.js) is handed out
+      // under its name; the #/view/<id> address still works.
+      const own = publicShareUrl(shareId, tab);
+      const isOwn = !own.includes('#/view/');
       setShareModalState({
         isOpen: true,
-        shareUrl: tab && tab !== 'summary' ? `${shareUrl}?tab=${encodeURIComponent(tab)}` : shareUrl,
+        shareUrl: isOwn ? own : (tab && tab !== 'summary' ? `${shareUrl}?tab=${encodeURIComponent(tab)}` : shareUrl),
         reportTitle: currentReport.title
       });
     } catch (err) {
