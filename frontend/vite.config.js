@@ -1,8 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      // The Outlook .msg reader needs iconv-lite, which is Node-only. The app
+      // only DECODES text, which the browser's TextDecoder does (v3.21.0).
+      'iconv-lite': fileURLToPath(new URL('./src/shims/iconvLite.js', import.meta.url)),
+    },
+  },
   server: {
     port: 3000,
     proxy: {

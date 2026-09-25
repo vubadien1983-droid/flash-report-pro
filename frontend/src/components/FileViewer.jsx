@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { FileText, RefreshCw, Download, ArrowLeft, ExternalLink } from 'lucide-react';
+import { FileText, RefreshCw, Download, ArrowLeft } from 'lucide-react';
 import { getAttachmentBlob, formatBytes, openBlob } from '../services/fileAttachments';
+import FilePreviewModal, { FilePreviewBody, useTypedObjectUrl } from './FilePreviewModal';
 
 /**
  * Public attachment page — `#/file/<shareId>/<key>`.
@@ -10,14 +11,14 @@ import { getAttachmentBlob, formatBytes, openBlob } from '../services/fileAttach
  * readable, so a recipient opens the file with NO sign-in. That requirement is
  * the whole reason attachments live in Firestore rather than Google Drive.
  *
- * PDFs and images render inline; anything else is offered as a download,
- * because a browser cannot display a .docx or a .dwg on its own.
+ * PDFs and images render inline, and since v3.21.0 so do Outlook emails
+ * (.msg/.eml), Word (.docx) and Excel/CSV — through the same viewer the app
+ * uses (`FilePreviewBody`). Anything else is offered as a download.
  */
 export default function FileViewer({ shareId, fileKey }) {
   const [state, setState] = useState({ status: 'loading' });
 
   useEffect(() => {
-    let revoked = null;
     let cancelled = false;
 
     (async () => {
@@ -25,19 +26,14 @@ export default function FileViewer({ shareId, fileKey }) {
         const got = await getAttachmentBlob('shared', shareId, fileKey);
         if (cancelled) return;
         if (!got) { setState({ status: 'missing' }); return; }
-        const url = URL.createObjectURL(got.blob);
-        revoked = url;
         document.title = got.meta.filename || 'Attachment';
-        setState({ status: 'ready', url, meta: got.meta, blob: got.blob });
+        setState({ status: 'ready', meta: got.meta, blob: got.blob });
       } catch (e) {
         if (!cancelled) setState({ status: 'error', message: e.message });
       }
     })();
 
-    return () => {
-      cancelled = true;
-      if (revoked) URL.revokeObjectURL(revoked);
-    };
+    return () => { cancelled = true; };
   }, [shareId, fileKey]);
 
   if (state.status === 'loading') {
@@ -74,12 +70,16 @@ export default function FileViewer({ shareId, fileKey }) {
     );
   }
 
-  const { meta, url, blob } = state;
-  const mime = meta.mime || '';
-  const inline = mime === 'application/pdf' || mime.startsWith('image/') || mime.startsWith('text/');
+  return <ReadyFile meta={state.meta} blob={state.blob} />;
+}
+
+export function ReadyFile({ meta, blob }) {
+  const { url, type } = useTypedObjectUrl(blob, meta.filename, meta.mime);
+  // An attachment opened from INSIDE an email shown on this page.
+  const [nested, setNested] = useState(null);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100">
+    <div className="h-screen flex flex-col bg-slate-900">
       <header className="h-14 px-3 sm:px-5 bg-white border-b border-slate-200 flex items-center justify-between gap-3 flex-shrink-0 shadow-2xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-brand-600 flex items-center justify-center text-white flex-shrink-0">
@@ -92,7 +92,7 @@ export default function FileViewer({ shareId, fileKey }) {
         </div>
         <button
           type="button"
-          onClick={() => openBlob(blob, meta.filename)}
+          onClick={() => openBlob(blob, meta.filename, { forceDownload: true })}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition-colors flex-shrink-0"
         >
           <Download className="w-3.5 h-3.5" />
@@ -101,38 +101,28 @@ export default function FileViewer({ shareId, fileKey }) {
       </header>
 
       <main className="flex-1 min-h-0 p-2 sm:p-4">
-        {inline ? (
-          mime.startsWith('image/') ? (
-            <div className="w-full h-full flex items-center justify-center bg-white rounded-xl border border-slate-200 overflow-auto p-2">
-              <img src={url} alt={meta.filename} className="max-w-full h-auto" />
-            </div>
-          ) : (
-            <iframe
-              src={url}
-              title={meta.filename}
-              className="w-full h-[calc(100vh-6rem)] rounded-xl border border-slate-200 bg-white"
-            />
-          )
-        ) : (
-          <div className="max-w-md mx-auto mt-10 bg-white rounded-2xl p-8 text-center shadow-xs border border-slate-200">
-            <div className="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-4">
-              <ExternalLink className="w-6 h-6" />
-            </div>
-            <h2 className="text-sm font-bold text-slate-900 mb-1">{meta.filename}</h2>
-            <p className="text-xs text-slate-500 mb-5">
-              This type of file cannot be shown in a browser. Download it to open in the right app.
-            </p>
-            <button
-              type="button"
-              onClick={() => openBlob(blob, meta.filename)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl transition-colors"
-            >
-              <Download className="w-4 h-4" />
-              Download {formatBytes(meta.size)}
-            </button>
-          </div>
+        {url && (
+          <FilePreviewBody
+            blob={blob}
+            url={url}
+            filename={meta.filename}
+            type={type}
+            onOpenNested={(att) => att?.content && setNested({
+              blob: new Blob([att.content], { type: att.mime }),
+              filename: att.filename, mime: att.mime, size: att.size,
+            })}
+          />
         )}
       </main>
+
+      <FilePreviewModal
+        isOpen={!!nested}
+        blob={nested?.blob}
+        filename={nested?.filename}
+        mime={nested?.mime}
+        size={nested?.size}
+        onClose={() => setNested(null)}
+      />
     </div>
   );
 }

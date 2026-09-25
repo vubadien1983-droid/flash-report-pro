@@ -8,7 +8,8 @@ import { fetchSharedReport } from '../services/shareService';
 import { exportExcelClient, exportPdfClient } from '../services/clientExport';
 import ImageModal from './ImageModal';
 import Toast from './Toast';
-import { getAttachmentBlob, openBlob, formatBytes } from '../services/fileAttachments';
+import { getAttachmentBlob, formatBytes } from '../services/fileAttachments';
+import FilePreviewModal from './FilePreviewModal';
 import { computeRowNumbers, countContentRows } from '../services/reportNumbering';
 
 export default function ReportViewer({ reportId }) {
@@ -16,6 +17,7 @@ export default function ReportViewer({ reportId }) {
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'success' });
 
   // Responsive device view mode: 'auto' | 'laptop' | 'phone'
@@ -149,7 +151,13 @@ export default function ReportViewer({ reportId }) {
     try {
       const got = await getAttachmentBlob('shared', reportId, p.file_ref);
       if (!got) { showToast('That file is not available in this shared report.', 'error'); return; }
-      openBlob(got.blob, got.meta.filename);
+      // Shown in the shared viewer, not handed to the browser (BUG-045, v3.21.0).
+      setFilePreview({
+        blob: got.blob,
+        filename: got.meta?.filename || p.filename || 'file',
+        mime: got.meta?.mime || got.blob.type || '',
+        size: got.meta?.size || got.blob.size || 0,
+      });
     } catch (e) {
       showToast(`Could not open the file: ${e.message}`, 'error');
     }
@@ -522,6 +530,15 @@ export default function ReportViewer({ reportId }) {
         onIndexChange={setLightboxIndex}
         title={report.title}
         onClose={() => setLightboxIndex(null)}
+      />
+
+      <FilePreviewModal
+        isOpen={!!filePreview}
+        blob={filePreview?.blob}
+        filename={filePreview?.filename}
+        mime={filePreview?.mime}
+        size={filePreview?.size}
+        onClose={() => setFilePreview(null)}
       />
 
       {/* Toast Notification */}

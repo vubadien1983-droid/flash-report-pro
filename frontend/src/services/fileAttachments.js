@@ -39,6 +39,7 @@ import {
   getDoc, setDoc, deleteDoc,
 } from './firebase';
 import { withTimeout, yieldToBrowser } from './imageCompression';
+import { isBlockedUpload, fileExtension } from './previewKind';
 
 /** Base64 characters per chunk document. Well under the 1 MiB ceiling. */
 const CHUNK_CHARS = 700_000;
@@ -101,6 +102,14 @@ async function fileToBase64(file) {
 export async function putAttachment(scope, id, key, file) {
   if (!isFirebaseConfigured) {
     throw new Error('Cloud storage is not configured, so files cannot be attached.');
+  }
+  // A report attachment is opened by other people from a public link, so a
+  // file that RUNS when opened is refused outright (v3.21.0). This is the one
+  // upload chokepoint for every report type and every share link.
+  if (isBlockedUpload(file.name)) {
+    throw new Error(
+      `"${file.name}" is a program file (.${fileExtension(file.name)}) and cannot be attached. Zip it or attach a PDF instead.`
+    );
   }
   if (file.size > MAX_FILE_BYTES) {
     throw new Error(
