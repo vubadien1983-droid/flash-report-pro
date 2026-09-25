@@ -400,7 +400,7 @@ export default function OpsFindingsViewer({ shareId }) {
   });
 
   return (
-    <div className="h-screen w-full bg-slate-100 flex flex-col overflow-hidden">
+    <div className="h-app w-full bg-slate-100 flex flex-col overflow-hidden">
       <header className="px-3 sm:px-5 py-2 bg-white border-b border-slate-200/90 flex items-center justify-between gap-2 shadow-2xs">
         <div className="min-w-0">
           <h1 className="text-xs sm:text-sm font-bold text-slate-900 truncate">{report.title || OPS_FINDINGS_LABEL}</h1>

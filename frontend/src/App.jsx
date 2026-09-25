@@ -190,6 +190,10 @@ export default function App() {
   }, []);
 
   const isPhoneView = viewMode === 'phone' || (viewMode === 'auto' && windowWidth < 768);
+  // The reports list is a slide-in drawer whenever the screen is narrow — also
+  // in Laptop view on a phone, where a fixed 320px sidebar left the report a
+  // 60px strip that could not be read or scrolled (v3.21.1, BUG-055).
+  const useDrawer = isPhoneView || windowWidth < 768;
 
   const showToast = (message, type = 'success', action = null) => {
     setToast({ message, type, action });
@@ -1538,11 +1542,11 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-100 font-sans">
+    <div className="h-app w-screen flex flex-col overflow-hidden bg-slate-100 font-sans">
       {/* Top Navbar */}
       <header className="h-14 px-3 md:px-5 bg-white border-b border-slate-200/90 flex items-center justify-between flex-shrink-0 z-20 shadow-xs">
-        <div className="flex items-center gap-2 min-w-0">
-          {isPhoneView && (
+        <div className="flex items-center gap-2 min-w-0 flex-shrink-0 sm:flex-shrink">
+          {useDrawer && (
             <button
               onClick={() => setMobileDrawerOpen(true)}
               className="p-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1.5 border border-slate-200 transition-colors"
@@ -1555,7 +1559,7 @@ export default function App() {
             </button>
           )}
 
-          <h2 className="text-xs md:text-sm font-bold text-slate-800 truncate max-w-[160px] sm:max-w-[240px] md:max-w-md lg:max-w-lg">
+          <h2 className="hidden sm:block text-xs md:text-sm font-bold text-slate-800 truncate max-w-[160px] sm:max-w-[240px] md:max-w-md lg:max-w-lg">
             {currentReport?.title || 'Untitled Flash Report'}
           </h2>
 
@@ -1577,14 +1581,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* Action Toolbar & Mode Switcher */}
-        <div className="flex items-center gap-1.5 md:gap-2">
+        {/* Action Toolbar & Mode Switcher. On a phone, Share / Sync / PDF are
+            in the bottom bar, so the header keeps only the view switcher and
+            the lock — and it may scroll sideways rather than cover the
+            Reports button (v3.21.1). */}
+        <div className="flex items-center gap-1.5 md:gap-2 min-w-0 overflow-x-auto no-scrollbar ml-2">
           {/* Sync Cloud Button */}
           <button
             type="button"
             onClick={handleSyncWithCloud}
             disabled={isSyncing}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg shadow-2xs transition-colors"
+            className={`${isPhoneView ? 'hidden' : 'inline-flex'} flex-shrink-0 items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 rounded-lg shadow-2xs transition-colors`}
             title="Full 2-way sync between Phone & Laptop"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -1599,7 +1606,7 @@ export default function App() {
           </button>
 
           {/* Device Mode Switcher */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
+          <div className="flex-shrink-0 flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
             <button
               type="button"
               onClick={() => setViewMode('laptop')}
@@ -1639,7 +1646,7 @@ export default function App() {
             type="button"
             onClick={handleOpenShareModal}
             disabled={isPublishing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200/80 rounded-lg shadow-2xs transition-colors"
+            className={`${isPhoneView ? 'hidden' : 'inline-flex'} flex-shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200/80 rounded-lg shadow-2xs transition-colors`}
             title="Generate shareable web link with QR code"
           >
             {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 text-brand-600" />}
@@ -1697,7 +1704,7 @@ export default function App() {
             type="button"
             onClick={handleExportPdf}
             disabled={isExporting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-2xs transition-all"
+            className={`${isPhoneView ? 'hidden' : 'inline-flex'} flex-shrink-0 items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-2xs transition-all`}
           >
             {isExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Export PDF</span>
@@ -1708,7 +1715,7 @@ export default function App() {
           <button
             type="button"
             onClick={handleLockApp}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors"
+            className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors"
             title="Lock the app (saves first). The password is needed to open it again."
           >
             <Lock className="w-3.5 h-3.5" />
@@ -1720,7 +1727,7 @@ export default function App() {
       {/* Main Workspace Layout */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* 1. Desktop Left Sidebar */}
-        {!isPhoneView && (
+        {!useDrawer && (
           <>
             <div style={{ width: `${sidebarWidth}px` }} className="h-full flex-shrink-0">
               <Sidebar
@@ -1749,7 +1756,7 @@ export default function App() {
         )}
 
         {/* 2. Mobile Drawer Sidebar (Slide-out) */}
-        {isPhoneView && mobileDrawerOpen && (
+        {useDrawer && mobileDrawerOpen && (
           <div className="fixed inset-0 z-50 flex">
             <div
               onClick={() => setMobileDrawerOpen(false)}

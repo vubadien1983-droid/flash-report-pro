@@ -301,6 +301,7 @@ export default function OpsFindingsTable({
   api,
   emptyText = 'No findings match the filter.',
   showSections = true,   // false on a section tab: the tab IS the section
+  fill = false,          // true: fill the parent's height (share link, laptop)
 }) {
   const colSpan = HEAD.length + (readOnly ? 0 : 1);
 
@@ -340,7 +341,8 @@ export default function OpsFindingsTable({
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-auto max-h-[calc(100vh-270px)] min-h-[320px]">
+    <div className={`bg-white border border-slate-200 rounded-xl shadow-xs overflow-auto ${
+      fill ? 'h-full min-h-[240px]' : 'max-h-[calc(100dvh-270px)] min-h-[320px]'}`}>
       <table className="border-separate border-spacing-0 text-left table-fixed">
         <thead>
           <tr>

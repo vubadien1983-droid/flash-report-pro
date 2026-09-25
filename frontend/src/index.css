@@ -49,3 +49,11 @@
 .resizer-handle:hover, .resizer-handle.resizing {
   background-color: #3b82f6 !important;
 }
+
+/* The app shell is exactly the VISIBLE screen (v3.21.1, BUG-055). On phones
+   100vh is the height with the browser bars hidden, so a 100vh shell puts its
+   bottom under the address bar / home bar and the last rows cannot be
+   reached. 100dvh follows the bars; browsers without it keep 100vh. */
+.h-app { height: 100vh; height: 100dvh; }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

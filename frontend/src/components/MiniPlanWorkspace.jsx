@@ -108,8 +108,13 @@ export default function MiniPlanWorkspace({
     );
   };
 
+  // Share link on a PHONE: the whole workspace scrolls as one page. Pinning
+  // the tabs, figures and filters left the cards a strip of a few rows (or
+  // none on a small phone) — v3.21.1, BUG-055. Laptop keeps the pinned layout.
+  const pin = fullScreen && !isMobileMode;
   return (
-    <div className={fullScreen ? 'h-full flex flex-col min-h-0' : 'mb-6'}>
+    <div className={pin ? 'h-full flex flex-col min-h-0'
+      : fullScreen ? 'h-full overflow-y-auto overscroll-contain pb-6' : 'mb-6'}>
       <div className="flex flex-wrap items-end gap-1.5 px-1">
         {tabButton(TAB_DASHBOARD, 'Equipment installation status', LayoutDashboard)}
         {tabButton(TAB_MONITORING, 'Monitoring', Table2)}
@@ -128,7 +133,7 @@ export default function MiniPlanWorkspace({
 
       {tab === TAB_DASHBOARD ? (
         <div className={`bg-slate-100/60 rounded-xl rounded-tl-none p-2 border border-slate-200/80 ${
-          fullScreen ? 'flex-1 min-h-0 overflow-auto' : ''
+          pin ? 'flex-1 min-h-0 overflow-auto' : ''
         }`}>
           <MiniPlanDashboard
             items={items}
@@ -137,7 +142,7 @@ export default function MiniPlanWorkspace({
             onFilterChange={setFilter}
             isMobileMode={isMobileMode}
             onOpenMonitoring={() => setTab(TAB_MONITORING)}
-            fullScreen={fullScreen}
+            fullScreen={pin}
           />
         </div>
       ) : (
@@ -153,7 +158,7 @@ export default function MiniPlanWorkspace({
           onRequestUnlock={onRequestUnlock}
           filter={safeFilter}
           onFilterChange={setFilter}
-          fullScreen={fullScreen}
+          fullScreen={pin}
         />
       )}
     </div>

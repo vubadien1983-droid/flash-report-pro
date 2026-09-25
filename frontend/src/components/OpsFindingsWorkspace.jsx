@@ -377,8 +377,16 @@ export default function OpsFindingsWorkspace({
   );
 
   // ── Render ───────────────────────────────────────────────────
+  // Full-screen (the share link) has two layouts (v3.21.1, BUG-055):
+  //  - laptop: header, tabs, tiles and filters stay put and only the table
+  //    box scrolls — the column titles stay on screen;
+  //  - phone: the WHOLE workspace is one scrolling page. Pinning the header
+  //    there left no height at all for the cards (tiles + filters are taller
+  //    than a phone screen), so the rows could not be reached.
+  const pin = fullScreen && !isMobileMode;
   return (
-    <div className={`w-full ${fullScreen ? 'h-full flex flex-col min-h-0' : ''}`}>
+    <div className={`w-full ${pin ? 'h-full flex flex-col min-h-0' : ''} ${
+      fullScreen && isMobileMode ? 'h-full overflow-y-auto overscroll-contain pb-6' : ''}`}>
       {/* Header — title, area, updated by / date. */}
       <div className="w-full bg-white rounded-xl shadow-xs border border-slate-200/80 px-3 py-1.5 mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
         <ClipboardList className="w-4 h-4 text-brand-600 flex-shrink-0" />
@@ -417,7 +425,7 @@ export default function OpsFindingsWorkspace({
 
       {tab === 'summary' ? (
         /* ── SUMMARY ─────────────────────────────────────────── */
-        <div className={`space-y-2 ${fullScreen ? 'flex-1 min-h-0 overflow-y-auto' : ''}`}>
+        <div className={`space-y-2 ${pin ? 'flex-1 min-h-0 overflow-y-auto' : ''}`}>
           {(() => {
             const all = opsStats(items);
             return (
@@ -517,7 +525,7 @@ export default function OpsFindingsWorkspace({
         </div>
       ) : (
         /* ── ONE SECTION ─────────────────────────────────────── */
-        <div className={fullScreen ? 'flex-1 min-h-0 flex flex-col' : ''}>
+        <div className={pin ? 'flex-1 min-h-0 flex flex-col' : ''}>
           <div className="flex flex-wrap gap-2 mb-2">
             <Tile label={letter ? `Section ${letter} total` : 'Total'} value={stats.total} active={!filter.status && !active} onClick={() => setF({ status: '' })} />
             {[OPS_STATUS.OPEN, OPS_STATUS.ONGOING, OPS_STATUS.CLOSED].map((st) => {
@@ -601,8 +609,9 @@ export default function OpsFindingsWorkspace({
             </p>
           )}
 
-          <div className={fullScreen ? 'flex-1 min-h-0' : ''}>
+          <div className={pin ? 'flex-1 min-h-0' : ''}>
             <OpsFindingsTable
+              fill={pin}
               groups={groups}
               readOnly={tabLocked}
               isMobileMode={isMobileMode}

@@ -536,7 +536,7 @@ export default function MiniPlanViewer({ shareId }) {
     /* h-screen, not min-h-screen: the page is exactly the viewport and only the
        table scrolls inside it, so the header stays put and nothing below the
        plan can push it off screen. */
-    <div className="h-screen w-full bg-slate-100 flex flex-col overflow-hidden">
+    <div className="h-app w-full bg-slate-100 flex flex-col overflow-hidden">
       <header className="px-3 sm:px-5 py-2.5 bg-white border-b border-slate-200/90 flex items-center justify-between gap-2 sticky top-0 z-30 shadow-2xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-sky-400 flex items-center justify-center text-white shadow-md flex-shrink-0">
