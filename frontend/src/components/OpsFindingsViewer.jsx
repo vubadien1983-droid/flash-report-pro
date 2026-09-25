@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  FileText, RefreshCw, ArrowLeft, Radio, Laptop, Smartphone, Save,
+  FileText, RefreshCw, ArrowLeft, Radio, Laptop, Smartphone, Save, KeyRound, Lock, Unlock,
 } from 'lucide-react';
 import OpsFindingsWorkspace from './OpsFindingsWorkspace';
 import ImageModal from './ImageModal';
@@ -14,6 +14,7 @@ import { isFirebaseConfigured, fileKey } from '../services/firebase';
 import { putAttachment, getAttachmentBlob, formatBytes } from '../services/fileAttachments';
 import {
   isOpsSectionUnlocked, unlockOpsSection, lockOpsSection, onOpsLockChange,
+  unlockOpsMaster, isOpsMasterUnlocked, lockAllOps,
 } from '../services/opsAuth';
 import { normalizeOpsItems, OPS_FINDINGS_LABEL } from '../services/opsFindings';
 import { aliasForShareId, ALIAS_TITLES, aliasKeyFromHash, shareIdFromHost, publicShareUrl } from '../services/shareAliases';
@@ -24,7 +25,7 @@ import { aliasForShareId, ALIAS_TITLES, aliasKeyFromHash, shareIdFromHost, publi
  *
  *  - LIVE: a Firestore listener keeps every open link in step (seconds);
  *  - EDITABLE PER TAB: each section tab unlocks with its own password
- *    (CPP-OPS-<letter>, checked against salted digests — services/opsAuth.js);
+ *    (checked against salted digests — services/opsAuth.js);
  *    the Summary tab needs none because it edits nothing;
  *  - photos pasted / uploaded / deleted and documents attached right here, with
  *    the BYTES written first (BUG-032) and a deletion removing the bytes too
@@ -433,6 +434,8 @@ export default function OpsFindingsViewer({ shareId }) {
       </header>
 
       <main className="flex-1 min-h-0 w-full px-1 pt-1.5 pb-1 sm:px-2 sm:pb-2 flex flex-col">
+        {/* The master password lives on the Summary tab: typed here first, or
+            asked for when Import / New section is pressed (v3.20.5). */}
         <OpsFindingsWorkspace
           report={{ ...report, id: `share_${shareId}` }}
           items={normalizeOpsItems(report.items)}
@@ -442,6 +445,10 @@ export default function OpsFindingsViewer({ shareId }) {
           isUnlocked={(L) => isOpsSectionUnlocked(L)}
           onRequestUnlock={(letter, section) => setAskPassword({ letter, section })}
           onLockSection={(L) => { flushNow(); lockOpsSection(L); showToast(`Section ${L} locked`, 'info'); }}
+          canImport
+          importLocked={!isOpsMasterUnlocked()}
+          onRequestImportUnlock={(then) => setAskPassword({ master: true, then })}
+          summaryExtra={<MasterBox onDone={(m, t) => showToast(m, t)} onLock={() => { flushNow(); lockAllOps(); showToast('All tabs locked', 'info'); }} />}
           onPhotoClick={openRowLightbox}
           onPhotoRemoved={dropPhotoBytes}
           onAttachFile={attachFromLink}
@@ -455,11 +462,18 @@ export default function OpsFindingsViewer({ shareId }) {
 
       <PasswordModal
         isOpen={Boolean(askPassword)}
-        title="Unlock to edit"
-        message={`Enter the master password to edit every tab, or the password of section ${askPassword?.letter || ''} to edit "${askPassword?.section || ''}" only.`}
+        title={askPassword?.master ? 'Master password' : 'Unlock to edit'}
+        message={askPassword?.master
+          ? 'Importing data and adding a section need the master password.'
+          : `Enter the master password to edit every tab, or the password of section ${askPassword?.letter || ''} to edit "${askPassword?.section || ''}" only.`}
         onSubmit={(pw) => {
-          const ok = unlockOpsSection(askPassword?.letter, pw);
-          if (ok) { setAskPassword(null); showToast(isOpsSectionUnlocked('*') ? 'Editing unlocked for all tabs' : 'Editing unlocked for this tab', 'success'); }
+          const ask = askPassword;
+          const ok = ask?.master ? unlockOpsMaster(pw) : unlockOpsSection(ask?.letter, pw);
+          if (ok) {
+            setAskPassword(null);
+            showToast(isOpsMasterUnlocked() ? 'Editing unlocked for all tabs' : 'Editing unlocked for this tab', 'success');
+            if (typeof ask?.then === 'function') setTimeout(ask.then, 0);
+          }
           return ok;
         }}
         onClose={() => setAskPassword(null)}
@@ -487,5 +501,40 @@ export default function OpsFindingsViewer({ shareId }) {
 
       <Toast message={toast.message} type={toast.type} duration={3000} onClose={() => setToast({ message: '', type: 'success' })} />
     </div>
+  );
+}
+
+/** Summary tab of the share link: type the master password here, or see that it is on. */
+function MasterBox({ onDone, onLock }) {
+  const [pw, setPw] = useState('');
+  const [bad, setBad] = useState(false);
+  const [, tick] = useState(0);
+  useEffect(() => onOpsLockChange(() => tick((n) => n + 1)), []);
+  if (isOpsMasterUnlocked()) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1 px-2 py-1.5 text-[12px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg">
+          <Unlock className="w-3.5 h-3.5" /> Master unlocked — all tabs editable
+        </span>
+        <button type="button" onClick={onLock}
+          className="inline-flex items-center gap-1 px-2 py-1.5 text-[12px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg">
+          <Lock className="w-3.5 h-3.5" /> Lock
+        </button>
+      </span>
+    );
+  }
+  const submit = (e) => {
+    e.preventDefault();
+    if (unlockOpsMaster(pw)) { setPw(''); setBad(false); onDone?.('Editing unlocked for all tabs', 'success'); }
+    else setBad(true);
+  };
+  return (
+    <form onSubmit={submit} className="inline-flex items-center gap-1">
+      <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+      <input type="password" value={pw} onChange={(e) => { setPw(e.target.value); setBad(false); }}
+        placeholder="Master password" autoComplete="off"
+        className={`w-[150px] text-[12.5px] px-2 py-1.5 rounded-lg border outline-none text-slate-900 ${bad ? 'border-rose-400 bg-rose-50' : 'border-slate-200 bg-white focus:border-brand-500'}`} />
+      <button type="submit" className="px-2.5 py-1.5 text-[12px] font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-lg">Unlock</button>
+    </form>
   );
 }

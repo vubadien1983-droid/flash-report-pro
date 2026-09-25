@@ -129,3 +129,18 @@ export function onOpsLockChange(fn) {
   window.addEventListener(EVENT, h);
   return () => window.removeEventListener(EVENT, h);
 }
+
+/** Master password only (Import / New section on the share link). */
+export function unlockOpsMaster(input) {
+  if (!checkOpsMasterPassword(input)) return false;
+  const s = readSet();
+  s.add(ALL);
+  writeSet(s);
+  return true;
+}
+
+export function isOpsMasterUnlocked() {
+  return readSet().has(ALL);
+}
+
+export function lockAllOps() { writeSet(new Set()); }
