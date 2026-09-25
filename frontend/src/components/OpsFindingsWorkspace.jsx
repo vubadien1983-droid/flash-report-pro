@@ -316,7 +316,7 @@ export default function OpsFindingsWorkspace({
     const name = sectionLetter(clean) ? clean : `${L}. ${clean}`;
     api.addToSection(name, itemsRef.current.length - 1);
     setTab(keyOf(name));
-    notify?.(`Section "${name}" added — its password follows the CPP-OPS-<letter> rule`, 'success');
+    notify?.(`Section "${name}" added`, 'success');
   };
 
   // ── Header ────────────────────────────────────────────────────

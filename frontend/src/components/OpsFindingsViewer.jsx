@@ -455,11 +455,11 @@ export default function OpsFindingsViewer({ shareId }) {
 
       <PasswordModal
         isOpen={Boolean(askPassword)}
-        title={`Unlock section ${askPassword?.letter || ''}`}
-        message={`Editing "${askPassword?.section || ''}" needs this section's password.`}
+        title="Unlock to edit"
+        message={`Enter the master password to edit every tab, or the password of section ${askPassword?.letter || ''} to edit "${askPassword?.section || ''}" only.`}
         onSubmit={(pw) => {
           const ok = unlockOpsSection(askPassword?.letter, pw);
-          if (ok) { setAskPassword(null); showToast('Editing unlocked for this tab', 'success'); }
+          if (ok) { setAskPassword(null); showToast(isOpsSectionUnlocked('*') ? 'Editing unlocked for all tabs' : 'Editing unlocked for this tab', 'success'); }
           return ok;
         }}
         onClose={() => setAskPassword(null)}

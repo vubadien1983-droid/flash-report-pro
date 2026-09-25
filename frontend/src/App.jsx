@@ -1808,9 +1808,9 @@ export default function App() {
                 onAttachFile={handlePlanAttach}
                 onOpenAttachment={handleOpenAttachment}
                 onViewChange={(v) => { opsViewRef.current = v; }}
-                isUnlocked={(L) => isOpsSectionUnlocked(L)}
-                onRequestUnlock={(letter, section) => setOpsAsk({ letter, section })}
-                onLockSection={(L) => { lockOpsSection(L); showToast(`Section ${L} locked`, 'info'); }}
+                // The app is the owner's: every tab is editable here, no
+                // password. Passwords apply to the share link only (v3.20.4).
+                isUnlocked={() => true}
                 onExport={(kind, view) => { opsViewRef.current = view; if (kind === 'xlsx') handleExportExcel(); else handleExportPdf(); }}
                 onTabLink={(tab) => handleOpenShareModal(tab)}
                 canImport
@@ -1918,7 +1918,7 @@ export default function App() {
         onDelete={planLocked ? undefined : (isOpsReport ? (() => {
           const first = (imageModalState.photos || [])[0];
           const it = first ? (currentReport?.items || [])[first.itemIndex] : null;
-          return isOpsSectionUnlocked(sectionLetter(it?.section)) ? handleDeletePhoto : undefined;
+          return it ? handleDeletePhoto : undefined;
         })() : handleDeletePhoto)}
         onOpenAttachment={handleOpenAttachment}
       />

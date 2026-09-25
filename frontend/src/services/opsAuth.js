@@ -1,5 +1,7 @@
 /**
- * Edit locks of the OPS Findings report — ONE PASSWORD PER SECTION TAB.
+ * Edit locks of the OPS Findings SHARE LINK — a master password for every tab
+ * (v3.20.4) plus one password per section tab. The app itself has NO lock:
+ * it is the owner's app (user decision, v3.20.4).
  *
  * The Summary tab has no password (it cannot edit anything). Every section
  * tab is read-only until its own password is entered, in the app and on the
@@ -47,6 +49,10 @@ const DIGESTS = {
   Z: '8fefff7f70457ce22f9d02ef33de29f79bc089e56d3b75d7cf88e78f10fe9fbd',
 };
 
+// MASTER password (v3.20.4): opens EVERY section tab of the share link at once.
+const MASTER_DIGEST = 'd829ab110fe081e728ff2a685fc945c51fe7e6df1b686a4439560af0ae2c90f6';
+const ALL = '*';
+
 const STORAGE_KEY = 'fr_ops_unlocked';
 const EVENT = 'flashreport:ops-lock';
 
@@ -83,8 +89,14 @@ function writeSet(set) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(EVENT));
 }
 
+export function checkOpsMasterPassword(input) {
+  const cleaned = clean(input);
+  return Boolean(cleaned) && digestsEqual(sha256Hex(SALT + cleaned), MASTER_DIGEST);
+}
+
 export function isOpsSectionUnlocked(letter) {
-  return Boolean(letter) && readSet().has(String(letter).toUpperCase());
+  const set = readSet();
+  return set.has(ALL) || (Boolean(letter) && set.has(String(letter).toUpperCase()));
 }
 
 export function unlockedOpsSections() {
@@ -93,6 +105,8 @@ export function unlockedOpsSections() {
 
 /** @returns {boolean} true when the password was right and the tab is now open. */
 export function unlockOpsSection(letter, input) {
+  // The master password opens every tab; a section password opens its own.
+  if (checkOpsMasterPassword(input)) { const s = readSet(); s.add(ALL); writeSet(s); return true; }
   if (!checkOpsPassword(letter, input)) return false;
   const set = readSet();
   set.add(String(letter).toUpperCase());
@@ -103,6 +117,7 @@ export function unlockOpsSection(letter, input) {
 export function lockOpsSection(letter) {
   const set = readSet();
   set.delete(String(letter || '').toUpperCase());
+  set.delete(ALL);           // "Lock" after a master unlock locks the tabs again
   writeSet(set);
 }
 
