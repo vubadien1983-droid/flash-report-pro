@@ -598,3 +598,67 @@ export function opsClosureSeries(items, { today = todayKeyLocal(), maxWeeks = 26
     totals: { total: rows.length, closed: cumClosed, open: rows.length - cumClosed, closedNoDate, undatedOpen },
   };
 }
+
+// ─── Import as an EXACT COPY of the file (v3.20.3) ───────────────
+//
+// "Fill empty cells" never corrects what is already there — a wrong picture
+// imported earlier stays wrong for ever. This mode makes the report EQUAL to
+// the file: its rows, in its order, every column A–N from the file, and the
+// file's pictures in column G. Matching is still B + C (n-th ↔ n-th), only so
+// that a row keeps its id and its COLUMN O close-out references, which the
+// file does not have. Rows the file does not contain are removed.
+//
+// New G pictures take slots AFTER the row's old ones, never the same numbers,
+// so deleting the old pictures' bytes can never touch the new ones.
+export function replaceOpsFromImport(existing, imported, { makeId = makeOpsId } = {}) {
+  const cur = (existing || []).filter(Boolean);
+  const queues = new Map();
+  cur.forEach((it, i) => {
+    const k = opsImportKey(it.system, it.description);
+    if (!queues.has(k)) queues.set(k, []);
+    queues.get(k).push(i);
+  });
+  const used = new Set();
+  const dropped = [];          // { item, photo } whose bytes the caller should delete
+  const stats = { rows: 0, matched: 0, added: 0, removed: 0, changedCells: 0, photos: 0, removedRows: [], addedRows: [] };
+  const items = [];
+
+  for (const row of imported || []) {
+    const q = queues.get(opsImportKey(row.system, row.description));
+    const hit = q && q.length ? q.shift() : null;
+    const old = hit !== null && hit !== undefined ? cur[hit] : null;
+    const section = row.section || OPS_DEFAULT_SECTION;
+    const fields = Object.fromEntries(OPS_TEXT_FIELDS.map((f) => [f, row[f] === undefined || row[f] === null ? '' : String(row[f])]));
+    fields.status = normalizeOpsStatus(fields.status);
+    const fileG = (row.photos || []).filter((p) => slotColumn(p) === 'G');
+    const fileO = (row.photos || []).filter((p) => slotColumn(p) === 'O');
+    stats.rows += 1;
+    stats.photos += fileG.length + fileO.length;
+
+    if (old) {
+      used.add(hit);
+      stats.matched += 1;
+      for (const f of OPS_TEXT_FIELDS) if (String(old[f] ?? '') !== fields[f]) stats.changedCells += 1;
+      if ((old.section || OPS_DEFAULT_SECTION) !== section) stats.changedCells += 1;
+      const oldG = photosOf(old, 'G');
+      const keepO = photosOf(old, 'O');
+      let slot = nextSlotFor('G')(oldG);
+      const newG = fileG.map((p) => ({ ...p, slot_index: slot++ }));
+      const oCopy = fileO.length && !keepO.length ? fileO : [];
+      for (const p of oldG) dropped.push({ item: old, photo: p });
+      items.push({ ...old, ...fields, section, photos: [...keepO, ...oCopy, ...newG] });
+    } else {
+      const fresh = { ...makeOpsFinding(section), ...fields, id: makeId(), section, photos: [...fileG, ...fileO] };
+      stats.added += 1;
+      stats.addedRows.push({ id: fresh.id, section, system: fresh.system, description: fresh.description });
+      items.push(fresh);
+    }
+  }
+  cur.forEach((it, i) => {
+    if (used.has(i)) return;
+    stats.removed += 1;
+    stats.removedRows.push({ id: it.id, section: it.section, system: it.system, description: it.description });
+    for (const p of (it.photos || []).filter(Boolean)) dropped.push({ item: it, photo: p });
+  });
+  return { items, stats, dropped };
+}

@@ -191,6 +191,21 @@ export function mergeMiniPlanItems(base, mine, theirs, opts = {}) {
 
   // Keep each equipment's rows together: a row added on one device must not
   // land at the bottom of the plan, away from its own equipment.
+  // OPS Findings: the ORDER is this device's (an import can reorder rows);
+  // rows only the other side has stay right after the row they followed.
+  if (opts.preferMineOrder) {
+    const mineIdx = new Map(mineList.map((r, i) => [r?.id, i]));
+    const sorted = out.filter((r) => mineIdx.has(r?.id)).sort((a, b) => mineIdx.get(a.id) - mineIdx.get(b.id));
+    const after = new Map();
+    let prev = null;
+    for (const r of out) {
+      if (mineIdx.has(r?.id)) prev = r.id;
+      else { if (!after.has(prev)) after.set(prev, []); after.get(prev).push(r); }
+    }
+    const res = [...(after.get(null) || [])];
+    for (const r of sorted) { res.push(r); res.push(...(after.get(r.id) || [])); }
+    return { items: res, stats };
+  }
   return { items: doRegroup ? regroup(out) : out, stats };
 }
 

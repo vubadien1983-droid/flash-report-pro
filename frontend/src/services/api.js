@@ -239,7 +239,7 @@ export async function saveReport(id, reportData) {
         const theirs = snap.exists() ? (snap.data()?.items || []) : [];
         if (theirs.length && lastRemote.has(id)) {
           const merged = mergeMiniPlanItems(lastRemote.get(id), row.items, theirs, {
-            fields: OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true,
+            fields: OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true, preferMineOrder: true,
           });
           row.items = merged.items;
         }

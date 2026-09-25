@@ -395,33 +395,83 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
   };
 
   // 1) Floating pictures on the drawing layer.
+  //
+  // WHAT A READER SEES, NOT WHAT THE FILE HOLDS. A sheet often carries
+  // pictures pasted on top of one another in the same cell — row 18 of the
+  // 24-Sep workbook holds FOUR, stacked at the same corner, and Excel shows
+  // one. The drawing's element order is its z-order (later = on top), so a
+  // picture is kept only when a real part of it is not covered by a later one.
+  const colWidths = new Map();
+  for (const c of all(ws, 'col')) {
+    const lo = Number(c.getAttribute('min')); const hi = Number(c.getAttribute('max'));
+    const w = Number(c.getAttribute('width'));
+    if (w > 0) for (let i = lo; i <= Math.min(hi, 60); i += 1) colWidths.set(i, w);
+  }
+  const defaultColW = Number(fmt?.getAttribute('defaultColWidth')) || (Number(fmt?.getAttribute('baseColWidth')) || 8) + 0.71;
+  const colPt = (c1) => ((colWidths.get(c1) ?? defaultColW) * 7 + 5) * 0.75;   // 1-based column → points
+  const leftOf = (() => {
+    const cache = [0];
+    return (c0) => {                                                   // 0-based column → left in pt
+      for (let i = cache.length; i <= c0; i += 1) cache[i] = cache[i - 1] + colPt(i);
+      return cache[c0];
+    };
+  })();
+
   const sheetRels = await readRels(zip, sheet.path);
+  const floating = [];
   for (const dr of all(ws, 'drawing')) {
     const rid = dr.getAttributeNS(REL_NS, 'id') || dr.getAttribute('r:id');
     const drawingPath = sheetRels.get(rid);
     if (!drawingPath) continue;
     const drawing = await readXml(zip, drawingPath);
     const dRels = await readRels(zip, drawingPath);
-    const anchors = [...all(drawing, 'twoCellAnchor'), ...all(drawing, 'oneCellAnchor')];
+    // Document order = z-order; getElementsByTagNameNS('*', '*') keeps it.
+    const anchors = Array.from(drawing.getElementsByTagNameNS('*', '*'))
+      .filter((e) => e.localName === 'twoCellAnchor' || e.localName === 'oneCellAnchor');
     for (const a of anchors) {
       const blip = first(a, 'blip');
       const embed = blip && (blip.getAttributeNS(REL_NS, 'embed') || blip.getAttribute('r:embed'));
       const media = embed && dRels.get(embed);
       if (!media) continue;
       const from = first(a, 'from');
-      const to = first(a, 'to');
+      const to = kids(a, 'to')[0] || null;
       const num = (el, tag) => Number(first(el, tag)?.textContent || 0);
       const fromRow = num(from, 'row'); const fromCol = num(from, 'col');
       const top = topOf(fromRow) + num(from, 'rowOff') / EMU_PER_PT;
-      let bottom;
-      if (to) bottom = topOf(num(to, 'row')) + num(to, 'rowOff') / EMU_PER_PT;
-      else bottom = top + Number(first(a, 'ext')?.getAttribute('cy') || 0) / EMU_PER_PT;
+      const left = leftOf(fromCol) + num(from, 'colOff') / EMU_PER_PT;
+      let bottom; let right;
+      if (to) {
+        bottom = topOf(num(to, 'row')) + num(to, 'rowOff') / EMU_PER_PT;
+        right = leftOf(num(to, 'col')) + num(to, 'colOff') / EMU_PER_PT;
+      } else {
+        const ext = kids(a, 'ext')[0] || first(a, 'ext');
+        bottom = top + Number(ext?.getAttribute('cy') || 0) / EMU_PER_PT;
+        right = left + Number(ext?.getAttribute('cx') || 0) / EMU_PER_PT;
+      }
       if (!(bottom > top)) bottom = top + 1;
-      const target = nearestDataRow(top, bottom);
-      if (!target) { warnings.push(`A picture near row ${fromRow + 1} is not next to any finding and was skipped.`); continue; }
-      pending.push({ excelRow: target, col: colForPicture(fromCol), top, left: fromCol, media });
+      if (!(right > left)) right = left + 1;
+      floating.push({ top, left, bottom, right, fromRow, fromCol, media });
     }
   }
+
+  let hidden = 0;
+  floating.forEach((f, i) => {
+    const later = floating.slice(i + 1);
+    const N = 12;
+    let seen = 0;
+    for (let yi = 0; yi < N; yi += 1) {
+      for (let xi = 0; xi < N; xi += 1) {
+        const x = f.left + ((xi + 0.5) / N) * (f.right - f.left);
+        const y = f.top + ((yi + 0.5) / N) * (f.bottom - f.top);
+        if (!later.some((g) => x >= g.left && x <= g.right && y >= g.top && y <= g.bottom)) seen += 1;
+      }
+    }
+    if (seen / (N * N) < 0.15) { hidden += 1; return; }             // covered: not visible in Excel
+    const target = nearestDataRow(f.top, f.bottom);
+    if (!target) { warnings.push(`A picture near row ${f.fromRow + 1} is not next to any finding and was skipped.`); return; }
+    pending.push({ excelRow: target, col: colForPicture(f.fromCol), top: f.top, left: f.left, media: f.media });
+  });
+  if (hidden) warnings.push(`${hidden} picture(s) hidden underneath another picture in the sheet were not imported — only what is visible in Excel is copied.`);
 
   // 2) "Place in Cell" pictures (rich values).
   if (vmCells.length) {
@@ -454,7 +504,7 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
       if (!media) continue;
       const owner = ownerOf.get(row) || row;
       if (!byExcelRow.has(owner)) { warnings.push(`An in-cell picture at row ${row} is not on a finding row and was skipped.`); continue; }
-      pending.push({ excelRow: owner, col: colForPicture(col), top: topOf(row - 1), left: col, media });
+      pending.push({ excelRow: owner, col: colForPicture(col), top: topOf(row - 1), left: leftOf(col), media });
     }
   }
 

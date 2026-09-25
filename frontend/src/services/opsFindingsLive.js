@@ -16,7 +16,7 @@ import {
 } from './miniPlanLive';
 import { normalizeOpsItems, OPS_MERGE_FIELDS } from './opsFindings';
 
-export const OPS_MERGE_OPTS = { fields: OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true };
+export const OPS_MERGE_OPTS = { fields: OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true, preferMineOrder: true };
 
 /** @returns {() => void} unsubscribe */
 export function subscribeSharedOps(shareId, onData, onError) {

@@ -13,7 +13,7 @@ import {
   OPS_STATUS, OPS_STATUS_STYLE, OPS_DEFAULT_SECTION, EMPTY_OPS_FILTER,
   groupOpsSections, opsStats, filterOpsIndices, opsFilterActive, distinctValues,
   describeOpsFilter, makeOpsFinding, opsEditPatch, withColumnPhotos, opsSections,
-  mergeOpsImport, todayKeyLocal, formatOpsDate, opsRowHasContent,
+  mergeOpsImport, replaceOpsFromImport, todayKeyLocal, formatOpsDate, opsRowHasContent,
   opsSectionSummary, sectionIndices, sectionLetter, nextSectionLetter,
 } from '../services/opsFindings';
 
@@ -273,7 +273,8 @@ export default function OpsFindingsWorkspace({
       const cur = itemsRef.current;
       const base = cur.some(opsRowHasContent) ? cur : [];
       const merged = mergeOpsImport(base, parsed.rows);
-      setImportState({ phase: 'preview', parsed, merged, fileName: file.name });
+      const exact = replaceOpsFromImport(base, parsed.rows);
+      setImportState({ phase: 'preview', parsed, merged, exact, mode: 'exact', fileName: file.name });
     } catch (e) {
       console.error('Import failed:', e);
       setImportState({ phase: 'error', msg: e.message || String(e) });
@@ -284,8 +285,21 @@ export default function OpsFindingsWorkspace({
 
   const applyImport = () => {
     if (importState?.phase !== 'preview') return;
-    const { merged, parsed } = importState;
+    const { merged, exact, parsed, mode } = importState;
     const m = parsed.meta || {};
+    if (mode === 'exact') {
+      // The report becomes the file: one write, then the old pictures' bytes
+      // (and those of removed rows) are deleted from both cloud copies.
+      const patch = { items: exact.items };
+      if (!report?.location && m.subtitle) patch.location = m.subtitle;
+      if (!report?.system_tag && m.updatedBy) patch.system_tag = m.updatedBy;
+      if (onReportPatch) onReportPatch(patch); else write(exact.items);
+      for (const d of exact.dropped) { try { onPhotoRemoved?.(d.item, d.photo); } catch { /* cleanup only */ } }
+      const x = exact.stats;
+      notify?.(`Report now matches the file: ${x.rows} findings, ${x.photos} photo(s)` + (x.added ? `, ${x.added} added` : '') + (x.removed ? `, ${x.removed} removed` : '') + '.', 'success');
+      setImportState(null);
+      return;
+    }
     const patch = { items: merged.items };
     if (!report?.location && m.subtitle) patch.location = m.subtitle;
     if (!report?.system_tag && m.updatedBy) patch.system_tag = m.updatedBy;
@@ -659,43 +673,81 @@ export default function OpsFindingsWorkspace({
             )}
 
             {importState.phase === 'preview' && (() => {
-              const { parsed, merged, fileName } = importState;
+              const { parsed, merged, exact, fileName, mode } = importState;
               const s = merged.stats;
+              const x = exact.stats;
+              const setMode = (m) => setImportState((st) => ({ ...st, mode: m }));
+              const list = mode === 'exact' ? x.addedRows : s.addedRows;
+              const can = mode === 'exact' ? x.rows > 0 : (s.added || s.rowsFilled);
               return (
                 <>
                   <div className="px-5 py-4 overflow-y-auto">
                     <p className="text-[12.5px] text-slate-600 mb-3">
-                      <b>{fileName}</b> · sheet “{parsed.sheetName}” · {parsed.rows.length} findings and {parsed.imageCount} photos read.
-                      Rows are matched on <b>System (B) + Finding Description (C)</b>.
+                      <b>{fileName}</b> · sheet “{parsed.sheetName}” · {parsed.rows.length} findings and {parsed.imageCount} photos read
+                      (only pictures visible in Excel — pictures hidden underneath another one are skipped).
                     </p>
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-                        <div className="text-[10.5px] font-bold uppercase text-emerald-800">New findings</div>
-                        <div className="text-[22px] font-extrabold text-emerald-700 tabular-nums">{s.added}</div>
-                      </div>
-                      <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
-                        <div className="text-[10.5px] font-bold uppercase text-sky-800">Existing — empty cells filled</div>
-                        <div className="text-[22px] font-extrabold text-sky-700 tabular-nums">{s.rowsFilled}</div>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="text-[10.5px] font-bold uppercase text-slate-600">Already up to date</div>
-                        <div className="text-[22px] font-extrabold text-slate-700 tabular-nums">{s.unchanged}</div>
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                      <button type="button" onClick={() => setMode('exact')}
+                        className={`text-left rounded-xl border px-3 py-2 ${mode === 'exact' ? 'border-emerald-500 ring-2 ring-emerald-500/25 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                        <div className="text-[12.5px] font-bold text-slate-900">Exact copy of the file (recommended)</div>
+                        <div className="text-[11.5px] text-slate-600 leading-snug">Every row, section, column A–N and photo becomes exactly what the file has. Column O close-out references already in the app are kept.</div>
+                      </button>
+                      <button type="button" onClick={() => setMode('fill')}
+                        className={`text-left rounded-xl border px-3 py-2 ${mode === 'fill' ? 'border-sky-500 ring-2 ring-sky-500/25 bg-sky-50' : 'border-slate-200 bg-white'}`}>
+                        <div className="text-[12.5px] font-bold text-slate-900">Add new rows, fill empty cells</div>
+                        <div className="text-[11.5px] text-slate-600 leading-snug">Keeps everything already in the app; only adds new findings and fills empty cells.</div>
+                      </button>
                     </div>
-                    <p className="text-[12px] text-slate-500 mb-2">
-                      Existing rows keep everything already typed in the app — only EMPTY cells are filled from the file. Photos to add: {s.photosAdded}.
-                    </p>
-                    {s.addedRows.length > 0 && (
-                      <div className="border border-slate-200 rounded-lg max-h-[36vh] overflow-y-auto">
-                        {s.addedRows.map((r, i) => (
-                          <div key={r.id} className="flex gap-2 px-3 py-1.5 text-[12px] border-b border-slate-100 last:border-0">
-                            <span className="text-slate-400 tabular-nums w-6 text-right">{i + 1}</span>
-                            <span className="w-5 text-center text-[10.5px] font-bold rounded bg-slate-100 text-slate-600">{sectionLetter(r.section) || '·'}</span>
-                            <span className="font-semibold text-slate-800 w-[32%] truncate">{(r.system || '—').replace(/\n/g, ' ')}</span>
-                            <span className="text-slate-600 flex-1 truncate">{r.description}</span>
+                    {mode === 'exact' ? (
+                      <div className="grid grid-cols-4 gap-2 mb-3">
+                        {[
+                          ['Findings after import', x.rows, 'border-emerald-200 bg-emerald-50', 'text-emerald-800', 'text-emerald-700'],
+                          ['New rows', x.added, 'border-sky-200 bg-sky-50', 'text-sky-800', 'text-sky-700'],
+                          ['Cells changed', x.changedCells, 'border-amber-200 bg-amber-50', 'text-amber-800', 'text-amber-700'],
+                          ['Rows removed', x.removed, 'border-rose-200 bg-rose-50', 'text-rose-800', 'text-rose-700'],
+                        ].map(([l, v, box, lab, num]) => (
+                          <div key={l} className={`rounded-xl border px-3 py-2 ${box}`}>
+                            <div className={`text-[10px] font-bold uppercase ${lab}`}>{l}</div>
+                            <div className={`text-[20px] font-extrabold tabular-nums ${num}`}>{v}</div>
                           </div>
                         ))}
                       </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                          <div className="text-[10.5px] font-bold uppercase text-emerald-800">New findings</div>
+                          <div className="text-[22px] font-extrabold text-emerald-700 tabular-nums">{s.added}</div>
+                        </div>
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                          <div className="text-[10.5px] font-bold uppercase text-sky-800">Existing — empty cells filled</div>
+                          <div className="text-[22px] font-extrabold text-sky-700 tabular-nums">{s.rowsFilled}</div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div className="text-[10.5px] font-bold uppercase text-slate-600">Already up to date</div>
+                          <div className="text-[22px] font-extrabold text-slate-700 tabular-nums">{s.unchanged}</div>
+                        </div>
+                      </div>
+                    )}
+                    {mode === 'exact' && x.removedRows.length > 0 && (
+                      <div className="mb-2 text-[12px] text-rose-800 bg-rose-50 border border-rose-200 rounded-lg p-2.5">
+                        <b>These rows are not in the file and will be removed:</b>
+                        {x.removedRows.map((r) => <div key={r.id}>• {sectionLetter(r.section) || ''} {(r.system || '—').replace(/\n/g, ' ')} — {String(r.description || '').slice(0, 90)}</div>)}
+                      </div>
+                    )}
+                    {list.length > 0 && (
+                      <>
+                        <div className="text-[12px] font-bold text-slate-700 mb-1">New rows</div>
+                        <div className="border border-slate-200 rounded-lg max-h-[30vh] overflow-y-auto">
+                          {list.map((r, i) => (
+                            <div key={r.id} className="flex gap-2 px-3 py-1.5 text-[12px] border-b border-slate-100 last:border-0">
+                              <span className="text-slate-400 tabular-nums w-6 text-right">{i + 1}</span>
+                              <span className="w-5 text-center text-[10.5px] font-bold rounded bg-slate-100 text-slate-600">{sectionLetter(r.section) || '·'}</span>
+                              <span className="font-semibold text-slate-800 w-[32%] truncate">{(r.system || '—').replace(/\n/g, ' ')}</span>
+                              <span className="text-slate-600 flex-1 truncate">{r.description}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
                     )}
                     {parsed.warnings.length > 0 && (
                       <div className="mt-3 text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-0.5">
@@ -705,10 +757,10 @@ export default function OpsFindingsWorkspace({
                   </div>
                   <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50">
                     <button type="button" onClick={() => setImportState(null)} className="px-3 py-2 text-[13px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg">Cancel</button>
-                    <button type="button" onClick={applyImport} disabled={!s.added && !s.rowsFilled}
+                    <button type="button" onClick={applyImport} disabled={!can}
                       className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-40">
                       <CheckCircle2 className="w-4 h-4" />
-                      {s.added || s.rowsFilled ? 'Import' : 'Nothing to import'}
+                      {can ? (mode === 'exact' ? 'Replace with the file' : 'Import') : 'Nothing to import'}
                     </button>
                   </div>
                 </>
