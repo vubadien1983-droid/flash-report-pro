@@ -27,6 +27,7 @@ const TEXT_COLS = {
   reference:       { ph: 'PQPOC spec / standard', w: 'min-w-[130px] w-[130px]' },
   raised_by:       { ph: 'Raised by', w: 'min-w-[96px] w-[96px]' },
   pic:             { ph: 'PIC', w: 'min-w-[120px] w-[120px]' },
+  action_by:       { ph: 'Action by', w: 'min-w-[120px] w-[120px]' },
   remark:          { ph: 'Remark', w: 'min-w-[230px] w-[230px]' },
   closeout_status: { ph: 'Close-out status', w: 'min-w-[170px] w-[170px]' },
 };
@@ -38,9 +39,10 @@ const HEAD = [
   ['Corrective Action', TEXT_COLS.action.w],
   ['Reference to PQPOC Spec / Standard', TEXT_COLS.reference.w],
   ['Raise By', TEXT_COLS.raised_by.w],
-  ['Photo Reference', 'min-w-[200px] w-[200px]'],
+  ['Photo Reference', 'min-w-[252px] w-[252px]'],
   ['Open Date', 'min-w-[92px] w-[92px] text-center'],
   ['PIC', TEXT_COLS.pic.w],
+  ['Action By', TEXT_COLS.action_by.w],
   ['Status', 'min-w-[104px] w-[104px] text-center'],
   ['Close-out Date', 'min-w-[92px] w-[92px] text-center'],
   ['Remark', TEXT_COLS.remark.w],
@@ -119,7 +121,9 @@ function SectionHeader({ section, colSpan, readOnly, onRename, onAddRow, count }
 
 /**
  * One cell of either photo column. Column G takes pictures only; column O
- * (close-out references) takes pictures AND documents.
+ * (close-out references) takes pictures AND documents. Column G holds the
+ * pictures pasted in the source workbook and is drawn a size larger so a
+ * finding can be read from its thumbnail (v3.22.0).
  */
 function PhotoColumnCell({ item, index, col, readOnly, isMobileMode, selected, onSelect, api }) {
   const list = photosOf(item, col);
@@ -133,6 +137,7 @@ function PhotoColumnCell({ item, index, col, readOnly, isMobileMode, selected, o
       onSelectSlot={onSelect}
       nextSlot={nextSlotFor(col)}
       emptyLabel={col === 'O' ? 'No reference' : 'No photo'}
+      thumbClass={col === 'G' ? (isMobileMode ? 'w-[5.5rem] h-[5.5rem]' : 'w-[6.5rem] h-[6.5rem]') : ''}
       onPhotosChange={(next) => api.setColumnPhotos(item.id, col, next)}
       onPhotoClick={(entry, rowEntries) => api.onPhotoClick?.(entry, rowEntries, index)}
       onPhotoRemoved={(p) => api.onPhotoRemoved?.(item, p)}
@@ -189,6 +194,7 @@ const Row = React.memo(function Row({ item, index, no, editingField, readOnly, i
       </td>
       {date('open_date', 'Open date')}
       {text('pic')}
+      {text('action_by')}
       <td className="align-top px-1 py-1.5 border-b border-r border-slate-200">
         <OpsStatusCell value={item.status} {...ed('status')} />
       </td>
@@ -266,6 +272,7 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
           {dateLine('Updated', 'updated_date')}
         </div>
         {line('PIC', 'pic')}
+        {line('Action by', 'action_by')}
         {line('Raise by', 'raised_by')}
         {line('Reference (PQPOC spec / standard)', 'reference')}
         {line('Remark', 'remark')}

@@ -43,18 +43,28 @@ export const OPS_COLUMNS = [
   { col: 'G', key: 'photos_g',        label: 'Photo Reference' },
   { col: 'H', key: 'open_date',       label: 'Open Date', date: true },
   { col: 'I', key: 'pic',             label: 'PIC' },
-  { col: 'J', key: 'status',          label: 'Status' },
-  { col: 'K', key: 'closeout_date',   label: 'Close-out Date', date: true },
-  { col: 'L', key: 'remark',          label: 'Remark' },
-  { col: 'M', key: 'closeout_status', label: 'Close-out status' },
-  { col: 'N', key: 'updated_date',    label: 'Updated Date', date: true },
-  { col: 'O', key: 'photos_o',        label: 'Close-out references' },
+  { col: 'J', key: 'action_by',       label: 'Action By' },       // v3.22.0
+  { col: 'K', key: 'status',          label: 'Status' },
+  { col: 'L', key: 'closeout_date',   label: 'Close-out Date', date: true },
+  { col: 'M', key: 'remark',          label: 'Remark' },
+  { col: 'N', key: 'closeout_status', label: 'Close-out status' },
+  { col: 'O', key: 'updated_date',    label: 'Updated Date', date: true },
+  { col: 'P', key: 'photos_o',        label: 'Close-out references' },
+];
+
+/** Excel letter of a column of OPS_COLUMNS, by key ('status' → 'K'). */
+export const opsColLetter = (key) => OPS_COLUMNS.find((c) => c.key === key)?.col || '';
+
+/** Free-text fields (what counts as "content", what the importer copies). */
+export const OPS_FREE_TEXT_FIELDS = [
+  'system', 'description', 'action', 'reference', 'raised_by', 'pic', 'action_by',
+  'remark', 'closeout_status',
 ];
 
 /** Plain value fields of a finding (everything but id, section and photos). */
 export const OPS_TEXT_FIELDS = [
   'system', 'description', 'action', 'reference', 'raised_by',
-  'open_date', 'pic', 'status', 'closeout_date', 'remark',
+  'open_date', 'pic', 'action_by', 'status', 'closeout_date', 'remark',
   'closeout_status', 'updated_date',
 ];
 
@@ -195,7 +205,7 @@ export function makeOpsFinding(section = OPS_DEFAULT_SECTION, over = {}) {
     id: makeOpsId(),
     section: section || OPS_DEFAULT_SECTION,
     system: '', description: '', action: '', reference: '', raised_by: '',
-    open_date: '', pic: '', status: OPS_STATUS.OPEN, closeout_date: '', remark: '',
+    open_date: '', pic: '', action_by: '', status: OPS_STATUS.OPEN, closeout_date: '', remark: '',
     closeout_status: '', updated_date: '',
     photos: [],
     ...over,
@@ -230,8 +240,7 @@ export function normalizeOpsItems(items) {
 /** A row the user has put something into (auto-filled status does not count). */
 export function opsRowHasContent(item) {
   if (!item) return false;
-  const text = ['system', 'description', 'action', 'reference', 'raised_by', 'pic', 'remark', 'closeout_status'];
-  if (text.some((f) => String(item[f] ?? '').trim())) return true;
+  if (OPS_FREE_TEXT_FIELDS.some((f) => String(item[f] ?? '').trim())) return true;
   return (item.photos || []).some(Boolean);
 }
 
@@ -338,10 +347,10 @@ export function normalizeSearch(text) {
     .trim();
 }
 
-export const EMPTY_OPS_FILTER = { search: '', status: '', pic: '', raisedBy: '', system: '' };
+export const EMPTY_OPS_FILTER = { search: '', status: '', pic: '', actionBy: '', raisedBy: '', system: '' };
 
 export function opsFilterActive(f) {
-  return Boolean(f && (f.search || f.status || f.pic || f.raisedBy || f.system));
+  return Boolean(f && (f.search || f.status || f.pic || f.actionBy || f.raisedBy || f.system));
 }
 
 /** Distinct values of a field, for the filter drop-downs. */
@@ -373,6 +382,7 @@ export function filterOpsIndices(items, f = EMPTY_OPS_FILTER) {
     if (!it) return;
     if (f?.status && normalizeOpsStatus(it.status) !== f.status) return;
     if (f?.pic && !eq(it.pic, f.pic)) return;
+    if (f?.actionBy && !eq(it.action_by, f.actionBy)) return;
     if (f?.raisedBy && !eq(it.raised_by, f.raisedBy)) return;
     if (f?.system && !eq(it.system, f.system)) return;
     if (needle && !itemHaystack(it).includes(needle)) return;
@@ -388,6 +398,7 @@ export function describeOpsFilter(f) {
   if (f.status) bits.push(`Status: ${f.status}`);
   if (f.system) bits.push(`System: ${f.system}`);
   if (f.pic) bits.push(`PIC: ${f.pic}`);
+  if (f.actionBy) bits.push(`Action By: ${f.actionBy}`);
   if (f.raisedBy) bits.push(`Raise By: ${f.raisedBy}`);
   if (f.search) bits.push(`Search: "${f.search}"`);
   return bits.join(' · ');
@@ -628,7 +639,9 @@ export function replaceOpsFromImport(existing, imported, { makeId = makeOpsId } 
     const hit = q && q.length ? q.shift() : null;
     const old = hit !== null && hit !== undefined ? cur[hit] : null;
     const section = row.section || OPS_DEFAULT_SECTION;
-    const fields = Object.fromEntries(OPS_TEXT_FIELDS.map((f) => [f, row[f] === undefined || row[f] === null ? '' : String(row[f])]));
+    // A column the file does not have (row[f] undefined) keeps the app's value.
+    const fields = Object.fromEntries(OPS_TEXT_FIELDS.map((f) => [f,
+      row[f] === undefined ? String(old?.[f] ?? '') : row[f] === null ? '' : String(row[f])]));
     fields.status = normalizeOpsStatus(fields.status);
     const fileG = (row.photos || []).filter((p) => slotColumn(p) === 'G');
     const fileO = (row.photos || []).filter((p) => slotColumn(p) === 'O');
@@ -661,4 +674,100 @@ export function replaceOpsFromImport(existing, imported, { makeId = makeOpsId } 
     for (const p of (it.photos || []).filter(Boolean)) dropped.push({ item: it, photo: p });
   });
   return { items, stats, dropped };
+}
+
+
+// ─── Import: CONTINUE each section from its last number (v3.22.0) ──
+//
+// The routine monthly update. For every section of the file the app looks
+// at how far the matching TAB already goes (its last finding number, N) and
+// appends the file's findings numbered N+1, N+2, … — text, dates, status and
+// their pictures — after the tab's last row. Nothing already in the app is
+// overwritten or removed; the only change to an existing finding is filling
+// cells that are EMPTY in the app (e.g. a new "Action By" column), and only
+// when the file's row with the same number has the same B + C, so a
+// renumbered file can never write into the wrong finding.
+//
+// A section is matched by its letter ("B. Findings from E&I" ↔ tab B), then
+// by its full name; a section the app does not have becomes a new tab.
+// The finding number of a file row is its value in column A; a row without a
+// number takes the position after the previous one.
+export function appendOpsImport(existing, imported, { makeId = makeOpsId } = {}) {
+  const items = (existing || []).filter(Boolean).map((it) => ({ ...it, photos: [...(it.photos || [])] }));
+  const appSections = opsSections(items);
+  const findSection = (name) => {
+    const L = letterOf(name);
+    return (L && appSections.find((s) => letterOf(s) === L))
+      || appSections.find((s) => normalizeSearch(s) === normalizeSearch(name)) || null;
+  };
+
+  // File rows grouped by section, each with its finding number.
+  const fileSections = [];
+  const bySection = new Map();
+  for (const row of imported || []) {
+    const name = row.section || OPS_DEFAULT_SECTION;
+    if (!bySection.has(name)) { bySection.set(name, []); fileSections.push(name); }
+    const list = bySection.get(name);
+    const prev = list.length ? list[list.length - 1].no : 0;
+    const no = Number.isFinite(row._no) && row._no > 0 ? row._no : prev + 1;
+    list.push({ row, no });
+  }
+
+  const stats = { sections: [], added: 0, filledRows: 0, cellsFilled: 0, photosAdded: 0, skipped: 0, addedRows: [] };
+
+  for (const name of fileSections) {
+    const target = findSection(name) || name;
+    const isNew = !appSections.includes(target);
+    const idx = sectionIndices(items, target).filter((i) => (items[i].section || OPS_DEFAULT_SECTION) === target);
+    const have = isNew ? 0 : idx.length;
+    const list = bySection.get(name);
+    const sec = { section: target, fileSection: name, isNew, have, fileLast: list.length ? Math.max(...list.map((x) => x.no)) : 0, added: 0, from: 0, to: 0, filled: 0 };
+
+    // 1) Findings the tab already has: fill EMPTY cells only, same number + same B+C.
+    for (const { row, no } of list) {
+      if (no > have) continue;
+      const i = idx[no - 1];
+      const cur = items[i];
+      if (!cur || opsImportKey(cur.system, cur.description) !== opsImportKey(row.system, row.description)) { stats.skipped += 1; continue; }
+      const patch = {};
+      for (const f of OPS_TEXT_FIELDS) {
+        if (f === 'status') continue;
+        if (row[f] !== undefined && isBlank(cur[f]) && !isBlank(row[f])) patch[f] = row[f];
+      }
+      if (Object.keys(patch).length) {
+        items[i] = { ...cur, ...patch };
+        sec.filled += 1; stats.filledRows += 1; stats.cellsFilled += Object.keys(patch).length;
+      }
+    }
+
+    // 2) Findings after the tab's last number: append, in the file's order.
+    let at = isNew ? -1 : idx[idx.length - 1];
+    if (isNew) {
+      // A new tab goes in letter order (C between B and D), not at the end.
+      const L = letterOf(target);
+      const next = L ? items.findIndex((it) => (letterOf(it.section || OPS_DEFAULT_SECTION) || '~') > L) : -1;
+      at = next >= 0 ? next - 1 : items.length - 1;
+    }
+    for (const { row, no } of list) {
+      if (no <= have) continue;
+      const fresh = {
+        ...makeOpsFinding(target),
+        ...Object.fromEntries(OPS_TEXT_FIELDS.map((f) => [f, isBlank(row[f]) ? '' : row[f]])),
+        id: makeId(),
+        section: target,
+        photos: [...(row.photos || [])],
+      };
+      fresh.status = normalizeOpsStatus(fresh.status);
+      items.splice(at + 1, 0, fresh);
+      at += 1;
+      sec.added += 1;
+      if (!sec.from) sec.from = have + sec.added;
+      sec.to = have + sec.added;
+      stats.added += 1;
+      stats.photosAdded += fresh.photos.length;
+      stats.addedRows.push({ id: fresh.id, section: target, no: sec.to, system: fresh.system, description: fresh.description });
+    }
+    stats.sections.push(sec);
+  }
+  return { items, stats };
 }

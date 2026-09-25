@@ -13,7 +13,7 @@ import {
   OPS_STATUS, OPS_STATUS_STYLE, OPS_DEFAULT_SECTION, EMPTY_OPS_FILTER,
   groupOpsSections, opsStats, filterOpsIndices, opsFilterActive, distinctValues,
   describeOpsFilter, makeOpsFinding, opsEditPatch, withColumnPhotos, opsSections,
-  mergeOpsImport, replaceOpsFromImport, todayKeyLocal, formatOpsDate, opsRowHasContent,
+  mergeOpsImport, replaceOpsFromImport, appendOpsImport, todayKeyLocal, formatOpsDate, opsRowHasContent,
   opsSectionSummary, sectionIndices, sectionLetter, nextSectionLetter,
 } from '../services/opsFindings';
 
@@ -171,6 +171,7 @@ export default function OpsFindingsWorkspace({
   const options = useMemo(() => ({
     system: distinctValues(tabItems, 'system'),
     pic: distinctValues(tabItems, 'pic'),
+    actionBy: distinctValues(tabItems, 'action_by'),
     raisedBy: distinctValues(tabItems, 'raised_by'),
   }), [tabItems]);
 
@@ -277,7 +278,9 @@ export default function OpsFindingsWorkspace({
       const base = cur.some(opsRowHasContent) ? cur : [];
       const merged = mergeOpsImport(base, parsed.rows);
       const exact = replaceOpsFromImport(base, parsed.rows);
-      setImportState({ phase: 'preview', parsed, merged, exact, mode: 'exact', fileName: file.name });
+      const appended = appendOpsImport(base, parsed.rows);
+      // Default (v3.22.0): continue every tab from its last finding number.
+      setImportState({ phase: 'preview', parsed, merged, exact, appended, mode: 'append', fileName: file.name });
     } catch (e) {
       console.error('Import failed:', e);
       setImportState({ phase: 'error', msg: e.message || String(e) });
@@ -288,8 +291,19 @@ export default function OpsFindingsWorkspace({
 
   const applyImport = () => {
     if (importState?.phase !== 'preview') return;
-    const { merged, exact, parsed, mode } = importState;
+    const { merged, exact, appended, parsed, mode } = importState;
     const m = parsed.meta || {};
+    if (mode === 'append') {
+      const patch = { items: appended.items };
+      if (!report?.location && m.subtitle) patch.location = m.subtitle;
+      if (!report?.system_tag && m.updatedBy) patch.system_tag = m.updatedBy;
+      if (onReportPatch) onReportPatch(patch); else write(appended.items);
+      const a = appended.stats;
+      const per = a.sections.filter((x) => x.added).map((x) => `${sectionLetter(x.section) || x.section} #${x.from}–${x.to}`).join(', ');
+      notify?.(`Import done: ${a.added} new finding(s)${per ? ` (${per})` : ''}, ${a.photosAdded} photo(s)` + (a.filledRows ? `, ${a.filledRows} existing row(s) completed` : '') + '.', 'success');
+      setImportState(null);
+      return;
+    }
     if (mode === 'exact') {
       // The report becomes the file: one write, then the old pictures' bytes
       // (and those of removed rows) are deleted from both cloud copies.
@@ -564,6 +578,12 @@ export default function OpsFindingsWorkspace({
               <option value="">All PIC</option>
               {options.pic.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
             </select>
+            {options.actionBy.length > 0 && (
+              <select className={SEL} value={filter.actionBy || ''} onChange={(e) => setF({ actionBy: e.target.value })} title="Action By">
+                <option value="">All action by</option>
+                {options.actionBy.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
+              </select>
+            )}
             <select className={SEL} value={filter.raisedBy} onChange={(e) => setF({ raisedBy: e.target.value })} title="Raise By">
               <option value="">All raised by</option>
               {options.raisedBy.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -688,12 +708,14 @@ export default function OpsFindingsWorkspace({
             )}
 
             {importState.phase === 'preview' && (() => {
-              const { parsed, merged, exact, fileName, mode } = importState;
+              const { parsed, merged, exact, appended, fileName, mode } = importState;
               const s = merged.stats;
               const x = exact.stats;
+              const a = appended.stats;
               const setMode = (m) => setImportState((st) => ({ ...st, mode: m }));
-              const list = mode === 'exact' ? x.addedRows : s.addedRows;
-              const can = mode === 'exact' ? x.rows > 0 : (s.added || s.rowsFilled);
+              const list = mode === 'exact' ? x.addedRows : mode === 'append' ? a.addedRows : s.addedRows;
+              const can = mode === 'exact' ? x.rows > 0 : mode === 'append' ? (a.added || a.filledRows) : (s.added || s.rowsFilled);
+              const hasActionBy = (parsed.columns || []).includes('action_by');
               return (
                 <>
                   <div className="px-5 py-4 overflow-y-auto">
@@ -701,11 +723,16 @@ export default function OpsFindingsWorkspace({
                       <b>{fileName}</b> · sheet “{parsed.sheetName}” · {parsed.rows.length} findings and {parsed.imageCount} photos read
                       (only pictures visible in Excel — pictures hidden underneath another one are skipped).
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                      <button type="button" onClick={() => setMode('append')}
+                        className={`text-left rounded-xl border px-3 py-2 ${mode === 'append' ? 'border-emerald-500 ring-2 ring-emerald-500/25 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
+                        <div className="text-[12.5px] font-bold text-slate-900">Continue from the last number (recommended)</div>
+                        <div className="text-[11.5px] text-slate-600 leading-snug">For each section, adds the findings after the tab's last number — text and photos. Nothing in the app is changed or removed; empty cells of existing rows are filled.</div>
+                      </button>
                       <button type="button" onClick={() => setMode('exact')}
-                        className={`text-left rounded-xl border px-3 py-2 ${mode === 'exact' ? 'border-emerald-500 ring-2 ring-emerald-500/25 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
-                        <div className="text-[12.5px] font-bold text-slate-900">Exact copy of the file (recommended)</div>
-                        <div className="text-[11.5px] text-slate-600 leading-snug">Every row, section, column A–N and photo becomes exactly what the file has. Column O close-out references already in the app are kept.</div>
+                        className={`text-left rounded-xl border px-3 py-2 ${mode === 'exact' ? 'border-amber-500 ring-2 ring-amber-500/25 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                        <div className="text-[12.5px] font-bold text-slate-900">Exact copy of the file</div>
+                        <div className="text-[11.5px] text-slate-600 leading-snug">Every row, section, column and photo becomes exactly what the file has (rows not in the file are removed). Close-out references already in the app are kept.</div>
                       </button>
                       <button type="button" onClick={() => setMode('fill')}
                         className={`text-left rounded-xl border px-3 py-2 ${mode === 'fill' ? 'border-sky-500 ring-2 ring-sky-500/25 bg-sky-50' : 'border-slate-200 bg-white'}`}>
@@ -713,7 +740,45 @@ export default function OpsFindingsWorkspace({
                         <div className="text-[11.5px] text-slate-600 leading-snug">Keeps everything already in the app; only adds new findings and fills empty cells.</div>
                       </button>
                     </div>
-                    {mode === 'exact' ? (
+                    {!hasActionBy && (
+                      <div className="mb-2 text-[11.5px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                        This file has no “Action By” column — the Action By already in the app is kept.
+                      </div>
+                    )}
+                    {mode === 'append' ? (
+                      <div className="mb-3 border border-slate-200 rounded-xl overflow-hidden">
+                        <table className="w-full text-[12px]">
+                          <thead className="bg-slate-100 text-slate-600">
+                            <tr>
+                              <th className="text-left px-2.5 py-1.5">Section</th>
+                              <th className="px-2 py-1.5 text-right">In the app</th>
+                              <th className="px-2 py-1.5 text-right">In the file</th>
+                              <th className="px-2 py-1.5 text-left">Will add</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {a.sections.map((sec) => (
+                              <tr key={sec.section} className="border-t border-slate-100">
+                                <td className="px-2.5 py-1.5 font-semibold text-slate-800">
+                                  {sec.section}{sec.isNew && <span className="ml-1.5 text-[10px] font-bold text-sky-700 bg-sky-100 rounded px-1">new tab</span>}
+                                </td>
+                                <td className="px-2 py-1.5 text-right tabular-nums">{sec.have ? `#1–${sec.have}` : '—'}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums">{sec.fileLast ? `#1–${sec.fileLast}` : '—'}</td>
+                                <td className={`px-2 py-1.5 font-bold ${sec.added ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                  {sec.added ? `${sec.added} finding(s): #${sec.from}–${sec.to}` : 'up to date'}
+                                  {sec.filled > 0 && <span className="block text-[10.5px] font-semibold text-sky-700">{sec.filled} existing row(s): empty cells filled</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {a.skipped > 0 && (
+                          <div className="px-2.5 py-1.5 text-[11.5px] text-amber-800 bg-amber-50 border-t border-amber-200">
+                            {a.skipped} row(s) of the file have the same number as a finding in the app but a different System / Finding — they were left alone.
+                          </div>
+                        )}
+                      </div>
+                    ) : mode === 'exact' ? (
                       <div className="grid grid-cols-4 gap-2 mb-3">
                         {[
                           ['Findings after import', x.rows, 'border-emerald-200 bg-emerald-50', 'text-emerald-800', 'text-emerald-700'],
@@ -755,7 +820,7 @@ export default function OpsFindingsWorkspace({
                         <div className="border border-slate-200 rounded-lg max-h-[30vh] overflow-y-auto">
                           {list.map((r, i) => (
                             <div key={r.id} className="flex gap-2 px-3 py-1.5 text-[12px] border-b border-slate-100 last:border-0">
-                              <span className="text-slate-400 tabular-nums w-6 text-right">{i + 1}</span>
+                              <span className="text-slate-400 tabular-nums w-7 text-right">{r.no ? `#${r.no}` : i + 1}</span>
                               <span className="w-5 text-center text-[10.5px] font-bold rounded bg-slate-100 text-slate-600">{sectionLetter(r.section) || '·'}</span>
                               <span className="font-semibold text-slate-800 w-[32%] truncate">{(r.system || '—').replace(/\n/g, ' ')}</span>
                               <span className="text-slate-600 flex-1 truncate">{r.description}</span>
@@ -775,7 +840,7 @@ export default function OpsFindingsWorkspace({
                     <button type="button" onClick={applyImport} disabled={!can}
                       className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-40">
                       <CheckCircle2 className="w-4 h-4" />
-                      {can ? (mode === 'exact' ? 'Replace with the file' : 'Import') : 'Nothing to import'}
+                      {can ? (mode === 'exact' ? 'Replace with the file' : mode === 'append' ? (a.added ? `Add ${a.added} finding(s)` : 'Fill empty cells') : 'Import') : 'Nothing to import'}
                     </button>
                   </div>
                 </>

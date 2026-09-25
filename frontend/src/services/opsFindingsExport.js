@@ -21,7 +21,7 @@ import {
 } from './exportImage';
 import { attachmentUrl } from './fileAttachments';
 import {
-  OPS_FINDINGS_LABEL, OPS_STATUS_STYLE, OPS_STATUS_OPTIONS, OPS_COLUMNS,
+  OPS_FINDINGS_LABEL, OPS_STATUS_STYLE, OPS_STATUS_OPTIONS, OPS_COLUMNS, opsColLetter,
   groupOpsSections, opsStats, normalizeOpsStatus, photosOf, isFileEntry,
   opsDateKey, formatOpsDate, todayKeyLocal,
   opsSectionSummary, sectionIndices, sectionLetter, opsClosureSeries,
@@ -57,10 +57,14 @@ const files = (item, col) => photosOf(item, col).filter((p) => isFileEntry(p) &&
 // EXCEL
 // ══════════════════════════════════════════════════════════════════
 
-// Width of each column in Excel character units, A..O.
-const XL_WIDTHS = [5, 20, 42, 32, 18, 11, 28, 11, 16, 11, 11, 36, 26, 11, 28];
+// Width of each column in Excel character units, A..P (v3.22.0: J = Action By,
+// G a little wider so its pictures are drawn larger).
+const XL_WIDTHS = [5, 20, 42, 32, 18, 11, 34, 11, 16, 16, 11, 11, 36, 26, 11, 28];
 const COL_G = 6;
-const COL_O = 14;
+const COL_O = XL_WIDTHS.length - 1;
+const LAST_COL = XL_WIDTHS.length;                    // 16 = P
+const LAST_LETTER = opsColLetter('photos_o');          // 'P'
+const STATUS_LETTER = opsColLetter('status');          // 'K'
 const HEADER_ROW = 9;
 
 /**
@@ -94,12 +98,12 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
   ws.getCell('C2').font = font({ bold: true, color: { argb: NAVY } });
   ws.getCell('C2').alignment = { horizontal: 'left' };
 
-  ws.mergeCells('A4:O4');
+  ws.mergeCells(`A4:${LAST_LETTER}4`);
   ws.getCell('A4').value = report.title || OPS_FINDINGS_LABEL;
   ws.getCell('A4').font = { name: 'Arial', size: 16, bold: true, color: { argb: NAVY } };
   ws.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(4).height = 26;
-  ws.mergeCells('A5:O5');
+  ws.mergeCells(`A5:${LAST_LETTER}5`);
   ws.getCell('A5').value = subtitle || report.location || '';
   ws.getCell('A5').font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF334155' } };
   ws.getCell('A5').alignment = { horizontal: 'center' };
@@ -122,7 +126,7 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
   ws.getCell('B6').alignment = { horizontal: 'right' };
 
   if (label) {
-    ws.mergeCells('A8:O8');
+    ws.mergeCells(`A8:${LAST_LETTER}8`);
     ws.getCell('A8').value = `${label} — ${rows.length} finding(s)`;
     ws.getCell('A8').font = font({ italic: true, color: { argb: 'FF9A3412' } });
   }
@@ -145,7 +149,7 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
   let r = firstData;
 
   for (const g of groups) {
-    ws.mergeCells(r, 1, r, 15);
+    ws.mergeCells(r, 1, r, LAST_COL);
     const sc = ws.getCell(r, 1);
     sc.value = g.section;
     sc.font = font({ bold: true, size: 11, color: { argb: 'FFFFFFFF' } });
@@ -164,8 +168,8 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
       const textLines = Math.max(
         linesFor(item.system, XL_WIDTHS[1]), linesFor(item.description, XL_WIDTHS[2]),
         linesFor(item.action, XL_WIDTHS[3]), linesFor(item.reference, XL_WIDTHS[4]),
-        linesFor(item.pic, XL_WIDTHS[8]), linesFor(item.remark, XL_WIDTHS[11]),
-        linesFor(item.closeout_status, XL_WIDTHS[12]), 1,
+        linesFor(item.pic, XL_WIDTHS[8]), linesFor(item.action_by, XL_WIDTHS[9]),
+        linesFor(item.remark, XL_WIDTHS[12]), linesFor(item.closeout_status, XL_WIDTHS[13]), 1,
       );
       let height = Math.max(30, textLines * 12.5 + 8);
       const gGrid = gi.length ? photoGrid(gi.length, gPx, { maxCols: 2 }) : null;
@@ -201,13 +205,14 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
       set(7, '');
       date(8, item.open_date);
       set(9, item.pic || '', { alignment: { horizontal: 'center' } });
-      const sc2 = set(10, st, { font: { bold: true, color: { argb: style.fg } }, alignment: { horizontal: 'center', vertical: 'middle' } });
+      set(10, item.action_by || '', { alignment: { horizontal: 'center' } });
+      const sc2 = set(11, st, { font: { bold: true, color: { argb: style.fg } }, alignment: { horizontal: 'center', vertical: 'middle' } });
       sc2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.argb } };
-      date(11, item.closeout_date);
-      set(12, item.remark || '');
-      set(13, item.closeout_status || '');
-      date(14, item.updated_date);
-      const oc = set(15, '');
+      date(12, item.closeout_date);
+      set(13, item.remark || '');
+      set(14, item.closeout_status || '');
+      date(15, item.updated_date);
+      const oc = set(16, '');
 
       if (of.length) {
         const names = of.map((f) => f.filename || 'file').join('\n');
@@ -247,7 +252,7 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
   }
 
   // Summary formulas now that the data range is known.
-  const J = `J${firstData}:J${Math.max(firstData, lastData)}`;
+  const J = `${STATUS_LETTER}${firstData}:${STATUS_LETTER}${Math.max(firstData, lastData)}`;
   const f = (formula, result) => ({ formula, result });
   ws.getCell(7, 4).value = f(`COUNTIF(${J},"Open")`, stats.open);
   ws.getCell(7, 5).value = f(`COUNTIF(${J},"On-going")`, stats.ongoing);
@@ -262,11 +267,11 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
     cell.border = thin();
   }
 
-  ws.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: Math.max(HEADER_ROW, lastData), column: 15 } };
+  ws.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: Math.max(HEADER_ROW, lastData), column: LAST_COL } };
 
   // Status as a drop-down, so a Status typed in the file stays one of three.
   for (let rr = firstData; rr <= lastData; rr += 1) {
-    ws.getCell(rr, 10).dataValidation = {
+    ws.getCell(rr, OPS_COLUMNS.findIndex((c) => c.key === 'status') + 1).dataValidation = {
       type: 'list', allowBlank: true, formulae: [`"${OPS_STATUS_OPTIONS.join(',')}"`],
     };
   }
@@ -370,7 +375,7 @@ async function writeSummarySheet(wb, ws, report, refs, items) {
   const f = (formula, result) => ({ formula, result });
   let r = HEAD + 1;
   for (const s of refs) {
-    const J = `'${s.sheetName}'!$J$${s.firstData}:$J$${Math.max(s.firstData, s.lastData)}`;
+    const J = `'${s.sheetName}'!$${STATUS_LETTER}$${s.firstData}:$${STATUS_LETTER}$${Math.max(s.firstData, s.lastData)}`;
     ws.getCell(r, 1).value = s.section;
     ws.getCell(r, 3).value = f(`COUNTIF(${J},"Open")`, s.stats.open);
     ws.getCell(r, 4).value = f(`COUNTIF(${J},"On-going")`, s.stats.ongoing);
@@ -483,10 +488,12 @@ export function closureChartPng(items, { width = 980, height = 330 } = {}) {
 // A3 landscape: 1190.55pt wide; 24pt margins leave 1142.55pt. The widths below
 // sum to 1142 — re-check the total when a column changes, or autoTable starts
 // shrinking the text to make it fit.
-const PDF_W = [22, 82, 140, 118, 60, 44, 120, 44, 60, 46, 44, 118, 88, 44, 112];
+// A3 landscape, 1142pt between the margins. v3.22.0: J = Action By, and
+// column G wider so its pictures print larger.
+const PDF_W = [22, 74, 128, 108, 52, 44, 136, 44, 60, 56, 46, 44, 104, 80, 44, 100];
 const P_G = 6;
-const P_O = 14;
-const P_STATUS = 9;
+const P_O = PDF_W.length - 1;
+const P_STATUS = OPS_COLUMNS.findIndex((c) => c.key === 'status');
 
 export async function exportOpsPdf(report, view = null) {
   if (!report) throw new Error('No report data provided');
@@ -578,7 +585,7 @@ export async function exportOpsPdf(report, view = null) {
   const body = [];
   const meta = [];     // per body row: { section } | { item, gImgs, oImgs, oFiles, style }
   for (const g of groups) {
-    body.push([{ content: g.section, colSpan: 15, styles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 } }]);
+    body.push([{ content: g.section, colSpan: OPS_COLUMNS.length, styles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 } }]);
     meta.push({ section: true });
     for (const { item, no } of g.rows) {
       const st = normalizeOpsStatus(item.status);
@@ -588,7 +595,7 @@ export async function exportOpsPdf(report, view = null) {
       for (const p of images(item, 'O')) { const im = await getImageData(p.url); if (im) oImgs.push(im); }
       body.push([
         String(no), item.system || '', item.description || '', item.action || '', item.reference || '',
-        item.raised_by || '', '', formatOpsDate(item.open_date), item.pic || '', st,
+        item.raised_by || '', '', formatOpsDate(item.open_date), item.pic || '', item.action_by || '', st,
         formatOpsDate(item.closeout_date), item.remark || '', item.closeout_status || '',
         formatOpsDate(item.updated_date), '',
       ]);
@@ -618,7 +625,7 @@ export async function exportOpsPdf(report, view = null) {
       if (!m || m.section) return;
       const ci = data.column.index;
       if (m.style?.rowRgb) data.cell.styles.fillColor = m.style.rowRgb;
-      if ([0, 7, 9, 10, 13].includes(ci)) data.cell.styles.halign = 'center';
+      if ([0, 7, 10, 11, 14].includes(ci)) data.cell.styles.halign = 'center';
       if (ci === 0 || ci === 1) data.cell.styles.fontStyle = 'bold';
       if (ci === P_STATUS) {
         data.cell.styles.fillColor = m.style.rgb;

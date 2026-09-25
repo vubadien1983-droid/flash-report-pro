@@ -43,6 +43,7 @@ export default function PhotoGalleryCell({
   // passes its own allocator (services/opsFindings.js nextSlotFor).
   nextSlot = nextPhotoSlot,
   emptyLabel = 'No photo',
+  thumbClass = '',       // overrides the thumbnail size (OPS column G: bigger, v3.22.0)
 }) {
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -231,7 +232,7 @@ export default function PhotoGalleryCell({
     if (gone && onPhotoRemoved) onPhotoRemoved(gone);
   };
 
-  const thumbSize = compact || isMobileView ? 'w-16 h-16' : 'w-20 h-20';
+  const thumbSize = thumbClass || (compact || isMobileView ? 'w-16 h-16' : 'w-20 h-20');
   const canAdd = !readOnly;
 
   return (

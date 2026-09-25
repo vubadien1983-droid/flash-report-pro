@@ -26,7 +26,7 @@
 import { compressForStorage, yieldToBrowser, withTimeout } from './imageCompression';
 import { parseDateInput } from './dateInput';
 import {
-  OPS_DEFAULT_SECTION, CLOSEOUT_SLOT_BASE, OPS_DATE_FIELDS,
+  OPS_DEFAULT_SECTION, CLOSEOUT_SLOT_BASE, OPS_DATE_FIELDS, OPS_FREE_TEXT_FIELDS,
   normalizeOpsStatus, todayKeyLocal,
 } from './opsFindings';
 
@@ -176,6 +176,9 @@ function fieldForHeader(text) {
   if (t.startsWith('open date') || t === 'open') return 'open_date';
   if (t.includes('system') || t.includes('package') || t.includes('location')) return 'system';
   if (t.includes('finding')) return 'description';
+  // "Action By" (v3.22.0) — before the Corrective Action test, which would
+  // otherwise claim any header that merely contains "action".
+  if (/^action(ed)?\s*(by|owner)\b/.test(t) || t === 'action party') return 'action_by';
   if (t.includes('corrective') || t === 'action') return 'action';
   if (t.includes('reference to') || t.includes('spec') || t.includes('standard')) return 'reference';
   if (t.startsWith('raise')) return 'raised_by';
@@ -345,14 +348,18 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     }
     if (!system && !description && !textField(r, 'action')) continue;   // empty row
 
-    const row = { section, photos: [], _excelRow: r };
-    for (const f of ['system', 'description', 'action', 'reference', 'raised_by', 'pic', 'remark', 'closeout_status']) {
-      row[f] = textField(r, f);
+    // A column the FILE does not have is left UNDEFINED (not ''), so an import
+    // never blanks what the app holds for it — e.g. an older file without
+    // "Action By" keeps the Action By typed in the app (v3.22.0).
+    const no = /^\d+(\.\d+)?$/.test(noText) ? Number(noText) : null;
+    const row = { section, photos: [], _excelRow: r, _no: no };
+    for (const f of OPS_FREE_TEXT_FIELDS) {
+      if (colOf[f] !== undefined) row[f] = textField(r, f);
     }
     row.system = system;
     row.description = description;
     for (const f of OPS_DATE_FIELDS) {
-      row[f] = colOf[f] === undefined ? '' : toDateKey(get(r, colOf[f]), today);
+      if (colOf[f] !== undefined) row[f] = toDateKey(get(r, colOf[f]), today);
     }
     const rawStatus = colOf.status === undefined ? '' : cleanText(get(r, colOf.status));
     row.status = normalizeOpsStatus(rawStatus);
@@ -550,5 +557,6 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     warnings,
     imageCount: rows.reduce((n, r) => n + r.photos.length, 0),
     sheetName: sheet.name,
+    columns: Object.keys(colOf),   // the fields the file HAS a column for
   };
 }
