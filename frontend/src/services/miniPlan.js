@@ -637,6 +637,19 @@ export const FOCUS = {
   VAR: 'var',
 };
 
+/**
+ * The legend is also a filter.
+ *
+ * "Overdue - On-going 18" is a question as much as a figure, and the answer is
+ * the 18 rows behind it. A focus of `state:<row state>` selects exactly the
+ * rows the chip counted — on BOTH tabs, because the filter is shared.
+ */
+export function stateFocus(state) { return `state:${state}`; }
+export function focusState(focus) {
+  const f = String(focus || '');
+  return f.startsWith('state:') ? f.slice(6) : '';
+}
+
 export const EMPTY_FILTER = {
   search: '',
   week: WEEK_MODE.NONE,
@@ -683,6 +696,9 @@ export function itemInFocus(item, filter, today = todayKey()) {
   const f = normalizeFilter(filter);
   const range = weekRangeFor(f.week, today);
   const status = normalizeStatus(item?.status);
+
+  const wantedState = focusState(f.focus);
+  if (wantedState) return rowState(item, today) === wantedState;
 
   switch (f.focus) {
     case FOCUS.DONE:      return status === STATUS_DONE;

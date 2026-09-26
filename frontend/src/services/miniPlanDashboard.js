@@ -18,6 +18,7 @@ import {
   normalizeStatus, scheduleKey, completedKey, todayKey,
   itemInScope, itemInFocus, normalizeFilter, isFilterActive,
   weekRangeFor, weekModeLabel, inRange, STATUS_DONE, WEEK_MODE, FOCUS,
+  focusState, ROW_STATE_STYLE,
 } from './miniPlan';
 
 /**
@@ -169,7 +170,9 @@ export function describeFilter(view) {
   const bits = [];
   if (f.search.trim()) bits.push(`"${f.search.trim()}"`);
   if (f.week !== WEEK_MODE.NONE) bits.push(`${view.weekLabel} (${view.range.start} to ${view.range.end})`);
-  if (f.focus !== FOCUS.ALL) {
+  const st = focusState(f.focus);
+  if (st) bits.push(ROW_STATE_STYLE[st]?.label || st);
+  else if (f.focus !== FOCUS.ALL) {
     const tile = summaryTiles(view).find((t) => t.focus === f.focus && t.key !== 'equipment' && t.key !== 'total');
     if (tile) bits.push(tile.label);
   }

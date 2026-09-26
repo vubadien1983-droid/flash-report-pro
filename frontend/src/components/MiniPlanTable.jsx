@@ -9,7 +9,7 @@ import ConfirmModal from './ConfirmModal';
 import { TextCell, DateCell, StatusCell, formatCellDate } from './PlanCell';
 import { compressForStorage, yieldToBrowser } from '../services/imageCompression';
 import {
-  ROW_STATE_LEGEND, ROW_STATE_STYLE,
+  ROW_STATE_LEGEND, ROW_STATE_STYLE, stateFocus,
   rowStyle, todayKey, groupMiniPlanItems, miniPlanStats,
   makeMiniPlanRow, makeGroupId, nextPhotoSlot,
   filterMiniPlanGroups, statusChangePatch, isCompletedDateInferred,
@@ -17,15 +17,36 @@ import {
   EMPTY_FILTER, normalizeFilter, weekRangeFor, weekModeLabel, WEEK_MODE, FOCUS,
 } from '../services/miniPlan';
 
-/** Small coloured chip used by the legend and the summary strip. */
-function Chip({ state, count }) {
+/**
+ * A legend chip, which is also a FILTER.
+ *
+ * Every figure on these two tabs now opens the list it counts: clicking
+ * "Overdue - On-going 18" leaves the 18 rows on screen, and because the filter
+ * is shared, the other tab shows the same work (BUG-047).
+ */
+function Chip({ state, count, active = false, onClick }) {
   const s = ROW_STATE_STYLE[state];
-  return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold ${s.tw} ${s.twText} border border-black/5`}>
+  const body = (
+    <>
       <span className="w-2 h-2 rounded-sm" style={{ background: s.css }} />
       {s.label}
       {typeof count === 'number' && <strong className="tabular-nums">{count}</strong>}
-    </span>
+    </>
+  );
+  const base = `inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-semibold ${s.tw} ${s.twText} border border-black/5`;
+
+  if (!onClick) return <span className={base}>{body}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={active ? `Showing ${s.label} only — click to clear` : `Show only: ${s.label}`}
+      className={`${base} transition-all hover:brightness-95 ${
+        active ? 'ring-2 ring-offset-1 ring-slate-700' : ''
+      }`}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -416,7 +437,17 @@ export default function MiniPlanTable({
         {/* One count per state, looked up by key: a ternary chain silently
             mislabels the moment a state is added — which is exactly what
             happened when Unplanned arrived. */}
-        {ROW_STATE_LEGEND.map((s) => <Chip key={s} state={s} count={stats[s] ?? 0} />)}
+        {ROW_STATE_LEGEND.map((s) => (
+          <Chip
+            key={s}
+            state={s}
+            count={stats[s] ?? 0}
+            active={filter.focus === stateFocus(s)}
+            onClick={isEditingCell ? undefined : () => setFilter({
+              focus: filter.focus === stateFocus(s) ? FOCUS.ALL : stateFocus(s),
+            })}
+          />
+        ))}
       </span>
     </div>
   );
