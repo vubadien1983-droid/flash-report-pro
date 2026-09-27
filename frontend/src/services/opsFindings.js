@@ -36,20 +36,21 @@ export const isOpsFindings = (report) => report?.report_type === OPS_FINDINGS_TY
 export const OPS_COLUMNS = [
   { col: 'A', key: 'no',              label: 'No' },
   { col: 'B', key: 'system',          label: 'System/ Package/ Location' },
-  { col: 'C', key: 'description',     label: 'Finding Description' },
-  { col: 'D', key: 'action',          label: 'Corrective Action' },
-  { col: 'E', key: 'reference',       label: 'Reference to PQPOC Spec / Standard' },
-  { col: 'F', key: 'raised_by',       label: 'Raise By' },
-  { col: 'G', key: 'photos_g',        label: 'Photo Reference' },
-  { col: 'H', key: 'open_date',       label: 'Open Date', date: true },
-  { col: 'I', key: 'pic',             label: 'PIC' },
-  { col: 'J', key: 'action_by',       label: 'Action By' },       // v3.22.0
-  { col: 'K', key: 'status',          label: 'Status' },
-  { col: 'L', key: 'closeout_date',   label: 'Close-out Date', date: true },
-  { col: 'M', key: 'remark',          label: 'Remark' },
-  { col: 'N', key: 'closeout_status', label: 'Close-out status' },
-  { col: 'O', key: 'updated_date',    label: 'Updated Date', date: true },
-  { col: 'P', key: 'photos_o',        label: 'Close-out references' },
+  { col: 'C', key: 'subsystem_no',    label: 'Subsystem No.' },      // v3.24.0
+  { col: 'D', key: 'description',     label: 'Finding Description' },
+  { col: 'E', key: 'action',          label: 'Corrective Action' },
+  { col: 'F', key: 'reference',       label: 'Reference to PQPOC Spec / Standard' },
+  { col: 'G', key: 'raised_by',       label: 'Raise By' },
+  { col: 'H', key: 'photos_g',        label: 'Photo Reference' },
+  { col: 'I', key: 'open_date',       label: 'Open Date', date: true },
+  { col: 'J', key: 'pic',             label: 'PIC' },
+  { col: 'K', key: 'action_by',       label: 'Action By' },       // v3.22.0
+  { col: 'L', key: 'status',          label: 'Status' },
+  { col: 'M', key: 'closeout_date',   label: 'Close-out Date', date: true },
+  { col: 'N', key: 'remark',          label: 'Remark' },
+  { col: 'O', key: 'closeout_status', label: 'Close-out status' },
+  { col: 'P', key: 'updated_date',    label: 'Updated Date', date: true },
+  { col: 'Q', key: 'photos_o',        label: 'Close-out references' },
 ];
 
 /** Excel letter of a column of OPS_COLUMNS, by key ('status' → 'K'). */
@@ -57,13 +58,13 @@ export const opsColLetter = (key) => OPS_COLUMNS.find((c) => c.key === key)?.col
 
 /** Free-text fields (what counts as "content", what the importer copies). */
 export const OPS_FREE_TEXT_FIELDS = [
-  'system', 'description', 'action', 'reference', 'raised_by', 'pic', 'action_by',
+  'system', 'subsystem_no', 'description', 'action', 'reference', 'raised_by', 'pic', 'action_by',
   'remark', 'closeout_status',
 ];
 
 /** Plain value fields of a finding (everything but id, section and photos). */
 export const OPS_TEXT_FIELDS = [
-  'system', 'description', 'action', 'reference', 'raised_by',
+  'system', 'subsystem_no', 'description', 'action', 'reference', 'raised_by',
   'open_date', 'pic', 'action_by', 'status', 'closeout_date', 'remark',
   'closeout_status', 'updated_date',
 ];
@@ -204,7 +205,7 @@ export function makeOpsFinding(section = OPS_DEFAULT_SECTION, over = {}) {
   const row = {
     id: makeOpsId(),
     section: section || OPS_DEFAULT_SECTION,
-    system: '', description: '', action: '', reference: '', raised_by: '',
+    system: '', subsystem_no: '', description: '', action: '', reference: '', raised_by: '',
     open_date: '', pic: '', action_by: '', status: OPS_STATUS.OPEN, closeout_date: '', remark: '',
     closeout_status: '', updated_date: '',
     photos: [],

@@ -21,7 +21,7 @@ import {
 } from './exportImage';
 import { attachmentUrl } from './fileAttachments';
 import {
-  OPS_FINDINGS_LABEL, OPS_STATUS_STYLE, OPS_STATUS_OPTIONS, OPS_COLUMNS, opsColLetter,
+  OPS_FINDINGS_LABEL, OPS_STATUS_STYLE, OPS_STATUS_OPTIONS, OPS_COLUMNS, opsColLetter, OPS_FREE_TEXT_FIELDS,
   groupOpsSections, opsStats, normalizeOpsStatus, photosOf, isFileEntry,
   opsDateKey, formatOpsDate, todayKeyLocal,
   opsSectionSummary, sectionIndices, sectionLetter, opsClosureSeries,
@@ -57,14 +57,22 @@ const files = (item, col) => photosOf(item, col).filter((p) => isFileEntry(p) &&
 // EXCEL
 // ══════════════════════════════════════════════════════════════════
 
-// Width of each column in Excel character units, A..P (v3.22.0: J = Action By,
-// G a little wider so its pictures are drawn larger).
-const XL_WIDTHS = [5, 20, 42, 32, 18, 11, 34, 11, 16, 16, 11, 11, 36, 26, 11, 28];
-const COL_G = 6;
-const COL_O = XL_WIDTHS.length - 1;
-const LAST_COL = XL_WIDTHS.length;                    // 16 = P
-const LAST_LETTER = opsColLetter('photos_o');          // 'P'
-const STATUS_LETTER = opsColLetter('status');          // 'K'
+// Every column position below is DERIVED from OPS_COLUMNS (v3.24.0: C =
+// Subsystem No.), so adding a column is one entry there plus a width here.
+const OPS_KEYS = OPS_COLUMNS.map((c) => c.key);
+const colIdx = (key) => OPS_KEYS.indexOf(key);           // 0-based
+// Width of each column in Excel character units.
+const XL_WIDTH_OF = {
+  no: 5, system: 20, subsystem_no: 14, description: 42, action: 32, reference: 18, raised_by: 11,
+  photos_g: 34, open_date: 11, pic: 16, action_by: 16, status: 11, closeout_date: 11,
+  remark: 36, closeout_status: 26, updated_date: 11, photos_o: 28,
+};
+const XL_WIDTHS = OPS_KEYS.map((k) => XL_WIDTH_OF[k] || 14);
+const COL_G = colIdx('photos_g');
+const COL_O = colIdx('photos_o');
+const LAST_COL = XL_WIDTHS.length;
+const LAST_LETTER = opsColLetter('photos_o');          // last column letter
+const STATUS_LETTER = opsColLetter('status');          // Status column letter
 const HEADER_ROW = 9;
 
 /**
@@ -166,10 +174,7 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
       const of = files(item, 'O');
 
       const textLines = Math.max(
-        linesFor(item.system, XL_WIDTHS[1]), linesFor(item.description, XL_WIDTHS[2]),
-        linesFor(item.action, XL_WIDTHS[3]), linesFor(item.reference, XL_WIDTHS[4]),
-        linesFor(item.pic, XL_WIDTHS[8]), linesFor(item.action_by, XL_WIDTHS[9]),
-        linesFor(item.remark, XL_WIDTHS[12]), linesFor(item.closeout_status, XL_WIDTHS[13]), 1,
+        ...OPS_FREE_TEXT_FIELDS.map((k) => linesFor(item[k], XL_WIDTHS[colIdx(k)])), 1,
       );
       let height = Math.max(30, textLines * 12.5 + 8);
       const gGrid = gi.length ? photoGrid(gi.length, gPx, { maxCols: 2 }) : null;
@@ -196,23 +201,26 @@ async function writeFindingsSheet(wb, report, { groups, rows, label, sheetName, 
         if (k) c.numFmt = 'd-mmm-yy';
       };
 
-      set(1, no, { font: { bold: true }, alignment: { horizontal: 'center' } });
-      set(2, item.system || '', { font: { bold: true } });
-      set(3, item.description || '');
-      set(4, item.action || '');
-      set(5, item.reference || '');
-      set(6, item.raised_by || '', { alignment: { horizontal: 'center' } });
-      set(7, '');
-      date(8, item.open_date);
-      set(9, item.pic || '', { alignment: { horizontal: 'center' } });
-      set(10, item.action_by || '', { alignment: { horizontal: 'center' } });
-      const sc2 = set(11, st, { font: { bold: true, color: { argb: style.fg } }, alignment: { horizontal: 'center', vertical: 'middle' } });
-      sc2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.argb } };
-      date(12, item.closeout_date);
-      set(13, item.remark || '');
-      set(14, item.closeout_status || '');
-      date(15, item.updated_date);
-      const oc = set(16, '');
+      const center = { alignment: { horizontal: 'center' } };
+      let oc = null;
+      OPS_COLUMNS.forEach((c, i) => {
+        const col = i + 1;
+        if (c.date) { date(col, item[c.key]); return; }
+        switch (c.key) {
+          case 'no': set(col, no, { font: { bold: true }, alignment: { horizontal: 'center' } }); break;
+          case 'system': set(col, item.system || '', { font: { bold: true } }); break;
+          case 'photos_g': set(col, ''); break;
+          case 'photos_o': oc = set(col, ''); break;
+          case 'status': {
+            const sc2 = set(col, st, { font: { bold: true, color: { argb: style.fg } }, alignment: { horizontal: 'center', vertical: 'middle' } });
+            sc2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.argb } };
+            break;
+          }
+          case 'subsystem_no': case 'raised_by': case 'pic': case 'action_by':
+            set(col, item[c.key] || '', center); break;
+          default: set(col, item[c.key] || '');
+        }
+      });
 
       if (of.length) {
         const names = of.map((f) => f.filename || 'file').join('\n');
@@ -488,12 +496,16 @@ export function closureChartPng(items, { width = 980, height = 330 } = {}) {
 // A3 landscape: 1190.55pt wide; 24pt margins leave 1142.55pt. The widths below
 // sum to 1142 — re-check the total when a column changes, or autoTable starts
 // shrinking the text to make it fit.
-// A3 landscape, 1142pt between the margins. v3.22.0: J = Action By, and
-// column G wider so its pictures print larger.
-const PDF_W = [22, 74, 128, 108, 52, 44, 136, 44, 60, 56, 46, 44, 104, 80, 44, 100];
-const P_G = 6;
-const P_O = PDF_W.length - 1;
-const P_STATUS = OPS_COLUMNS.findIndex((c) => c.key === 'status');
+const PDF_W_OF = {
+  no: 22, system: 70, subsystem_no: 50, description: 112, action: 100, reference: 50, raised_by: 44,
+  photos_g: 136, open_date: 44, pic: 60, action_by: 56, status: 46, closeout_date: 44,
+  remark: 96, closeout_status: 72, updated_date: 44, photos_o: 96,
+};
+const PDF_W = OPS_KEYS.map((k) => PDF_W_OF[k] || 44);   // sums to 1142
+const P_G = colIdx('photos_g');
+const P_O = colIdx('photos_o');
+const P_STATUS = colIdx('status');
+const PDF_CENTER = new Set(OPS_COLUMNS.map((c, i) => (c.key === 'no' || c.key === 'status' || c.key === 'subsystem_no' || c.date ? i : -1)).filter((i) => i >= 0));
 
 export async function exportOpsPdf(report, view = null) {
   if (!report) throw new Error('No report data provided');
@@ -593,12 +605,13 @@ export async function exportOpsPdf(report, view = null) {
       for (const p of images(item, 'G')) { const im = await getImageData(p.url); if (im) gImgs.push(im); }
       const oImgs = [];
       for (const p of images(item, 'O')) { const im = await getImageData(p.url); if (im) oImgs.push(im); }
-      body.push([
-        String(no), item.system || '', item.description || '', item.action || '', item.reference || '',
-        item.raised_by || '', '', formatOpsDate(item.open_date), item.pic || '', item.action_by || '', st,
-        formatOpsDate(item.closeout_date), item.remark || '', item.closeout_status || '',
-        formatOpsDate(item.updated_date), '',
-      ]);
+      body.push(OPS_COLUMNS.map((c) => {
+        if (c.key === 'no') return String(no);
+        if (c.key === 'status') return st;
+        if (c.key === 'photos_g' || c.key === 'photos_o') return '';
+        if (c.date) return formatOpsDate(item[c.key]);
+        return item[c.key] || '';
+      }));
       meta.push({ item, gImgs, oImgs, oFiles: files(item, 'O'), style: OPS_STATUS_STYLE[st] });
     }
   }
@@ -625,7 +638,7 @@ export async function exportOpsPdf(report, view = null) {
       if (!m || m.section) return;
       const ci = data.column.index;
       if (m.style?.rowRgb) data.cell.styles.fillColor = m.style.rowRgb;
-      if ([0, 7, 10, 11, 14].includes(ci)) data.cell.styles.halign = 'center';
+      if (PDF_CENTER.has(ci)) data.cell.styles.halign = 'center';
       if (ci === 0 || ci === 1) data.cell.styles.fontStyle = 'bold';
       if (ci === P_STATUS) {
         data.cell.styles.fillColor = m.style.rgb;

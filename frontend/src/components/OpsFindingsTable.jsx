@@ -22,6 +22,7 @@ import {
 
 const TEXT_COLS = {
   system:          { ph: 'System / package / location', w: 'min-w-[150px] w-[150px]' },
+  subsystem_no:    { ph: 'Subsystem No.', w: 'min-w-[110px] w-[110px]' },
   description:     { ph: 'Finding description', w: 'min-w-[260px] w-[260px]' },
   action:          { ph: 'Corrective action', w: 'min-w-[210px] w-[210px]' },
   reference:       { ph: 'PQPOC spec / standard', w: 'min-w-[130px] w-[130px]' },
@@ -35,6 +36,7 @@ const TEXT_COLS = {
 const HEAD = [
   ['No', 'min-w-[44px] w-[44px] text-center'],
   ['System/ Package/ Location', TEXT_COLS.system.w],
+  ['Subsystem No.', TEXT_COLS.subsystem_no.w],
   ['Finding Description', TEXT_COLS.description.w],
   ['Corrective Action', TEXT_COLS.action.w],
   ['Reference to PQPOC Spec / Standard', TEXT_COLS.reference.w],
@@ -184,6 +186,7 @@ const Row = React.memo(function Row({ item, index, no, editingField, readOnly, i
         {no}
       </td>
       {text('system')}
+      {text('subsystem_no')}
       {text('description')}
       {text('action')}
       {text('reference')}
@@ -259,6 +262,7 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
       </div>
       <div className="p-1.5 space-y-1">
         {line('System / Package / Location', 'system')}
+        {line('Subsystem No.', 'subsystem_no')}
         {line('Finding description', 'description')}
         {line('Corrective action', 'action')}
         <div className="px-1">

@@ -174,6 +174,8 @@ function fieldForHeader(text) {
   if (t.startsWith('close-out date') || t.startsWith('closeout date') || t.startsWith('close out date')) return 'closeout_date';
   if (t.startsWith('updated date')) return 'updated_date';
   if (t.startsWith('open date') || t === 'open') return 'open_date';
+  // "Subsystem No." (v3.24.0) — before the System test, which "subsystem" contains.
+  if (/^sub[\s-]*system/.test(t)) return 'subsystem_no';
   if (t.includes('system') || t.includes('package') || t.includes('location')) return 'system';
   if (t.includes('finding')) return 'description';
   // "Action By" (v3.22.0) — before the Corrective Action test, which would
