@@ -534,6 +534,10 @@ function opsActionByBreakdown(items, status = "") {
   if (blank) out.push({ name: OPS_NY_CLARIFY, count: blank, blank: true });
   return out;
 }
+var OPS_LEFT_FIELDS = (() => {
+  const end = OPS_COLUMNS.findIndex((c) => c.key === "remark");
+  return OPS_COLUMNS.slice(1, end + 1).map((c) => c.key).filter((k) => k !== "photos_g");
+})();
 
 // src/services/opsFindingsExport.js
 var NAVY = "FF1F3A5F";

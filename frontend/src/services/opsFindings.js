@@ -807,3 +807,137 @@ export function opsActionByBreakdown(items, status = '') {
   if (blank) out.push({ name: OPS_NY_CLARIFY, count: blank, blank: true });
   return out;
 }
+
+
+// ─── Import: REPLACE columns A–I, keep every row in place (v3.30.0) ──
+//
+// The file is the master of columns A (No) … I (Remark): System, Subsystem
+// No., Finding Description, Reference, Raise By, the Photo Reference pictures,
+// Open Date and Remark. The app is the master of everything AFTER Remark
+// (PIC, Action By, Corrective Action, Status, Close-out …, Close-out
+// references), so a row must never move: finding #n of a tab is replaced by
+// the file's finding #n of the same section, whatever its B + C says.
+//
+// - Rows the tab has are updated in place; nothing is inserted between them,
+//   reordered or removed (a tab longer than the file keeps its extra rows).
+// - File findings after the tab's last number are appended with A–I from the
+//   file and Status = Open; the other columns start empty.
+// - A column the file does not have keeps the app's value.
+// - Pictures: the file's column-G pictures replace the row's G pictures. A
+//   file row without any G picture keeps the app's pictures (a picture hidden
+//   under another one in Excel is not read, so "no picture" is not proof).
+
+/** Fields of columns B…I, derived from OPS_COLUMNS (A is the position). */
+export const OPS_LEFT_FIELDS = (() => {
+  const end = OPS_COLUMNS.findIndex((c) => c.key === 'remark');
+  return OPS_COLUMNS.slice(1, end + 1).map((c) => c.key).filter((k) => k !== 'photos_g');
+})();
+
+const sameUrls = (a, b) => a.length === b.length && a.every((p, i) => (p?.url || '') && p.url === b[i]?.url);
+
+export function replaceOpsColumnsImport(existing, imported, { makeId = makeOpsId } = {}) {
+  const items = (existing || []).filter(Boolean).map((it) => ({ ...it, photos: [...(it.photos || [])] }));
+  const appSections = opsSections(items);
+  const findSection = (name) => {
+    const L = letterOf(name);
+    return (L && appSections.find((s) => letterOf(s) === L))
+      || appSections.find((s) => normalizeSearch(s) === normalizeSearch(name)) || null;
+  };
+
+  // File rows per section, keyed by their finding number (column A).
+  const fileSections = [];
+  const bySection = new Map();
+  let duplicates = 0;
+  for (const row of imported || []) {
+    const name = row.section || OPS_DEFAULT_SECTION;
+    if (!bySection.has(name)) { bySection.set(name, { list: [], last: 0, seen: new Set() }); fileSections.push(name); }
+    const g = bySection.get(name);
+    const no = Number.isFinite(row._no) && row._no > 0 ? row._no : g.last + 1;
+    g.last = no;
+    if (g.seen.has(no)) { duplicates += 1; continue; }
+    g.seen.add(no);
+    g.list.push({ row, no });
+  }
+
+  const dropped = [];
+  const stats = {
+    sections: [], updatedRows: 0, changedCells: 0, photosReplaced: 0, photosKept: 0,
+    added: 0, photosAdded: 0, untouched: 0, duplicates, changedRows: [], addedRows: [],
+  };
+
+  for (const name of fileSections) {
+    const target = findSection(name) || name;
+    const isNew = !appSections.includes(target);
+    const idx = isNew ? [] : sectionIndices(items, target);
+    const have = idx.length;
+    const { list } = bySection.get(name);
+    list.sort((a, b) => a.no - b.no);
+    const sec = { section: target, fileSection: name, isNew, have, fileLast: list.length ? list[list.length - 1].no : 0, updated: 0, added: 0, from: 0, to: 0, beyond: 0 };
+
+    // 1) Existing rows: replace B…I and the G pictures, in place.
+    for (const { row, no } of list) {
+      if (no > have) continue;
+      const i = idx[no - 1];
+      const cur = items[i];
+      const patch = {};
+      const fields = [];
+      for (const f of OPS_LEFT_FIELDS) {
+        if (row[f] === undefined) continue;                 // column not in the file
+        const v = row[f] === null ? '' : String(row[f]);
+        if (String(cur[f] ?? '') !== v) { patch[f] = v; fields.push(f); }
+      }
+      const fileG = (row.photos || []).filter((p) => slotColumn(p) === 'G');
+      const oldG = photosOf(cur, 'G');
+      let photos = cur.photos;
+      if (fileG.length && !sameUrls(fileG, oldG)) {
+        let slot = nextSlotFor('G')(oldG);
+        const newG = fileG.map((p) => ({ ...p, slot_index: slot++ }));
+        photos = [...photosOf(cur, 'O'), ...newG];
+        for (const p of oldG) dropped.push({ item: cur, photo: p });
+        stats.photosReplaced += newG.length;
+        fields.push('photos_g');
+      } else if (!fileG.length && oldG.length) {
+        stats.photosKept += oldG.length;
+      }
+      if (fields.length) {
+        items[i] = { ...cur, ...patch, photos };
+        sec.updated += 1;
+        stats.updatedRows += 1;
+        stats.changedCells += fields.length;
+        stats.changedRows.push({ id: cur.id, section: target, no, fields, system: items[i].system, description: items[i].description });
+      }
+    }
+    sec.beyond = Math.max(0, have - (list.filter((x) => x.no <= have).length));
+    stats.untouched += sec.beyond;
+
+    // 2) Findings after the tab's last number: append (A–I + Status Open).
+    let at = have ? idx[have - 1] : -1;
+    if (!have) {
+      const L = letterOf(target);
+      const next = L ? items.findIndex((it) => (letterOf(it.section || OPS_DEFAULT_SECTION) || '~') > L) : -1;
+      at = next >= 0 ? next - 1 : items.length - 1;
+    }
+    for (const { row, no } of list) {
+      if (no <= have) continue;
+      const left = Object.fromEntries(OPS_LEFT_FIELDS.map((f) => [f, isBlank(row[f]) ? '' : String(row[f])]));
+      const fresh = {
+        ...makeOpsFinding(target),
+        ...left,
+        id: makeId(),
+        section: target,
+        status: OPS_STATUS.OPEN,
+        photos: (row.photos || []).filter((p) => slotColumn(p) === 'G'),
+      };
+      items.splice(at + 1, 0, fresh);
+      at += 1;
+      sec.added += 1;
+      if (!sec.from) sec.from = have + sec.added;
+      sec.to = have + sec.added;
+      stats.added += 1;
+      stats.photosAdded += fresh.photos.length;
+      stats.addedRows.push({ id: fresh.id, section: target, no: sec.to, system: fresh.system, description: fresh.description });
+    }
+    stats.sections.push(sec);
+  }
+  return { items, stats, dropped };
+}

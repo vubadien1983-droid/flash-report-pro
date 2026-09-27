@@ -15,15 +15,16 @@
  *     through xl/metadata.xml → richData/rdrichvalue.xml → richValueRel.xml
  *     → its .rels → xl/media/*. ExcelJS ignores this chain entirely.
  *
- * Every picture goes through compressForStorage() on the way in — the one
- * ingest rule that keeps the app from freezing (BUG-013).
+ * Every picture goes through compressForImport() on the way in (v3.30.0):
+ * a PNG/JPEG that fits a photo document is kept byte-for-byte, a larger one is
+ * re-encoded at the highest quality that fits (BUG-013's bounded-ingest rule).
  *
  * Merged cells: a vertical merge (B28:B33 …) is SPLIT — every row of the
  * block receives the block's value, as the user asked. Without that the empty
  * B of rows 2..n would both break the B+C import key and lose the system name.
  */
 
-import { compressForStorage, yieldToBrowser, withTimeout } from './imageCompression';
+import { compressForImport, yieldToBrowser, withTimeout } from './imageCompression';
 import { parseDateInput } from './dateInput';
 import {
   OPS_DEFAULT_SECTION, CLOSEOUT_SLOT_BASE, OPS_DATE_FIELDS, OPS_FREE_TEXT_FIELDS,
@@ -534,7 +535,7 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     try {
       const bytes = await entry.read();
       const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
-      const url = await withTimeout(compressForStorage(new Blob([bytes], { type: mime })), 30000, 'Compressing picture');
+      const url = await withTimeout(compressForImport(new Blob([bytes], { type: mime })), 30000, 'Preparing picture');
       if (!url) throw new Error('empty result');
       const row = byExcelRow.get(pic.excelRow);
       const key = `${pic.excelRow}:${pic.col}`;
@@ -542,7 +543,7 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
       counters.set(key, n + 1);
       row.photos.push({
         id: `imp_${pic.excelRow}_${pic.col}_${n}_${Math.random().toString(36).slice(2, 6)}`,
-        filename: `${pic.col}${pic.excelRow}_${n + 1}.jpg`,
+        filename: `${pic.col}${pic.excelRow}_${n + 1}.${/^data:image\/png/.test(url) ? 'png' : 'jpg'}`,
         url,
         slot_index: (pic.col === 'O' ? CLOSEOUT_SLOT_BASE : 0) + n,
       });

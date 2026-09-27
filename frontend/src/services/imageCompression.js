@@ -236,6 +236,35 @@ export async function compressForStorage(fileOrBlob) {
   return compressImageBlob(fileOrBlob, { maxBytes: TARGET_MAX_BYTES });
 }
 
+/** Pictures read from an Excel import may use (almost) all of a photo document. */
+export const IMPORT_MAX_BYTES = 850_000;
+
+/**
+ * Pictures taken from an Excel workbook (v3.30.0): keep them as sharp as a
+ * photo document allows. A picture that already fits is stored UNCHANGED —
+ * PNG screenshots stay PNG, so drawings and text are not blurred by JPEG.
+ * A larger one is re-encoded from 2400 px / q0.92 down, only as far as needed.
+ */
+export async function compressForImport(blob) {
+  const original = await blobToDataUrl(blob);
+  // Only PNG / JPEG are kept as they are: every exporter (PDF, Excel, the
+  // weekly e-mail server) reads those two, not GIF / BMP / WebP.
+  const keepable = /^data:image\/(png|jpe?g)[;,]/i.test(original);
+  if (keepable && byteLength(original) <= IMPORT_MAX_BYTES) return original;
+  const steps = [[2400, 0.92], [2048, 0.9], [1800, 0.87], [1600, 0.84], [1400, 0.8], [1200, 0.74]];
+  for (const [maxDim, quality] of steps) {
+    try {
+      const out = await encode(blob, original, maxDim, quality);
+      if (out && out.length <= IMPORT_MAX_BYTES) return out;
+    } catch (e) {
+      console.warn('[compress] import step failed:', e.message);
+      break;
+    }
+    await yieldToBrowser();
+  }
+  return compressImageBlob(blob, { maxBytes: IMPORT_MAX_BYTES });
+}
+
 /**
  * Bring an existing report's photos down to size.
  *
