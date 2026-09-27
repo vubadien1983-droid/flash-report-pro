@@ -403,7 +403,7 @@ export function describeOpsFilter(f) {
   const v = (x) => (x === OPS_BLANK ? '(blank)' : x);
   if (f.subsystem) bits.push(`Subsystem: ${v(f.subsystem)}`);
   if (f.pic) bits.push(`PIC: ${v(f.pic)}`);
-  if (f.actionBy) bits.push(`Action By: ${v(f.actionBy)}`);
+  if (f.actionBy) bits.push(`Action By: ${f.actionBy === OPS_BLANK ? 'NY Clarify' : f.actionBy}`);
   if (f.raisedBy) bits.push(`Raise By: ${v(f.raisedBy)}`);
   if (f.search) bits.push(`Search: "${f.search}"`);
   return bits.join(' · ');
@@ -775,4 +775,34 @@ export function appendOpsImport(existing, imported, { makeId = makeOpsId } = {})
     stats.sections.push(sec);
   }
   return { items, stats };
+}
+
+
+// ─── Action By breakdown for the summary tiles (v3.26.0) ─────────
+
+/** Label of the findings whose Action By is still empty. */
+export const OPS_NY_CLARIFY = 'NY Clarify';
+
+/**
+ * How many findings each Action By holds, optionally for one status only.
+ * Names are grouped the way the filter compares them (case, accents and
+ * spacing ignored). Findings with no Action By are counted under
+ * "NY Clarify" (`blank: true`), always listed last.
+ * @returns {{ name: string, count: number, blank: boolean }[]}
+ */
+export function opsActionByBreakdown(items, status = '') {
+  const map = new Map();
+  let blank = 0;
+  for (const it of items || []) {
+    if (!it) continue;
+    if (status && normalizeOpsStatus(it.status) !== status) continue;
+    const raw = String(it.action_by ?? '').replace(/\s+/g, ' ').trim();
+    if (!raw) { blank += 1; continue; }
+    const k = normalizeSearch(raw);
+    const e = map.get(k);
+    if (e) e.count += 1; else map.set(k, { name: raw, count: 1, blank: false });
+  }
+  const out = [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  if (blank) out.push({ name: OPS_NY_CLARIFY, count: blank, blank: true });
+  return out;
 }

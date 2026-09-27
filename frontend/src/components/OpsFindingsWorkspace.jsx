@@ -14,7 +14,7 @@ import {
   groupOpsSections, opsStats, filterOpsIndices, opsFilterActive, distinctValues,
   describeOpsFilter, makeOpsFinding, opsEditPatch, withColumnPhotos, opsSections,
   mergeOpsImport, replaceOpsFromImport, appendOpsImport, todayKeyLocal, formatOpsDate, opsRowHasContent,
-  opsSectionSummary, sectionIndices, sectionLetter, nextSectionLetter, OPS_BLANK,
+  opsSectionSummary, sectionIndices, sectionLetter, nextSectionLetter, OPS_BLANK, opsActionByBreakdown, OPS_NY_CLARIFY,
 } from '../services/opsFindings';
 
 /**
@@ -39,19 +39,36 @@ import {
 const SEL = 'text-[12.5px] bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-slate-900 outline-none focus:border-brand-500 max-w-[170px]';
 const BTN = 'inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-bold rounded-lg border transition-colors';
 
-function Tile({ label, value, sub, tone = 'text-slate-900', active, onClick }) {
+/**
+ * A summary tile. `breakdown` (v3.26.0) lists the tile's findings by Action By,
+ * "NY Clarify" = no Action By yet. With `onPick`, a name is a filter too.
+ */
+function Tile({ label, value, sub, tone = 'text-slate-900', active, onClick, breakdown, onPick, picked }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex-1 min-w-[92px] text-left px-3 py-1.5 rounded-xl border transition-all ${
-        active ? 'border-brand-500 ring-2 ring-brand-500/25 bg-brand-50/50' : 'border-slate-200 bg-white hover:border-slate-300'
-      }`}
-    >
-      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`text-[20px] leading-tight font-extrabold tabular-nums ${tone}`}>{value}</div>
-      {sub && <div className="text-[10px] text-slate-500 leading-tight">{sub}</div>}
-    </button>
+    <div className={`flex-1 min-w-[150px] rounded-xl border transition-all ${
+      active ? 'border-brand-500 ring-2 ring-brand-500/25 bg-brand-50/50' : 'border-slate-200 bg-white hover:border-slate-300'
+    }`}>
+      <button type="button" onClick={onClick} className="w-full text-left px-3 pt-1.5 pb-1">
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+        <div className={`text-[20px] leading-tight font-extrabold tabular-nums ${tone}`}>{value}</div>
+        {sub && <div className="text-[10px] text-slate-500 leading-tight">{sub}</div>}
+      </button>
+      {breakdown && breakdown.length > 0 && (
+        <div className="px-2 pb-1.5 flex flex-wrap gap-1" title="By Action By">
+          {breakdown.map((b) => {
+            const on = picked && picked === (b.blank ? OPS_BLANK : b.name);
+            const cls = `inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10.5px] leading-tight ${
+              b.blank ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-slate-50 border-slate-200 text-slate-700'
+            } ${on ? 'ring-2 ring-brand-500/40 border-brand-500' : ''}`;
+            const inner = <><span className="truncate max-w-[110px]">{b.name}</span><b className="tabular-nums">{b.count}</b></>;
+            return onPick
+              ? <button key={b.name} type="button" className={`${cls} hover:border-brand-400`} onClick={() => onPick(b)}
+                  title={`Show only ${b.blank ? 'findings with no Action By' : `Action By: ${b.name}`}`}>{inner}</button>
+              : <span key={b.name} className={cls}>{inner}</span>;
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -178,13 +195,20 @@ export default function OpsFindingsWorkspace({
       .map(([k, f]) => [k, tabItems.some((it) => !String(it?.[f] ?? '').trim())])),
   }), [tabItems]);
 
+  // A name on a tile = Status of that tile + that Action By; clicked again, off.
+  const pickActionBy = (b, st) => {
+    const v = b.blank ? OPS_BLANK : b.name;
+    if ((filter.status || '') === st && filter.actionBy === v) setF({ actionBy: '' });
+    else setF({ status: st, actionBy: v });
+  };
+
   // One drop-down filter. Always drawn (also when the column is still empty),
   // so every tab offers the same four filters (v3.25.0).
   const dropFilter = (key, title, all, values, hasBlank) => (
     <select className={SEL} value={filter[key] || ''} onChange={(e) => setF({ [key]: e.target.value })} title={title}>
       <option value="">{all}</option>
       {values.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
-      {hasBlank && <option value={OPS_BLANK}>(blank)</option>}
+      {hasBlank && <option value={OPS_BLANK}>{key === 'actionBy' ? OPS_NY_CLARIFY : '(blank)'}</option>}
     </select>
   );
 
@@ -457,10 +481,10 @@ export default function OpsFindingsWorkspace({
             const all = opsStats(items);
             return (
               <div className="flex flex-wrap gap-2">
-                <Tile label="Total findings" value={all.total} />
-                <Tile label="Open" value={all.open} tone={OPS_STATUS_STYLE[OPS_STATUS.OPEN].tile} sub={all.total ? `${Math.round((all.open / all.total) * 100)}%` : ''} />
-                <Tile label="On-going" value={all.ongoing} tone={OPS_STATUS_STYLE[OPS_STATUS.ONGOING].tile} sub={all.total ? `${Math.round((all.ongoing / all.total) * 100)}%` : ''} />
-                <Tile label="Closed" value={all.closed} tone={OPS_STATUS_STYLE[OPS_STATUS.CLOSED].tile} sub={all.total ? `${Math.round((all.closed / all.total) * 100)}%` : ''} />
+                <Tile label="Total findings" value={all.total} breakdown={opsActionByBreakdown(items)} />
+                <Tile label="Open" value={all.open} tone={OPS_STATUS_STYLE[OPS_STATUS.OPEN].tile} sub={all.total ? `${Math.round((all.open / all.total) * 100)}%` : ''} breakdown={opsActionByBreakdown(items, OPS_STATUS.OPEN)} />
+                <Tile label="On-going" value={all.ongoing} tone={OPS_STATUS_STYLE[OPS_STATUS.ONGOING].tile} sub={all.total ? `${Math.round((all.ongoing / all.total) * 100)}%` : ''} breakdown={opsActionByBreakdown(items, OPS_STATUS.ONGOING)} />
+                <Tile label="Closed" value={all.closed} tone={OPS_STATUS_STYLE[OPS_STATUS.CLOSED].tile} sub={all.total ? `${Math.round((all.closed / all.total) * 100)}%` : ''} breakdown={opsActionByBreakdown(items, OPS_STATUS.CLOSED)} />
                 <div className="flex-[1.4] min-w-[170px] px-3 py-1.5 rounded-xl border border-slate-200 bg-white">
                   <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Close-out progress</div>
                   <div className="flex items-baseline gap-2">
@@ -554,13 +578,15 @@ export default function OpsFindingsWorkspace({
         /* ── ONE SECTION ─────────────────────────────────────── */
         <div className={pin ? 'flex-1 min-h-0 flex flex-col' : ''}>
           <div className="flex flex-wrap gap-2 mb-2">
-            <Tile label={letter ? `Section ${letter} total` : 'Total'} value={stats.total} active={!filter.status && !active} onClick={() => setF({ status: '' })} />
+            <Tile label={letter ? `Section ${letter} total` : 'Total'} value={stats.total} active={!filter.status && !active} onClick={() => setF({ status: '' })}
+              breakdown={opsActionByBreakdown(tabItems)} picked={!filter.status ? filter.actionBy : ''} onPick={(b) => pickActionBy(b, '')} />
             {[OPS_STATUS.OPEN, OPS_STATUS.ONGOING, OPS_STATUS.CLOSED].map((st) => {
               const v = st === OPS_STATUS.OPEN ? stats.open : st === OPS_STATUS.ONGOING ? stats.ongoing : stats.closed;
               return (
                 <Tile key={st} label={st} value={v} tone={OPS_STATUS_STYLE[st].tile}
                   sub={stats.total ? `${Math.round((v / stats.total) * 100)}%` : ''}
-                  active={filter.status === st} onClick={() => setF({ status: filter.status === st ? '' : st })} />
+                  active={filter.status === st} onClick={() => setF({ status: filter.status === st ? '' : st })}
+                  breakdown={opsActionByBreakdown(tabItems, st)} picked={filter.status === st ? filter.actionBy : ''} onPick={(b) => pickActionBy(b, st)} />
               );
             })}
             <div className="flex-[1.4] min-w-[170px] px-3 py-1.5 rounded-xl border border-slate-200 bg-white">
