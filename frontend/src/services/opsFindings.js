@@ -34,20 +34,21 @@ export const isOpsFindings = (report) => report?.report_type === OPS_FINDINGS_TY
  * on the item; `no` and the two photo columns are not text fields.
  */
 export const OPS_COLUMNS = [
+  // v3.27.0 order: Remark after Open Date, Corrective Action after Action By.
   { col: 'A', key: 'no',              label: 'No' },
   { col: 'B', key: 'system',          label: 'System/ Package/ Location' },
-  { col: 'C', key: 'subsystem_no',    label: 'Subsystem No.' },      // v3.24.0
+  { col: 'C', key: 'subsystem_no',    label: 'Subsystem No.' },
   { col: 'D', key: 'description',     label: 'Finding Description' },
-  { col: 'E', key: 'action',          label: 'Corrective Action' },
-  { col: 'F', key: 'reference',       label: 'Reference to PQPOC Spec / Standard' },
-  { col: 'G', key: 'raised_by',       label: 'Raise By' },
-  { col: 'H', key: 'photos_g',        label: 'Photo Reference' },
-  { col: 'I', key: 'open_date',       label: 'Open Date', date: true },
+  { col: 'E', key: 'reference',       label: 'Reference to PQPOC Spec / Standard' },
+  { col: 'F', key: 'raised_by',       label: 'Raise By' },
+  { col: 'G', key: 'photos_g',        label: 'Photo Reference' },
+  { col: 'H', key: 'open_date',       label: 'Open Date', date: true },
+  { col: 'I', key: 'remark',          label: 'Remark' },
   { col: 'J', key: 'pic',             label: 'PIC' },
-  { col: 'K', key: 'action_by',       label: 'Action By' },       // v3.22.0
-  { col: 'L', key: 'status',          label: 'Status' },
-  { col: 'M', key: 'closeout_date',   label: 'Close-out Date', date: true },
-  { col: 'N', key: 'remark',          label: 'Remark' },
+  { col: 'K', key: 'action_by',       label: 'Action By' },
+  { col: 'L', key: 'action',          label: 'Corrective Action' },
+  { col: 'M', key: 'status',          label: 'Status' },
+  { col: 'N', key: 'closeout_date',   label: 'Close-out Date', date: true },
   { col: 'O', key: 'closeout_status', label: 'Close-out status' },
   { col: 'P', key: 'updated_date',    label: 'Updated Date', date: true },
   { col: 'Q', key: 'photos_o',        label: 'Close-out references' },

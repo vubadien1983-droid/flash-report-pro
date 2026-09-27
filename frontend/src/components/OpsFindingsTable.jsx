@@ -38,16 +38,16 @@ const HEAD = [
   ['System/ Package/ Location', TEXT_COLS.system.w],
   ['Subsystem No.', TEXT_COLS.subsystem_no.w],
   ['Finding Description', TEXT_COLS.description.w],
-  ['Corrective Action', TEXT_COLS.action.w],
   ['Reference to PQPOC Spec / Standard', TEXT_COLS.reference.w],
   ['Raise By', TEXT_COLS.raised_by.w],
   ['Photo Reference', 'min-w-[252px] w-[252px]'],
   ['Open Date', 'min-w-[92px] w-[92px] text-center'],
+  ['Remark', TEXT_COLS.remark.w],
   ['PIC', TEXT_COLS.pic.w],
   ['Action By', TEXT_COLS.action_by.w],
+  ['Corrective Action', TEXT_COLS.action.w],
   ['Status', 'min-w-[104px] w-[104px] text-center'],
   ['Close-out Date', 'min-w-[92px] w-[92px] text-center'],
-  ['Remark', TEXT_COLS.remark.w],
   ['Close-out status', TEXT_COLS.closeout_status.w],
   ['Updated Date', 'min-w-[92px] w-[92px] text-center'],
   ['Close-out references', 'min-w-[210px] w-[210px]'],
@@ -188,7 +188,6 @@ const Row = React.memo(function Row({ item, index, no, editingField, readOnly, i
       {text('system')}
       {text('subsystem_no')}
       {text('description')}
-      {text('action')}
       {text('reference')}
       {text('raised_by')}
       <td className="align-top p-1 border-b border-r border-slate-200">
@@ -196,13 +195,14 @@ const Row = React.memo(function Row({ item, index, no, editingField, readOnly, i
           selected={selectedCol === 'G'} onSelect={() => api.select(item.id, 'G')} api={api} />
       </td>
       {date('open_date', 'Open date')}
+      {text('remark')}
       {text('pic')}
       {text('action_by')}
+      {text('action')}
       <td className="align-top px-1 py-1.5 border-b border-r border-slate-200">
         <OpsStatusCell value={item.status} {...ed('status')} />
       </td>
       {date('closeout_date', 'Close-out date')}
-      {text('remark')}
       {text('closeout_status')}
       {date('updated_date', 'Updated date')}
       <td className="align-top p-1 border-b border-r border-slate-200">
@@ -264,7 +264,8 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
         {line('System / Package / Location', 'system')}
         {line('Subsystem No.', 'subsystem_no')}
         {line('Finding description', 'description')}
-        {line('Corrective action', 'action')}
+        {line('Reference (PQPOC spec / standard)', 'reference')}
+        {line('Raise by', 'raised_by')}
         <div className="px-1">
           <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 px-1 mb-0.5">Photo reference</div>
           <PhotoColumnCell item={item} index={index} col="G" readOnly={readOnly} isMobileMode
@@ -275,11 +276,10 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
           {dateLine('Close-out date', 'closeout_date')}
           {dateLine('Updated', 'updated_date')}
         </div>
+        {line('Remark', 'remark')}
         {line('PIC', 'pic')}
         {line('Action by', 'action_by')}
-        {line('Raise by', 'raised_by')}
-        {line('Reference (PQPOC spec / standard)', 'reference')}
-        {line('Remark', 'remark')}
+        {line('Corrective action', 'action')}
         {line('Close-out status', 'closeout_status')}
         <div className="px-1">
           <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 px-1 mb-0.5">Close-out references</div>
