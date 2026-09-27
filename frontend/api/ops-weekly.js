@@ -1457,6 +1457,78 @@ function weeklySummary(report, today) {
     nyClarify: items.filter((it) => !String(it.action_by || "").trim()).length
   };
 }
+var esc = (t) => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+var longDate = (k) => {
+  const d = new Date(keyToUtc2(k));
+  return `${String(d.getUTCDate()).padStart(2, "0")}-${MON[d.getUTCMonth()]}-${d.getUTCFullYear()}`;
+};
+function nextMeetingDay(today, dayName) {
+  const want = Math.max(0, DAYS.findIndex((d) => d.toLowerCase() === String(dayName || "tuesday").toLowerCase()));
+  const t = keyToUtc2(today);
+  const cur = new Date(t).getUTCDay();
+  const add = (want - cur + 7) % 7 || 7;
+  return utcToKey2(t + add * DAY2);
+}
+function emailOptions(q = {}) {
+  const pick = (k, d) => q[k] !== void 0 && String(q[k]).trim() !== "" ? String(q[k]).slice(0, 300) : d;
+  return {
+    project: pick("project", "Block B - EPC#1"),
+    meetDay: pick("meetday", "Tuesday"),
+    meetStart: pick("meetstart", "09:00"),
+    meetMinutes: Number(pick("meetmin", "60")) || 60,
+    venue: pick("venue", "Site office meeting room / Microsoft Teams"),
+    agenda: pick("agenda", "1) New findings this week  2) Open items per Action By  3) Items to be clarified (NY Clarify)  4) Close-out evidence"),
+    sender: pick("sender", "Vu Ba Dien"),
+    senderTitle: pick("title", "Bureau Veritas - Block B EPC#1"),
+    link: pick("link", "https://flash-report-pro.vercel.app/#/OPS-Finding-Status")
+  };
+}
+function emailSubject(sum, o) {
+  return `${o.project} - [OPS Findings] Weekly Status Report & Weekly Meeting - Week ${String(sum.week).padStart(2, "0")} (${longDate(sum.today)})`;
+}
+function emailHtml(sum, o, nowLabel = "") {
+  const t = sum.totals;
+  const pc = (v) => t.total ? Math.round(100 * v / t.total) : 0;
+  const chips = (list) => (list || []).map((b) => `<span style="${b.blank ? "color:#92400e;" : ""}">${esc(b.name)} ${b.count}</span>`).join(" &middot; ");
+  const tile = (label, value, pct, color, list) => `<td width="25%" style="border:1px solid #d7dee8;padding:10px;vertical-align:top;"><div style="font-size:11px;color:#64748b;font-weight:bold;">${label}</div><div style="font-size:24px;font-weight:bold;color:${color};">${value}${pct === null ? "" : ` <span style="font-size:12px;color:#64748b;">${pct}%</span>`}</div><div style="font-size:11px;color:#475569;">${chips(list)}</div></td>`;
+  const td = 'style="padding:6px 8px;border:1px solid #d7dee8;"';
+  const tdc = 'align="center" style="padding:6px 8px;border:1px solid #d7dee8;"';
+  const rows = sum.sections.map((s) => `<tr><td ${td}>${esc(s.section)}</td><td ${tdc}>${s.total}</td><td ${tdc}><span style="color:#b91c1c;">${s.open}</span></td><td ${tdc}>${s.ongoing}</td><td ${tdc}><span style="color:#047857;">${s.closed}</span></td><td ${tdc}>${s.percentClosed}%</td></tr>`).join("") + `<tr style="background:#f1f5f9;font-weight:bold;"><td ${td}>Total</td><td ${tdc}>${t.total}</td><td ${tdc}>${t.open}</td><td ${tdc}>${t.ongoing}</td><td ${tdc}>${t.closed}</td><td ${tdc}>${t.percentClosed}%</td></tr>`;
+  const mDay = nextMeetingDay(sum.today, o.meetDay);
+  const [hh, mm] = String(o.meetStart).split(":").map((x) => Number(x) || 0);
+  const endMin = hh * 60 + mm + o.meetMinutes;
+  const hm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const mLabel = `${DAYS[new Date(keyToUtc2(mDay)).getUTCDay()]}, ${longDate(mDay)}, ${hm(hh * 60 + mm)} - ${hm(endMin)}`;
+  const w = sum.thisWeek;
+  const ny = sum.nyClarify > 0 ? `<tr><td style="padding:10px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fcd34d;"><tr><td style="padding:10px 14px;font-size:13px;line-height:1.55;"><b>Action requested:</b> <b>${sum.nyClarify}</b> findings have no Action By yet (<b>NY Clarify</b>). Please confirm the responsible party (CONS / PE) before or during the meeting. Action parties are kindly requested to update status and close-out evidence directly in the live register.</td></tr></table></td></tr>` : "";
+  return `<html><body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:760px;border:1px solid #d7dee8;">
+<tr><td style="background:#1F3A5F;padding:18px 24px;">
+<div style="font-size:12px;color:#aac4e6;letter-spacing:1px;">${esc(o.project.toUpperCase())} &middot; ${esc(sum.location)}</div>
+<div style="font-size:20px;font-weight:bold;color:#ffffff;margin-top:4px;">OPS Findings &amp; Action Tracking &ndash; Weekly Status</div>
+<div style="font-size:13px;color:#d6e2f2;margin-top:2px;">Week ${String(sum.week).padStart(2, "0")} &middot; status as of ${longDate(sum.today)}${nowLabel ? ` ${nowLabel}` : ""}</div>
+</td></tr>
+<tr><td style="padding:20px 24px 4px 24px;font-size:14px;line-height:1.55;">Dear All,<br><br>Please find attached the weekly status of the OPS Findings &amp; Action Tracking (Excel and PDF). The figures below are taken from the live register at the time of sending. We will review the open items together at the weekly meeting below.</td></tr>
+<tr><td style="padding:12px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7ff;border:1px solid #bcd6f5;"><tr><td style="padding:12px 16px;font-size:14px;line-height:1.6;">
+<div style="font-weight:bold;color:#1F3A5F;font-size:15px;margin-bottom:4px;">&#128197; Weekly OPS Findings Meeting</div>
+<b>Date / time:</b> ${esc(mLabel)}<br><b>Venue:</b> ${esc(o.venue)}<br><b>Agenda:</b> ${esc(o.agenda)}
+</td></tr></table></td></tr>
+<tr><td style="padding:8px 24px 4px 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="6"><tr>${tile("TOTAL FINDINGS", t.total, null, "#1e293b", sum.actionBy.total)}${tile("OPEN", t.open, pc(t.open), "#b91c1c", sum.actionBy.open)}${tile("ON-GOING", t.ongoing, pc(t.ongoing), "#b45309", sum.actionBy.ongoing)}${tile("CLOSED", t.closed, pc(t.closed), "#047857", sum.actionBy.closed)}</tr></table></td></tr>
+<tr><td style="padding:8px 24px;font-size:13px;"><b>This week:</b> +<b>${w.new}</b> new findings &middot; <b>${w.closed}</b> closed &middot; close-out progress <b>${w.percentNow}%</b> (last week ${w.percentLastWeek}%)</td></tr>
+<tr><td style="padding:4px 24px 8px 24px;"><div style="font-size:14px;font-weight:bold;color:#1F3A5F;margin-bottom:6px;">Status by section</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+<tr style="background:#1F3A5F;color:#ffffff;"><td style="padding:7px 8px;">Section</td><td align="center">Total</td><td align="center">Open</td><td align="center">On-going</td><td align="center">Closed</td><td align="center">% Closed</td></tr>
+${rows}
+</table></td></tr>
+${ny}
+<tr><td align="center" style="padding:10px 24px 18px 24px;"><a href="${esc(o.link)}" style="display:inline-block;background:#0369a1;color:#ffffff;text-decoration:none;font-weight:bold;font-size:14px;padding:10px 22px;">Open the live OPS Finding Status</a>
+<div style="font-size:11px;color:#64748b;margin-top:6px;">View, filter and export without a password &middot; editing requires the section password</div></td></tr>
+<tr><td style="padding:4px 24px 20px 24px;font-size:13px;line-height:1.55;border-top:1px solid #e2e8f0;"><br>Best regards,<br><b>${esc(o.sender)}</b><br>${esc(o.senderTitle)}<br>
+<span style="font-size:11px;color:#94a3b8;">This e-mail is generated automatically every week from the OPS Findings register. Please reply to this e-mail for any question.</span></td></tr>
+</table></body></html>`;
+}
 function todayVN() {
   return new Date(Date.now() + 7 * 36e5).toISOString().slice(0, 10);
 }
@@ -1479,6 +1551,14 @@ async function handler(req, res) {
       res.status(200).json(sum);
       return;
     }
+    if (format === "html" || format === "subject") {
+      const o = emailOptions(q);
+      const hhmm = new Date(Date.now() + 7 * 36e5).toISOString().slice(11, 16);
+      const text = format === "html" ? emailHtml(sum, o, hhmm) : emailSubject(sum, o);
+      res.setHeader("Content-Type", format === "html" ? "text/html; charset=utf-8" : "text/plain; charset=utf-8");
+      res.status(200).send(text);
+      return;
+    }
     setImageLoader(nodeImageData);
     const out = format === "pdf" ? await exportOpsPdf(report, null, { returnBuffer: true, fileName: base }) : await exportOpsExcel(report, null, { returnBuffer: true, fileName: base });
     const buf = Buffer.from(out.buffer);
@@ -1493,9 +1573,13 @@ async function handler(req, res) {
 }
 export {
   handler as default,
+  emailHtml,
+  emailOptions,
+  emailSubject,
   fromFields,
   isoWeek,
   loadSharedReport,
+  nextMeetingDay,
   nodeImageData,
   weeklySummary
 };
