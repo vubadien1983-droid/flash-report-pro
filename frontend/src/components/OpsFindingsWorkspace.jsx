@@ -14,7 +14,7 @@ import {
   groupOpsSections, opsStats, filterOpsIndices, opsFilterActive, distinctValues,
   describeOpsFilter, makeOpsFinding, opsEditPatch, withColumnPhotos, opsSections,
   mergeOpsImport, replaceOpsFromImport, appendOpsImport, todayKeyLocal, formatOpsDate, opsRowHasContent,
-  opsSectionSummary, sectionIndices, sectionLetter, nextSectionLetter,
+  opsSectionSummary, sectionIndices, sectionLetter, nextSectionLetter, OPS_BLANK,
 } from '../services/opsFindings';
 
 /**
@@ -169,11 +169,24 @@ export default function OpsFindingsWorkspace({
   }, [tab, activeSection, indices, tabRows, active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const options = useMemo(() => ({
-    system: distinctValues(tabItems, 'system'),
+    subsystem: distinctValues(tabItems, 'subsystem_no'),
     pic: distinctValues(tabItems, 'pic'),
     actionBy: distinctValues(tabItems, 'action_by'),
     raisedBy: distinctValues(tabItems, 'raised_by'),
+    // Is any row of the tab empty in that column? Then "(blank)" is offered.
+    blank: Object.fromEntries([['subsystem', 'subsystem_no'], ['pic', 'pic'], ['actionBy', 'action_by'], ['raisedBy', 'raised_by']]
+      .map(([k, f]) => [k, tabItems.some((it) => !String(it?.[f] ?? '').trim())])),
   }), [tabItems]);
+
+  // One drop-down filter. Always drawn (also when the column is still empty),
+  // so every tab offers the same four filters (v3.25.0).
+  const dropFilter = (key, title, all, values, hasBlank) => (
+    <select className={SEL} value={filter[key] || ''} onChange={(e) => setF({ [key]: e.target.value })} title={title}>
+      <option value="">{all}</option>
+      {values.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
+      {hasBlank && <option value={OPS_BLANK}>(blank)</option>}
+    </select>
+  );
 
   // ── Editing API handed to the table ───────────────────────────
   const lockedRef = useRef(tabLocked);
@@ -563,31 +576,17 @@ export default function OpsFindingsWorkspace({
           <div className="bg-white rounded-xl border border-slate-200 px-2.5 py-2 mb-2 flex flex-wrap items-center gap-2">
             <div className="flex-1 min-w-[200px] max-w-[380px]">
               <SearchBox value={filter.search} onChange={(v) => setF({ search: v })}
-                placeholder="Search system, finding, action, PIC, remark, date..." />
+                placeholder="Search system, subsystem, finding, action, PIC, remark, date..." />
             </div>
             <Filter className="w-3.5 h-3.5 text-slate-400" />
             <select className={SEL} value={filter.status} onChange={(e) => setF({ status: e.target.value })} title="Status">
               <option value="">All status</option>
               {[OPS_STATUS.OPEN, OPS_STATUS.ONGOING, OPS_STATUS.CLOSED].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select className={SEL} value={filter.system} onChange={(e) => setF({ system: e.target.value })} title="System / Package / Location">
-              <option value="">All systems</option>
-              {options.system.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
-            </select>
-            <select className={SEL} value={filter.pic} onChange={(e) => setF({ pic: e.target.value })} title="PIC">
-              <option value="">All PIC</option>
-              {options.pic.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
-            </select>
-            {options.actionBy.length > 0 && (
-              <select className={SEL} value={filter.actionBy || ''} onChange={(e) => setF({ actionBy: e.target.value })} title="Action By">
-                <option value="">All action by</option>
-                {options.actionBy.map((s) => <option key={s} value={s}>{s.replace(/\n/g, ' ')}</option>)}
-              </select>
-            )}
-            <select className={SEL} value={filter.raisedBy} onChange={(e) => setF({ raisedBy: e.target.value })} title="Raise By">
-              <option value="">All raised by</option>
-              {options.raisedBy.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            {dropFilter('subsystem', 'Subsystem No.', 'All subsystems', options.subsystem, options.blank.subsystem)}
+            {dropFilter('pic', 'PIC', 'All PIC', options.pic, options.blank.pic)}
+            {dropFilter('actionBy', 'Action By', 'All action by', options.actionBy, options.blank.actionBy)}
+            {dropFilter('raisedBy', 'Raise By', 'All raised by', options.raisedBy, options.blank.raisedBy)}
             {active && (
               <button type="button" onClick={clearF} className={`${BTN} text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200`}>
                 <X className="w-3.5 h-3.5" /> Clear

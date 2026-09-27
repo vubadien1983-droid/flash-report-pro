@@ -348,10 +348,13 @@ export function normalizeSearch(text) {
     .trim();
 }
 
-export const EMPTY_OPS_FILTER = { search: '', status: '', pic: '', actionBy: '', raisedBy: '', system: '' };
+// v3.25.0: the drop-down filters are Subsystem No. (was System), PIC, Action By
+// and Raise By. OPS_BLANK picks the rows where that column is empty.
+export const OPS_BLANK = '\u0000blank';
+export const EMPTY_OPS_FILTER = { search: '', status: '', subsystem: '', pic: '', actionBy: '', raisedBy: '' };
 
 export function opsFilterActive(f) {
-  return Boolean(f && (f.search || f.status || f.pic || f.actionBy || f.raisedBy || f.system));
+  return Boolean(f && (f.search || f.status || f.subsystem || f.pic || f.actionBy || f.raisedBy));
 }
 
 /** Distinct values of a field, for the filter drop-downs. */
@@ -378,14 +381,14 @@ function itemHaystack(it) {
 export function filterOpsIndices(items, f = EMPTY_OPS_FILTER) {
   const out = [];
   const needle = normalizeSearch(f?.search);
-  const eq = (a, b) => normalizeSearch(a) === normalizeSearch(b);
+  const eq = (a, b) => (b === OPS_BLANK ? !String(a ?? '').trim() : normalizeSearch(a) === normalizeSearch(b));
   (items || []).forEach((it, i) => {
     if (!it) return;
     if (f?.status && normalizeOpsStatus(it.status) !== f.status) return;
     if (f?.pic && !eq(it.pic, f.pic)) return;
     if (f?.actionBy && !eq(it.action_by, f.actionBy)) return;
     if (f?.raisedBy && !eq(it.raised_by, f.raisedBy)) return;
-    if (f?.system && !eq(it.system, f.system)) return;
+    if (f?.subsystem && !eq(it.subsystem_no, f.subsystem)) return;
     if (needle && !itemHaystack(it).includes(needle)) return;
     out.push(i);
   });
@@ -397,10 +400,11 @@ export function describeOpsFilter(f) {
   if (!opsFilterActive(f)) return '';
   const bits = [];
   if (f.status) bits.push(`Status: ${f.status}`);
-  if (f.system) bits.push(`System: ${f.system}`);
-  if (f.pic) bits.push(`PIC: ${f.pic}`);
-  if (f.actionBy) bits.push(`Action By: ${f.actionBy}`);
-  if (f.raisedBy) bits.push(`Raise By: ${f.raisedBy}`);
+  const v = (x) => (x === OPS_BLANK ? '(blank)' : x);
+  if (f.subsystem) bits.push(`Subsystem: ${v(f.subsystem)}`);
+  if (f.pic) bits.push(`PIC: ${v(f.pic)}`);
+  if (f.actionBy) bits.push(`Action By: ${v(f.actionBy)}`);
+  if (f.raisedBy) bits.push(`Raise By: ${v(f.raisedBy)}`);
   if (f.search) bits.push(`Search: "${f.search}"`);
   return bits.join(' · ');
 }
