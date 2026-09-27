@@ -18,8 +18,14 @@ export function sanitizeFilename(name) {
  * clipboard blob) into clean JPEG base64, and report its EXACT natural aspect
  * ratio so nothing downstream has to guess and squash it.
  */
+// The server-side weekly report (api/ops-weekly.js, v3.28.0) has no <canvas>:
+// it plugs its own decoder in here. The browser never sets it.
+let imageLoader = null;
+export function setImageLoader(fn) { imageLoader = typeof fn === 'function' ? fn : null; }
+
 export function getImageData(url) {
   if (!url) return Promise.resolve(null);
+  if (imageLoader) return new Promise((resolve) => resolve(imageLoader(url))).catch(() => null);
 
   return new Promise((resolve) => {
     const img = new Image();

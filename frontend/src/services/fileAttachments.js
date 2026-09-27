@@ -224,7 +224,10 @@ export async function copyAttachmentToShare(reportId, shareId, key) {
 
 /** Public URL that opens the attachment with no sign-in. */
 export function attachmentUrl(shareId, key) {
-  const base = window.location.origin + window.location.pathname;
+  // No window on the server (weekly report e-mail, v3.28.0): the public app URL.
+  const base = typeof window === 'undefined'
+    ? 'https://flash-report-pro.vercel.app/'
+    : window.location.origin + window.location.pathname;
   return `${base}#/file/${shareId}/${key}`;
 }
 

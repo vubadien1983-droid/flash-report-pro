@@ -306,7 +306,7 @@ function sheetNameFor(section, used) {
  *    section with LIVE COUNTIF formulas over the section sheets, a total line,
  *    and the closed-over-time chart) followed by one sheet per section.
  */
-export async function exportOpsExcel(report, view = null) {
+export async function exportOpsExcel(report, view = null, opts = {}) {
   if (!report) throw new Error('No report data provided');
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -324,8 +324,7 @@ export async function exportOpsExcel(report, view = null) {
       sheetName: sheetNameFor(view.section, used),
       subtitle: view.section,
     });
-    await saveWorkbook(wb, `${fileBase(report)}_${sectionLetter(view.section) || 'section'}`);
-    return;
+    return saveWorkbook(wb, `${fileBase(report)}_${sectionLetter(view.section) || 'section'}`, opts);
   }
 
   const sum = wb.addWorksheet('Summary', {
@@ -342,11 +341,14 @@ export async function exportOpsExcel(report, view = null) {
     refs.push({ ...s, ...at });
   }
   await writeSummarySheet(wb, sum, report, refs, items);
-  await saveWorkbook(wb, fileBase(report));
+  return saveWorkbook(wb, fileBase(report), opts);
 }
 
-async function saveWorkbook(wb, name) {
+// `opts.returnBuffer` (v3.28.0): hand the bytes back instead of downloading —
+// used by the server that builds the weekly e-mail attachments.
+async function saveWorkbook(wb, name, opts = {}) {
   const buffer = await wb.xlsx.writeBuffer();
+  if (opts.returnBuffer) return { buffer, fileName: `${opts.fileName || name}.xlsx` };
   downloadBlob(
     new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     `${name}.xlsx`,
@@ -507,9 +509,12 @@ const P_O = colIdx('photos_o');
 const P_STATUS = colIdx('status');
 const PDF_CENTER = new Set(OPS_COLUMNS.map((c, i) => (c.key === 'no' || c.key === 'status' || c.key === 'subsystem_no' || c.date ? i : -1)).filter((i) => i >= 0));
 
-export async function exportOpsPdf(report, view = null) {
+export async function exportOpsPdf(report, view = null, opts = {}) {
   if (!report) throw new Error('No report data provided');
-  const [{ default: jsPDF }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const [jspdfMod, autoTableMod] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const jsPDF = jspdfMod.jsPDF || jspdfMod.default?.jsPDF || jspdfMod.default;
+  // In the browser the plugin attaches itself on import; in Node it must be applied.
+  if (typeof jsPDF.API.autoTable !== 'function' && autoTableMod.applyPlugin) autoTableMod.applyPlugin(jsPDF);
   const { groups, rows, label } = scopeOf(report, view);
   const stats = opsStats(rows);
   const shareId = report.share_id || report.cloud_code || '';
@@ -700,5 +705,6 @@ export async function exportOpsPdf(report, view = null) {
     },
   });
 
+  if (opts.returnBuffer) return { buffer: doc.output('arraybuffer'), fileName: `${opts.fileName || fileBase(report)}.pdf` };
   doc.save(`${fileBase(report)}.pdf`);
 }

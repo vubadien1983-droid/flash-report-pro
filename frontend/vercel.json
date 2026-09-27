@@ -1,8 +1,11 @@
 {
   "framework": "vite",
+  "functions": {
+    "api/ops-weekly.js": { "maxDuration": 60 }
+  },
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
