@@ -16,7 +16,7 @@
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore, collection, doc, getDoc, getDocs,
-  setDoc, deleteDoc, writeBatch, query, orderBy, limit,
+  setDoc, deleteDoc, writeBatch, query, orderBy, limit, where,
   serverTimestamp, onSnapshot
 } from 'firebase/firestore';
 import {
@@ -143,7 +143,7 @@ export function fileKey(itemId, slotIndex) {
 // Re-export Firestore functions for api.js to use
 export {
   getDoc, getDocs, setDoc, deleteDoc, writeBatch,
-  query, orderBy, limit, serverTimestamp, onSnapshot,
+  query, orderBy, limit, where, serverTimestamp, onSnapshot,
   ref, uploadBytes, getDownloadURL, deleteObject, listAll
 };
 

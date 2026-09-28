@@ -10,14 +10,16 @@
  * That works because this report stores those values under the SAME field
  * names: `status`, `closeout_date`, `open_date`, `updated_date`, `action_by`.
  *
- * COLUMNS (user's workbook "PreservationControl", sheet DATA):
- *   A FacilityCode · B DisciplineCode · C Subsystem · D SubsystemDescription ·
- *   E TagNo · F EquipmentName · G PreservationInterval · H ChecksheetType
- *     → filled from the hidden lookup database (services/preservationDb.js)
- *   I Issue Description · J Action By · K Corrective / Alternative Action ·
- *   L Close-out Status · M Closed Date · N Remark · O References (pictures +
+ * COLUMNS, in display order (v3.31.1 — see PF_COLUMNS):
+ *   A TagNo · B EquipmentName  → from the lookup database
+ *   C Issue Description · D Action By · E Corrective / Alternative Action ·
+ *   F Close-out Status · G Closed Date · H Remark · I References (pictures +
  *   documents)  → typed by the user
+ *   J ChecksheetType · K PreservationInterval · L Subsystem ·
+ *   M SubsystemDescription · N DisciplineCode · O FacilityCode → database
  *   P Open Date · Q Updated Date → kept by the app (ageing / overdue / chart).
+ *   The database itself ("PreservationControl" workbook, sheet DATA) keeps
+ *   its own A–H order in PF_DB_FIELDS / preservationDb.js.
  *
  * THE LOOKUP DATABASE lives in two places:
  *   - the SEED, generated from the workbook (preservationDb.js, dynamic import);
@@ -48,31 +50,45 @@ export const PRESERVATION_DEFAULT_SUBTITLE = 'Block B - EPC#1 · Preservation';
 
 export const isPreservation = (report) => report?.report_type === PRESERVATION_TYPE;
 
-/** Columns A–H: the fields the lookup database fills. Order = the workbook's. */
+/**
+ * The fields the lookup database fills. Order = the WORKBOOK's (the seed rows
+ * in preservationDb.js are arrays in this order — never reorder this list;
+ * the display order is PF_COLUMNS).
+ */
 export const PF_DB_FIELDS = [
   'facility', 'discipline', 'subsystem', 'subsystem_desc',
   'tag_no', 'equipment_name', 'interval', 'checksheet_type',
 ];
 
+/**
+ * THE DISPLAY ORDER of every surface — table, phone card, form, Excel, PDF
+ * (user's order, v3.31.1): what is read every day first (TagNo, Equipment and
+ * the finding itself, A–I) so it fits a laptop screen without scrolling
+ * sideways; the rest of the database columns after it (J–O); the two dates
+ * the app keeps last (P, Q).
+ */
 export const PF_COLUMNS = [
-  { col: 'A', key: 'facility',        label: 'FacilityCode',                   db: true },
-  { col: 'B', key: 'discipline',      label: 'DisciplineCode',                 db: true },
-  { col: 'C', key: 'subsystem',       label: 'Subsystem',                      db: true },
-  { col: 'D', key: 'subsystem_desc',  label: 'SubsystemDescription',           db: true },
-  { col: 'E', key: 'tag_no',          label: 'TagNo',                          db: true },
-  { col: 'F', key: 'equipment_name',  label: 'EquipmentName',                  db: true },
-  { col: 'G', key: 'interval',        label: 'PreservationInterval',           db: true },
-  { col: 'H', key: 'checksheet_type', label: 'ChecksheetType',                 db: true },
-  { col: 'I', key: 'issue',           label: 'Issue Description' },
-  { col: 'J', key: 'action_by',       label: 'Action By' },
-  { col: 'K', key: 'action',          label: 'Corrective / Alternative Action' },
-  { col: 'L', key: 'status',          label: 'Close-out Status' },
-  { col: 'M', key: 'closeout_date',   label: 'Closed Date', date: true },
-  { col: 'N', key: 'remark',          label: 'Remark' },
-  { col: 'O', key: 'photos',          label: 'References' },
+  { col: 'A', key: 'tag_no',          label: 'TagNo',                          db: true },
+  { col: 'B', key: 'equipment_name',  label: 'EquipmentName',                  db: true },
+  { col: 'C', key: 'issue',           label: 'Issue Description' },
+  { col: 'D', key: 'action_by',       label: 'Action By' },
+  { col: 'E', key: 'action',          label: 'Corrective / Alternative Action' },
+  { col: 'F', key: 'status',          label: 'Close-out Status' },
+  { col: 'G', key: 'closeout_date',   label: 'Closed Date', date: true },
+  { col: 'H', key: 'remark',          label: 'Remark' },
+  { col: 'I', key: 'photos',          label: 'References' },
+  { col: 'J', key: 'checksheet_type', label: 'ChecksheetType',                 db: true },
+  { col: 'K', key: 'interval',        label: 'PreservationInterval',           db: true },
+  { col: 'L', key: 'subsystem',       label: 'Subsystem',                      db: true },
+  { col: 'M', key: 'subsystem_desc',  label: 'SubsystemDescription',           db: true },
+  { col: 'N', key: 'discipline',      label: 'DisciplineCode',                 db: true },
+  { col: 'O', key: 'facility',        label: 'FacilityCode',                   db: true },
   { col: 'P', key: 'open_date',       label: 'Open Date', date: true },
   { col: 'Q', key: 'updated_date',    label: 'Updated Date', date: true },
 ];
+
+/** The database fields in DISPLAY order (the form lays them out this way). */
+export const PF_DB_DISPLAY = PF_COLUMNS.filter((c) => c.db).map((c) => c.key);
 
 export const pfLabel = (key) => PF_COLUMNS.find((c) => c.key === key)?.label || key;
 export const pfColLetter = (key) => PF_COLUMNS.find((c) => c.key === key)?.col || '';
@@ -288,7 +304,7 @@ export function describePfFilter(f, overdueDays = PF_DEFAULT_OVERDUE_DAYS) {
   return bits.join(' · ');
 }
 
-// ─── The lookup database (columns A–H) ───────────────────────────
+// ─── The lookup database (the equipment columns) ───────────────────────────
 
 /** Case-, accent- and space-insensitive form of a database value. */
 export const dbNorm = (v) => normalizeSearch(v).replace(/\s*-\s*/g, '-');
@@ -375,7 +391,7 @@ export function suggestionsFor(lookup, values, field, typed = '', limit = 60) {
   // What is being typed is not among the values the other fields allow (no
   // match at all, or a KNOWN value of other equipment — e.g. a second tag
   // after "Save & add another"): search the whole database instead, flagged
-  // `widened` — picking such a value replaces the other A–H fields.
+  // `widened` — picking such a value replaces the other equipment fields.
   const exactKnown = needle && lookup.known[field].has(needle);
   const inList = res.list.some((x) => dbNorm(x.value) === needle);
   if (needle && (!res.total || (exactKnown && !inList))) {

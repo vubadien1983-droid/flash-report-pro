@@ -5,7 +5,7 @@ import {
 import { DateCell } from './PlanCell';
 import PhotoGalleryCell from './PhotoGalleryCell';
 import {
-  PF_DB_FIELDS, PF_STATUS_OPTIONS, pfLabel, pfColLetter, buildLookup, seedToRows, suggestionsFor,
+  PF_DB_FIELDS, PF_DB_DISPLAY, PF_STATUS_OPTIONS, pfLabel, pfColLetter, buildLookup, seedToRows, suggestionsFor,
   autoFill, canonical, matchCandidates, isNewToDb, dbNorm, pfDistinct, normalizePfStatus,
   PF_STATUS, todayKeyLocal, makePfId,
 } from '../services/preservationFindings';
@@ -13,16 +13,17 @@ import {
 /**
  * "Add finding" / "Edit finding" — the entry form of the Preservation report.
  *
- * COLUMNS A–H come from the hidden lookup database (the PreservationControl
+ * The EQUIPMENT columns (TagNo, EquipmentName, ChecksheetType, Interval,
+ * Subsystem, SubsystemDescription, DisciplineCode, FacilityCode) come from the hidden lookup database (the PreservationControl
  * workbook + every entry learned from earlier findings). Type into ANY of the
  * eight fields and it offers the values the other filled fields allow; pick
  * one and every field the remaining rows agree on fills itself. TagNo is the
- * strong key: picking a tag fills A–H at once (a tag with two checksheets —
+ * strong key: picking a tag fills every equipment field at once (a tag with two checksheets —
  * CLQU-RSD-8601/8602 — leaves ChecksheetType to be picked). Anything can
  * still be typed by hand; a (TagNo, ChecksheetType) the database does not
  * know is ADDED to it when the finding is saved.
  *
- * COLUMNS I–O are typed here or left for later in the table.
+ * The finding columns (Issue … References) are typed here or left for later in the table.
  */
 
 const seedPromise = { p: null };
@@ -34,7 +35,7 @@ function loadSeed() {
 const EMPTY_DB = Object.fromEntries(PF_DB_FIELDS.map((f) => [f, '']));
 const INPUT = 'w-full text-[13px] text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20';
 
-/** One A–H field: a text box with its own suggestion list. */
+/** One equipment field: a text box with its own suggestion list. */
 function DbCombo({ field, value, lookup, values, onType, onPick, onClear, autoFocus }) {
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
@@ -59,7 +60,7 @@ function DbCombo({ field, value, lookup, values, onType, onPick, onClear, autoFo
       <label className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5">
         <span className="px-1 rounded bg-slate-200 text-slate-700">{pfColLetter(field)}</span>
         {pfLabel(field)}
-        {field === 'tag_no' && <span className="normal-case font-semibold text-brand-600 tracking-normal">· fills A–H</span>}
+        {field === 'tag_no' && <span className="normal-case font-semibold text-brand-600 tracking-normal">· fills all equipment fields</span>}
         {value && (known
           ? <CheckCircle2 className="w-3 h-3 text-emerald-600" title="Known in the database" />
           : <Sparkles className="w-3 h-3 text-violet-600" title="Not in the database — typed by hand" />)}
@@ -90,7 +91,7 @@ function DbCombo({ field, value, lookup, values, onType, onPick, onClear, autoFo
         <div className="absolute z-[95] left-0 right-0 mt-1 max-h-[240px] overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl">
           {sugg.widened && (
             <div className="px-2.5 py-1 text-[11px] font-semibold text-sky-800 bg-sky-50 border-b border-sky-100">
-              Other equipment — picking one replaces A–H
+              Other equipment — picking one replaces the equipment fields
             </div>
           )}
           {sugg.list.map((s, i) => (
@@ -168,10 +169,10 @@ export default function PreservationForm({
     setV((cur) => {
       let blur = leaving;
       const canon = canonical(lookup, field, value);
-      // A value from outside the current combination starts A–H afresh.
+      // A value from outside the current combination starts the equipment fields afresh.
       let next = widened && !blur ? { ...cur, ...EMPTY_DB, [field]: canon } : { ...cur, [field]: canon };
       // A known tag typed and left (not picked) that does not fit the other
-      // fields is taken as a new pick too — otherwise A–H would keep the
+      // fields is taken as a new pick too — otherwise the equipment fields would keep the
       // previous equipment beside the new tag.
       const tagDisagrees = blur && field === 'tag_no' && canon && lookup.known.tag_no.has(dbNorm(canon))
         && !matchCandidates(lookup, Object.fromEntries(PF_DB_FIELDS.map((f) => [f, next[f] || '']))).length;
@@ -216,7 +217,7 @@ export default function PreservationForm({
     for (const f of PF_DB_FIELDS) out[f] = String(out[f] || '').replace(/\s+/g, ' ').trim();
     onSave(out, { keepOpen });
     if (keepOpen) {
-      // Next finding: often the same equipment — keep A–H, clear I–O.
+      // Next finding: often the same equipment — keep the equipment, clear the finding.
       setV((cur) => ({
         ...cur, id: makePfId(), issue: '', action: '', remark: '', status: PF_STATUS.OPEN, closeout_date: '',
         open_date: todayKeyLocal(), updated_date: todayKeyLocal(), photos: [],
@@ -256,10 +257,10 @@ export default function PreservationForm({
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-3 space-y-4">
-          {/* A–H from the database */}
+          {/* Equipment, from the database */}
           <section>
             <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="text-[12.5px] font-bold text-slate-800">Equipment (A–H) — from the database</span>
+              <span className="text-[12.5px] font-bold text-slate-800">Equipment — from the database</span>
               {!lookup && !loadErr && <span className="inline-flex items-center gap-1 text-[11.5px] text-slate-500"><RefreshCw className="w-3 h-3 animate-spin" /> loading…</span>}
               {loadErr && <span className="text-[11.5px] text-rose-700">Database not loaded: {loadErr}</span>}
               {lookup && anyDb && (
@@ -283,15 +284,15 @@ export default function PreservationForm({
               )}
               {anyDb && (
                 <button type="button" onClick={clearAll} className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-[11.5px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">
-                  <Eraser className="w-3.5 h-3.5" /> Clear A–H
+                  <Eraser className="w-3.5 h-3.5" /> Clear equipment
                 </button>
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-2.5">
-              {PF_DB_FIELDS.map((f, i) => (
+              {PF_DB_DISPLAY.map((f, i) => (
                 <div key={f} className={f === 'subsystem_desc' || f === 'equipment_name' ? 'lg:col-span-2' : ''}>
                   <DbCombo field={f} value={v[f] || ''} lookup={lookup} values={dbValues}
-                    onType={onType} onPick={onPick} onClear={onClear} autoFocus={!initial && f === 'tag_no' && !isMobileMode && i === 4} />
+                    onType={onType} onPick={onPick} onClear={onClear} autoFocus={!initial && f === 'tag_no' && !isMobileMode && i === 0} />
                 </div>
               ))}
             </div>
@@ -299,24 +300,24 @@ export default function PreservationForm({
 
           {/* I–O typed */}
           <section>
-            <div className="text-[12.5px] font-bold text-slate-800 mb-2">Finding (I–O) — can also be filled in later in the table</div>
+            <div className="text-[12.5px] font-bold text-slate-800 mb-2">Finding — can also be filled in later in the table</div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-3 gap-y-2.5">
               <div>
-                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">I</span>Issue Description</label>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('issue')}</span>Issue Description</label>
                 <textarea data-pf-issue rows={3} value={v.issue || ''} onChange={(e) => set({ issue: e.target.value })} className={INPUT} placeholder="What was found" />
               </div>
               <div>
-                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">K</span>Corrective / Alternative Action</label>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('action')}</span>Corrective / Alternative Action</label>
                 <textarea rows={3} value={v.action || ''} onChange={(e) => set({ action: e.target.value })} className={INPUT} placeholder="What will be done" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">J</span>Action By</label>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('action_by')}</span>Action By</label>
                   <input list="pf-actionby" value={v.action_by || ''} onChange={(e) => set({ action_by: e.target.value })} className={INPUT} placeholder="Free text" />
                   <datalist id="pf-actionby">{actionByOptions.map((a) => <option key={a} value={a} />)}</datalist>
                 </div>
                 <div>
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">L</span>Close-out Status</label>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('status')}</span>Close-out Status</label>
                   <select value={normalizePfStatus(v.status)} onChange={(e) => set({ status: e.target.value, closeout_date: e.target.value === PF_STATUS.CLOSED ? (v.closeout_date || todayKeyLocal()) : '' })} className={INPUT}>
                     {PF_STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
@@ -327,11 +328,11 @@ export default function PreservationForm({
                 {dateField('open_date', 'Open Date')}
               </div>
               <div className="lg:col-span-2">
-                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">N</span>Remark</label>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('remark')}</span>Remark</label>
                 <textarea rows={2} value={v.remark || ''} onChange={(e) => set({ remark: e.target.value })} className={INPUT} />
               </div>
               <div className="lg:col-span-2">
-                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">O</span>References — pictures and documents (paste, upload, or add later)</label>
+                <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('photos')}</span>References — pictures and documents (paste, upload, or add later)</label>
                 <div className="border border-slate-300 rounded-lg p-1.5 bg-slate-50/50">
                   <PhotoGalleryCell
                     photos={v.photos || []}
@@ -359,7 +360,7 @@ export default function PreservationForm({
           </div>
         )}
         <div className="flex flex-wrap items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50">
-          {!canSave && <span className="mr-auto text-[11.5px] text-slate-500">Fill a TagNo (or any A–H field) or the Issue Description to save.</span>}
+          {!canSave && <span className="mr-auto text-[11.5px] text-slate-500">Fill a TagNo (or any equipment field) or the Issue Description to save.</span>}
           <button type="button" onClick={close} className="px-3 py-2 text-[13px] font-bold text-slate-700 bg-white border border-slate-200 rounded-lg">Cancel</button>
           {!initial && (
             <button type="button" onClick={() => save(true)} disabled={!canSave}

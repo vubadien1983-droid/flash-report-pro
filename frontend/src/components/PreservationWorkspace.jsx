@@ -452,7 +452,7 @@ export default function PreservationWorkspace({
             <div className="bg-white rounded-xl border border-dashed border-slate-300 p-6 text-center">
               <Database className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <div className="text-[13px] font-bold text-slate-800">No findings yet</div>
-              <div className="text-[12px] text-slate-500 mb-3">Press Add finding and type a TagNo — the equipment columns A–H fill themselves from the database.</div>
+              <div className="text-[12px] text-slate-500 mb-3">Press Add finding and type a TagNo — the equipment columns fill themselves from the database.</div>
               {addButton}
             </div>
           )}
@@ -479,11 +479,12 @@ export default function PreservationWorkspace({
               <option value="">All status</option>
               {[PF_STATUS.OPEN, PF_STATUS.ONGOING, PF_STATUS.CLOSED].map((x) => <option key={x} value={x}>{x}</option>)}
             </select>
-            {dropFilter('facility', 'FacilityCode', 'All facilities', options.facility, options.blank.facility)}
-            {dropFilter('discipline', 'DisciplineCode', 'All disciplines', options.discipline, options.blank.discipline)}
-            {dropFilter('subsystem', 'Subsystem', 'All subsystems', options.subsystem, options.blank.subsystem)}
-            {dropFilter('checksheet', 'ChecksheetType', 'All checksheets', options.checksheet, options.blank.checksheet)}
+            {/* Same order as the columns (v3.31.1). */}
             {dropFilter('actionBy', 'Action By', 'All action by', options.actionBy, options.blank.actionBy)}
+            {dropFilter('checksheet', 'ChecksheetType', 'All checksheets', options.checksheet, options.blank.checksheet)}
+            {dropFilter('subsystem', 'Subsystem', 'All subsystems', options.subsystem, options.blank.subsystem)}
+            {dropFilter('discipline', 'DisciplineCode', 'All disciplines', options.discipline, options.blank.discipline)}
+            {dropFilter('facility', 'FacilityCode', 'All facilities', options.facility, options.blank.facility)}
             {active && (
               <button type="button" onClick={clearF} className={`${BTN} text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-200`}><X className="w-3.5 h-3.5" /> Clear</button>
             )}
@@ -493,7 +494,7 @@ export default function PreservationWorkspace({
 
           {!locked && !isMobileMode && (
             <p className="text-[11px] text-slate-500 mb-1.5 px-1">
-              Double-click a cell to edit (A–H open the form with the database) · click a date or a status to change it · click a References cell, then Ctrl+V to paste · row colour follows the Close-out Status.
+              Double-click a cell to edit (the equipment columns open the form with the database) · No and TagNo stay pinned when scrolling sideways · click a date or a status to change it · click a References cell, then Ctrl+V to paste · row colour follows the Close-out Status.
             </p>
           )}
 

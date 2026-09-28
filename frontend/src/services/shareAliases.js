@@ -15,7 +15,32 @@ export const SHARE_ALIASES = {
 /** Display names, for the page title and the copy-link button. */
 export const ALIAS_TITLES = {
   'ops-finding-status': 'OPS Finding Status',
+  'preservation-findings-status': 'Preservation Findings Status',
 };
+
+// ─── Links named after a REPORT TYPE (v3.31.2) ───────────────────
+//
+// https://flash-report-pro.vercel.app/#/Preservation-Findings-Status opens the
+// live share of THE Preservation Findings report without its share id being
+// written here: the id only exists once the report has been shared from the
+// app. The alias resolves to the sentinel `@type:<report_type>`, which
+// SharedViewRouter turns into the real share id with one Firestore query
+// (shareService.findSharedIdByType). Everything that asks "is this a public
+// link?" (App.jsx, appLock.isPublicRoute) goes through shareIdFromAlias and
+// therefore needs no change.
+export const TYPE_PREFIX = '@type:';
+export const TYPE_ALIASES = {
+  'preservation-findings-status': 'preservation_findings',
+};
+
+/** The named address of a report type's live link, e.g. "#/Preservation-Findings-Status". */
+export function namedLinkForType(reportType, tab = '') {
+  const key = Object.keys(TYPE_ALIASES).find((k) => TYPE_ALIASES[k] === reportType);
+  if (!key) return '';
+  const q = tab && tab !== 'summary' ? `?tab=${encodeURIComponent(tab)}` : '';
+  const base = typeof window === 'undefined' ? 'https://flash-report-pro.vercel.app/' : `${window.location.origin}${window.location.pathname}`;
+  return `${base}#/${(ALIAS_TITLES[key] || key).replace(/\s+/g, '-')}${q}`;
+}
 
 /** The alias key a hash names, or ''. "#/OPS%20Finding%20Status?tab=B" → "ops-finding-status". */
 export function aliasKeyFromHash(hash) {
@@ -24,12 +49,13 @@ export function aliasKeyFromHash(hash) {
   let raw = m[1];
   try { raw = decodeURIComponent(raw); } catch { /* keep as is */ }
   const key = raw.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/-+/g, '-');
-  return SHARE_ALIASES[key] ? key : '';
+  return SHARE_ALIASES[key] || TYPE_ALIASES[key] ? key : '';
 }
 
 export function shareIdFromAlias(hash) {
   const k = aliasKeyFromHash(hash);
-  return k ? SHARE_ALIASES[k] : '';
+  if (!k) return '';
+  return SHARE_ALIASES[k] || `${TYPE_PREFIX}${TYPE_ALIASES[k]}`;
 }
 
 /** The named link for a share id, or '' when it has none. */

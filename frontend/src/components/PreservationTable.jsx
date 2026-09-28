@@ -4,7 +4,7 @@ import { TextCell, DateCell } from './PlanCell';
 import PhotoGalleryCell from './PhotoGalleryCell';
 import { OpsStatusCell } from './OpsFindingsTable';
 import {
-  PF_STATUS_STYLE, normalizePfStatus, formatPfDate, pfOpenDays,
+  PF_COLUMNS, PF_STATUS_STYLE, normalizePfStatus, formatPfDate, pfOpenDays,
 } from '../services/preservationFindings';
 
 /**
@@ -12,8 +12,11 @@ import {
  *
  * The OPS editing model (BUG-024): a cell is TEXT until it is double-clicked,
  * only the ONE open cell is a form control, a cell commits when it closes.
- * Columns A–H belong to the lookup database, so double-clicking one of them
- * opens the finding in the FORM (where the database suggestions and the
+ * COLUMN ORDER = PF_COLUMNS (v3.31.1): TagNo, EquipmentName and the finding
+ * (Issue … References) first, so they fit a laptop screen without scrolling
+ * sideways; No + TagNo stay pinned on the left when the table IS scrolled.
+ * The equipment columns belong to the lookup database, so double-clicking
+ * one of them opens the finding in the FORM (where the database suggestions and the
  * auto-fill live) instead of a bare text box. I, J, K, N edit in place; the
  * status and the dates open on a single click (BUG-028's picker).
  *
@@ -21,40 +24,43 @@ import {
  * hands this component a subset carrying the original indices.
  */
 
+// Widths: the first ten (No … References) add up to ~1,390 px, which fits the
+// report area of a 1920-px laptop screen with the report list open.
 const W = {
-  no: 'min-w-[44px] w-[44px]',
-  facility: 'min-w-[96px] w-[96px]',
-  discipline: 'min-w-[92px] w-[92px]',
+  no: 'min-w-[40px] w-[40px]',
+  tag_no: 'min-w-[124px] w-[124px]',
+  equipment_name: 'min-w-[150px] w-[150px]',
+  issue: 'min-w-[240px] w-[240px]',
+  action_by: 'min-w-[100px] w-[100px]',
+  action: 'min-w-[210px] w-[210px]',
+  status: 'min-w-[98px] w-[98px]',
+  closeout_date: 'min-w-[84px] w-[84px]',
+  remark: 'min-w-[170px] w-[170px]',
+  photos: 'min-w-[176px] w-[176px]',
+  checksheet_type: 'min-w-[86px] w-[86px]',
+  interval: 'min-w-[70px] w-[70px]',
   subsystem: 'min-w-[96px] w-[96px]',
   subsystem_desc: 'min-w-[190px] w-[190px]',
-  tag_no: 'min-w-[132px] w-[132px]',
-  equipment_name: 'min-w-[170px] w-[170px]',
-  interval: 'min-w-[70px] w-[70px]',
-  checksheet_type: 'min-w-[86px] w-[86px]',
-  issue: 'min-w-[260px] w-[260px]',
-  action_by: 'min-w-[120px] w-[120px]',
-  action: 'min-w-[230px] w-[230px]',
-  status: 'min-w-[104px] w-[104px]',
-  closeout_date: 'min-w-[92px] w-[92px]',
-  remark: 'min-w-[200px] w-[200px]',
-  photos: 'min-w-[210px] w-[210px]',
-  open_date: 'min-w-[96px] w-[96px]',
-  updated_date: 'min-w-[92px] w-[92px]',
+  discipline: 'min-w-[92px] w-[92px]',
+  facility: 'min-w-[96px] w-[96px]',
+  open_date: 'min-w-[88px] w-[88px]',
+  updated_date: 'min-w-[88px] w-[88px]',
 };
 
-const HEAD = [
-  ['No', 'no', ''], ['FacilityCode', 'facility', 'A'], ['DisciplineCode', 'discipline', 'B'],
-  ['Subsystem', 'subsystem', 'C'], ['SubsystemDescription', 'subsystem_desc', 'D'], ['TagNo', 'tag_no', 'E'],
-  ['EquipmentName', 'equipment_name', 'F'], ['Interval', 'interval', 'G'], ['ChecksheetType', 'checksheet_type', 'H'],
-  ['Issue Description', 'issue', 'I'], ['Action By', 'action_by', 'J'], ['Corrective / Alternative Action', 'action', 'K'],
-  ['Close-out Status', 'status', 'L'], ['Closed Date', 'closeout_date', 'M'], ['Remark', 'remark', 'N'],
-  ['References', 'photos', 'O'], ['Open Date', 'open_date', 'P'], ['Updated Date', 'updated_date', 'Q'],
-];
+// Header labels in the order of PF_COLUMNS (the single statement of the order).
+const SHORT = { interval: 'Interval', checksheet_type: 'Checksheet Type', subsystem_desc: 'Subsystem Description', equipment_name: 'Equipment Name', discipline: 'Discipline Code', facility: 'Facility Code' };
+const HEAD = [['No', 'no', '', false], ...PF_COLUMNS.map((c) => [SHORT[c.key] || c.label, c.key, c.col, Boolean(c.db)])];
+
+// Opaque twins of the row tints (OPS_STATUS_STYLE.row is translucent).
+const PIN_BG = { Open: 'bg-rose-50', 'On-going': 'bg-amber-50', Closed: 'bg-emerald-50' };
+
+// No and TagNo are pinned while the table scrolls sideways.
+const PIN = { no: 'sticky left-0 z-[2]', tag_no: 'sticky left-[40px] z-[2] shadow-[2px_0_0_0_#CBD5E1]' };
 
 const cellText = 'text-[12.5px] leading-snug text-slate-900';
 const inputText = 'w-full text-[12.5px] leading-snug text-slate-900 bg-white border border-slate-200 rounded-md px-2 py-1.5';
 
-function AgeBadge({ item, overdueDays }) {
+function AgeBadge({ item, overdueDays }) {  // days open, beside the status
   const d = pfOpenDays(item);
   if (d === null) return null;
   const late = d > overdueDays;
@@ -98,46 +104,56 @@ const Row = React.memo(function Row({ item, index, no, editingField, readOnly, i
   const td = (field, children, extra = '') => (
     <td key={field} className={`align-top px-0.5 py-0.5 border-b border-r border-slate-200 ${W[field]} ${extra}`}>{children}</td>
   );
-  const dbCell = (field, bold = false) => td(field, (
+  const dbCell = (field, bold = false, extra = '') => td(field, (
     <div
       onDoubleClick={readOnly ? undefined : () => api.openForm(index, field)}
-      title={readOnly ? undefined : 'Double-click to edit A–H in the form (database suggestions)'}
+      title={readOnly ? undefined : 'Double-click to edit the equipment fields in the form (database suggestions)'}
       className={`px-2 py-1.5 whitespace-pre-wrap break-words ${cellText} ${bold ? 'font-bold' : ''} ${readOnly ? '' : 'cursor-default hover:bg-white/70 rounded'}`}>
       {item[field] || <span className="text-slate-300">—</span>}
     </div>
-  ));
+  ), extra);
   const text = (field) => td(field, (
     <TextCell value={item[field] || ''} placeholder="" {...ed(field)} displayClassName={cellText} inputClassName={inputText} />
   ));
-  const date = (field, label, extra = null) => td(field, (
+  const date = (field, label) => td(field, (
     <div className="flex flex-col items-center">
       {readOnly
         ? <div className="px-2 py-1.5 text-center text-[12.5px] tabular-nums text-slate-900">{formatPfDate(item[field]) || '—'}</div>
         : <DateCell value={item[field] || ''} label={label} {...ed(field)} displayClassName="text-[12.5px] text-slate-900" />}
-      {extra}
     </div>
   ));
 
+  // A pinned cell needs an OPAQUE background, or the scrolled cells show through.
+  const pinBg = PIN_BG[st] || 'bg-white';
+  const cells = {
+    tag_no: dbCell('tag_no', true, `${PIN.tag_no} ${pinBg}`),
+    equipment_name: dbCell('equipment_name'),
+    issue: text('issue'),
+    action_by: text('action_by'),
+    action: text('action'),
+    status: td('status', (
+      <div className="py-1 flex flex-col items-center gap-0.5">
+        <OpsStatusCell value={item.status} {...ed('status')} />
+        <AgeBadge item={item} overdueDays={overdueDays} />
+      </div>
+    )),
+    closeout_date: date('closeout_date', 'Closed date'),
+    remark: text('remark'),
+    photos: td('photos', <div className="p-0.5"><Refs item={item} index={index} readOnly={readOnly} isMobileMode={isMobileMode} selected={selected} api={api} /></div>),
+    checksheet_type: dbCell('checksheet_type'),
+    interval: dbCell('interval'),
+    subsystem: dbCell('subsystem'),
+    subsystem_desc: dbCell('subsystem_desc'),
+    discipline: dbCell('discipline'),
+    facility: dbCell('facility'),
+    open_date: date('open_date', 'Open date'),
+    updated_date: date('updated_date', 'Updated date'),
+  };
+
   return (
     <tr className={style.row}>
-      <td className="align-top text-center px-1 py-2 border-b border-r border-slate-200 text-[12.5px] font-bold text-slate-700 tabular-nums">{no}</td>
-      {dbCell('facility')}
-      {dbCell('discipline')}
-      {dbCell('subsystem')}
-      {dbCell('subsystem_desc')}
-      {dbCell('tag_no', true)}
-      {dbCell('equipment_name')}
-      {dbCell('interval')}
-      {dbCell('checksheet_type')}
-      {text('issue')}
-      {text('action_by')}
-      {text('action')}
-      {td('status', <div className="py-1"><OpsStatusCell value={item.status} {...ed('status')} /></div>)}
-      {date('closeout_date', 'Closed date')}
-      {text('remark')}
-      {td('photos', <div className="p-0.5"><Refs item={item} index={index} readOnly={readOnly} isMobileMode={isMobileMode} selected={selected} api={api} /></div>)}
-      {date('open_date', 'Open date', <AgeBadge item={item} overdueDays={overdueDays} />)}
-      {date('updated_date', 'Updated date')}
+      <td className={`align-top text-center px-1 py-2 border-b border-r border-slate-200 text-[12.5px] font-bold text-slate-700 tabular-nums ${PIN.no} ${pinBg}`}>{no}</td>
+      {PF_COLUMNS.map((c) => <React.Fragment key={c.key}>{cells[c.key]}</React.Fragment>)}
       {!readOnly && (
         <td className="align-top px-1 py-1.5 border-b border-slate-200 bg-white/60">
           <div className="flex flex-col gap-1 items-center">
@@ -193,12 +209,6 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
         <div className="w-[108px]"><OpsStatusCell value={item.status} {...ed('status')} /></div>
       </div>
       <div className="p-1.5 space-y-1">
-        <button type="button" disabled={readOnly} onClick={() => api.openForm(index)}
-          className="w-full text-left px-2 py-1.5 rounded-lg bg-white/70 border border-slate-200 text-[11.5px] text-slate-700 leading-snug">
-          <span className="font-semibold">{item.facility || '—'}</span> · {item.discipline || '—'} · {item.subsystem || '—'}
-          <span className="block text-slate-500">{item.subsystem_desc} · Interval {item.interval || '—'}</span>
-          {!readOnly && <span className="block text-brand-700 font-bold mt-0.5">Tap to edit A–H in the form</span>}
-        </button>
         {line('Issue description', 'issue')}
         {line('Action by', 'action_by')}
         {line('Corrective / alternative action', 'action')}
@@ -212,6 +222,12 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
           <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 px-1 mb-0.5">References</div>
           <Refs item={item} index={index} readOnly={readOnly} isMobileMode selected={selected} api={api} />
         </div>
+        <button type="button" disabled={readOnly} onClick={() => api.openForm(index)}
+          className="w-full text-left px-2 py-1.5 rounded-lg bg-white/70 border border-slate-200 text-[11.5px] text-slate-700 leading-snug">
+          <span className="font-semibold">{item.checksheet_type || '—'}</span> · Interval {item.interval || '—'} · {item.subsystem || '—'}
+          <span className="block text-slate-500">{item.subsystem_desc} · {item.discipline || '—'} · {item.facility || '—'}</span>
+          {!readOnly && <span className="block text-brand-700 font-bold mt-0.5">Tap to edit the equipment fields</span>}
+        </button>
         {!readOnly && (
           <div className="flex gap-2 pt-1 px-1">
             <button type="button" onClick={() => api.openForm(index)}
@@ -259,8 +275,9 @@ export default function PreservationTable({
       <table className="border-separate border-spacing-0 text-left table-fixed">
         <thead>
           <tr>
-            {HEAD.map(([label, key, letter]) => (
-              <th key={key} className={`sticky top-0 z-10 ${letter && letter <= 'H' ? 'bg-[#274B75]' : 'bg-[#1F3A5F]'} text-white text-[11.5px] font-bold px-2 py-1.5 border-r border-slate-600 align-middle leading-tight ${W[key]} ${key === 'no' ? 'text-center' : ''}`}>
+            {HEAD.map(([label, key, letter, db]) => (
+              <th key={key} className={`sticky top-0 ${PIN[key] ? `${PIN[key].replace('z-[2]', 'z-20')}` : 'z-10'} ${db ? 'bg-[#3B6B9E]' : 'bg-[#1F3A5F]'} text-white text-[11.5px] font-bold px-2 py-1.5 border-r border-slate-600 align-middle leading-tight ${W[key]} ${key === 'no' ? 'text-center' : ''}`}
+                title={db ? 'From the Preservation database' : undefined}>
                 {letter && <span className="block text-[9.5px] font-semibold text-slate-300">{letter}</span>}
                 {label}
               </th>

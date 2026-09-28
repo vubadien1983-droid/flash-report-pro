@@ -8,13 +8,13 @@ import FilePreviewModal from './FilePreviewModal';
 import PasswordModal from './PasswordModal';
 import Toast from './Toast';
 import { subscribeSharedPf, pushSharedPfEdit, PF_MERGE_OPTS } from '../services/preservationLive';
-import { hydrateWithLocalPhotos, deletePhotoBytes, refOf } from '../services/miniPlanLive';
+import { hydrateWithLocalPhotos, deletePhotoBytes, refOf, loadMissingSharedPhotos } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
 import { isFirebaseConfigured, fileKey } from '../services/firebase';
 import { putAttachment, getAttachmentBlob, formatBytes } from '../services/fileAttachments';
 import { isPfUnlocked, unlockPf, lockPf, onPfLockChange } from '../services/preservationAuth';
-import { normalizePfItems, PRESERVATION_LABEL } from '../services/preservationFindings';
-import { publicShareUrl } from '../services/shareAliases';
+import { normalizePfItems, PRESERVATION_LABEL, PRESERVATION_TYPE } from '../services/preservationFindings';
+import { namedLinkForType, ALIAS_TITLES } from '../services/shareAliases';
 
 /**
  * The public, LIVE share link of the Preservation Findings report — built
@@ -114,7 +114,7 @@ export default function PreservationViewer({ shareId }) {
         setStalled('');
         setNotFound(false);
         // A named link carries its own name into the browser tab.
-        document.title = data.title || PRESERVATION_LABEL;
+        document.title = ALIAS_TITLES['preservation-findings-status'] || data.title || PRESERVATION_LABEL;
         const remote = data.items || [];
 
         if (dirtyRef.current && itemsRef.current.length) {
@@ -333,10 +333,15 @@ export default function PreservationViewer({ shareId }) {
     if (!report) return;
     try {
       const mod = await import('../services/preservationExport');
-      const rep = { ...report, items: normalizePfItems(report.items) };
+      // Pictures still being read by the live listener are fetched NOW, so the
+      // file never goes out without them (BUG-060, the OPS fix applied here).
+      const pending = (report.items || []).reduce((n, it) => n + (it?.photos || []).filter((p) => p && !p.url && p.photo_ref).length, 0);
+      if (pending) showToast(`Loading ${pending} picture(s) for the ${kind === 'xlsx' ? 'Excel' : 'PDF'}…`, 'info');
+      const { items: withPhotos, failed } = await loadMissingSharedPhotos(shareId, report.items || []);
+      const rep = { ...report, items: normalizePfItems(withPhotos) };
       if (kind === 'xlsx') await mod.exportPfExcel(rep, view);
       else await mod.exportPfPdf(rep, view);
-      showToast(`${kind === 'xlsx' ? 'Excel' : 'PDF'} downloaded`, 'success');
+      showToast(`${kind === 'xlsx' ? 'Excel' : 'PDF'} downloaded` + (failed ? ` — ${failed} picture(s) could not be loaded` : ''), failed ? 'error' : 'success');
     } catch (e) {
       console.error(e);
       showToast(`Export failed: ${e.message}`, 'error');
@@ -345,7 +350,7 @@ export default function PreservationViewer({ shareId }) {
 
   const copyTabLink = async (tab) => {
     const base = window.location.href.split('#')[0];
-    const url = publicShareUrl(shareId, tab === 'findings' ? tab : '') || `${base}#/view/${shareId}`;
+    const url = namedLinkForType(PRESERVATION_TYPE, tab === 'findings' ? tab : '') || `${base}#/view/${shareId}`;
     try { await navigator.clipboard.writeText(url); showToast('Link to this tab copied', 'success'); }
     catch { showToast(url, 'info'); }
   };

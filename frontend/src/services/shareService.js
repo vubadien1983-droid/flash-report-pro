@@ -24,6 +24,7 @@ import {
   sharedDoc, sharedPhotosCollection, sharedPhotoDoc,
   photoKey,
   getDoc, getDocs, setDoc,
+  sharedCollection, query, where,
 } from './firebase';
 import {
   compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser,
@@ -277,6 +278,31 @@ export async function fetchSharedReportType(shareId) {
     return snap.exists() ? (snap.data()?.report_type || '') : '';
   } catch (e) {
     console.warn('Shared report type probe failed:', e.message);
+    return '';
+  }
+}
+
+/**
+ * The share id of the most recently published shared report of a TYPE — what
+ * a type-named link (#/Preservation-Findings-Status) opens. One query on the
+ * parent documents; '' when nothing of that type has been shared yet or the
+ * query fails. Never throws.
+ */
+export async function findSharedIdByType(reportType) {
+  if (!isFirebaseConfigured || !reportType) return '';
+  try {
+    const snap = await withTimeout(
+      getDocs(query(sharedCollection(), where('report_type', '==', reportType))),
+      READ_TIMEOUT_MS, 'Finding the shared report',
+    );
+    let best = null;
+    snap.forEach((d) => {
+      const at = String(d.data()?.updated_at || d.data()?.shared_at || '');
+      if (!best || at > best.at) best = { id: d.id, at };
+    });
+    return best ? best.id : '';
+  } catch (e) {
+    console.warn('Shared report lookup by type failed:', e.message);
     return '';
   }
 }

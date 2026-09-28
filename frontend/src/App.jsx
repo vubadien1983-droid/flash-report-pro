@@ -53,7 +53,7 @@ import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from './services/miniPlanAuth';
 import { lockApp } from './services/appLock';
-import { shareIdFromAlias, shareIdFromHost, publicShareUrl } from './services/shareAliases';
+import { shareIdFromAlias, shareIdFromHost, publicShareUrl, namedLinkForType } from './services/shareAliases';
 import {
   OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL, OPS_DEFAULT_SUBTITLE, OPS_DEFAULT_SECTION,
   isOpsFindings, normalizeOpsItems, makeOpsFinding, todayKeyLocal,
@@ -1291,6 +1291,30 @@ export default function App() {
     }
   };
 
+  // The Preservation report's named link (#/Preservation-Findings-Status)
+  // must work without anyone pressing Live Link first (v3.31.2): the first
+  // time the report is open here and has no share yet, it is published once,
+  // in the background. Later saves keep it current (scheduleRepublish).
+  const pfAutoShareRef = useRef('');
+  useEffect(() => {
+    const rep = currentReport;
+    if (!rep || !isPreservation(rep) || isViewRoute) return;
+    if (rep.share_id || rep.cloud_code || pfAutoShareRef.current === rep.id) return;
+    pfAutoShareRef.current = rep.id;
+    (async () => {
+      try {
+        const { shareId } = await publishReportForSharing(rep);
+        if (!shareId) return;
+        setCurrentReport((cur) => (cur?.id === rep.id ? { ...cur, share_id: shareId, cloud_code: shareId } : cur));
+        const local = await getLocalReport(rep.id);
+        if (local) await saveLocalReport({ ...local, share_id: shareId, cloud_code: shareId });
+      } catch (e) {
+        pfAutoShareRef.current = '';          // try again next time it is opened
+        console.warn('Preservation link not published yet:', e.message);
+      }
+    })();
+  }, [currentReport?.id, currentReport?.share_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /**
    * The Preservation Findings report is ONE long-lived document, like the OPS
    * report: the sidebar button opens it when it exists and creates it only
@@ -1474,7 +1498,9 @@ export default function App() {
 
       // A report with a named link (services/shareAliases.js) is handed out
       // under its name; the #/view/<id> address still works.
-      const own = publicShareUrl(shareId, tab);
+      // The Preservation report is handed out under its NAME (v3.31.2):
+      // #/Preservation-Findings-Status, resolved to this share at open time.
+      const own = isPfReport ? namedLinkForType(PRESERVATION_TYPE, tab) : publicShareUrl(shareId, tab);
       const isOwn = !own.includes('#/view/');
       setShareModalState({
         isOpen: true,

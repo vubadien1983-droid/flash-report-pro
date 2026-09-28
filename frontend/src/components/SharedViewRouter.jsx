@@ -4,7 +4,8 @@ import ReportViewer from './ReportViewer';
 import MiniPlanViewer from './MiniPlanViewer';
 import OpsFindingsViewer from './OpsFindingsViewer';
 import PreservationViewer from './PreservationViewer';
-import { fetchSharedReportType } from '../services/shareService';
+import { fetchSharedReportType, findSharedIdByType } from '../services/shareService';
+import { TYPE_PREFIX } from '../services/shareAliases';
 import { MINI_PLAN_TYPE } from '../services/miniPlan';
 import { OPS_FINDINGS_TYPE } from '../services/opsFindings';
 import { PRESERVATION_TYPE } from '../services/preservationFindings';
@@ -22,11 +23,30 @@ import { PRESERVATION_TYPE } from '../services/preservationFindings';
  * Flash Report viewer, which already has a "Report Not Found" screen, so a
  * broken link shows a useful page instead of a blank one.
  */
-export default function SharedViewRouter({ shareId }) {
+export default function SharedViewRouter({ shareId: requested }) {
   const [type, setType] = useState(null);   // null = still probing
+  // A type-named link (#/Preservation-Findings-Status → "@type:…") is resolved
+  // to the real share id first (v3.31.2).
+  const byType = String(requested || '').startsWith(TYPE_PREFIX) ? requested.slice(TYPE_PREFIX.length) : '';
+  const [shareId, setShareId] = useState(byType ? null : requested);
+  const [unshared, setUnshared] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setUnshared(false);
+    setType(null);
+    if (!byType) { setShareId(requested); return undefined; }
+    setShareId(null);
+    findSharedIdByType(byType).then((id) => {
+      if (cancelled) return;
+      if (id) setShareId(id); else { setUnshared(true); setType(''); }
+    });
+    return () => { cancelled = true; };
+  }, [requested, byType]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (shareId === null) return undefined;
     if (!shareId) { setType(''); return undefined; }
 
     fetchSharedReportType(shareId)
@@ -35,6 +55,17 @@ export default function SharedViewRouter({ shareId }) {
 
     return () => { cancelled = true; };
   }, [shareId]);
+
+  if (unshared) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-100 p-4">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-lg border border-slate-200">
+          <h2 className="text-lg font-bold text-slate-900 mb-2">This report is not shared yet</h2>
+          <p className="text-xs text-slate-500">The owner has to open it in the app once and press Live Link. Then this address works for everyone.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (type === null) {
     return (

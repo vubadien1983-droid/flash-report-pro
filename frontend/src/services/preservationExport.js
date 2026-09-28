@@ -56,7 +56,7 @@ function linesFor(text, widthUnits) {
 // EXCEL
 // ══════════════════════════════════════════════════════════════════
 
-// Column 1 is "No"; then PF_COLUMNS A..Q (so the sheet's letters are one to the right).
+// Column 1 is "No"; then PF_COLUMNS A..Q in their display order (so the sheet's letters are one to the right).
 const XL_KEYS = ['no', ...PF_COLUMNS.map((c) => c.key)];
 const XL_WIDTH_OF = {
   no: 5, facility: 13, discipline: 12, subsystem: 12, subsystem_desc: 30, tag_no: 18, equipment_name: 26,
@@ -100,25 +100,18 @@ async function writeFindings(wb, report, { rows, label }) {
     ws.getCell('A4').value = `Filtered — ${label} — ${rows.length} finding(s)`;
     ws.getCell('A4').font = font({ italic: true, color: { argb: 'FF9A3412' } });
   }
-  // Group band over the database columns.
-  ws.mergeCells(6, xcol('facility'), 6, xcol('checksheet_type'));
-  ws.getCell(6, xcol('facility')).value = 'Equipment — from the Preservation database';
-  ws.mergeCells(6, xcol('issue'), 6, LAST_COL);
-  ws.getCell(6, xcol('issue')).value = 'Finding and close-out';
-  for (const c of [xcol('facility'), xcol('issue')]) {
-    const cell = ws.getCell(6, c);
-    cell.font = font({ bold: true, color: { argb: 'FFFFFFFF' }, size: 9 });
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c === xcol('facility') ? 'FF274B75' : 'FF334155' } };
-    cell.alignment = { horizontal: 'center' };
-  }
-
+  // The database columns are not contiguous any more (v3.31.1 order), so they
+  // are told apart by their header colour and this note instead of a band.
+  ws.mergeCells(`A6:${LAST}6`);
+  ws.getCell('A6').value = 'Lighter-blue headers = equipment data from the Preservation database.';
+  ws.getCell('A6').font = font({ italic: true, size: 8.5, color: { argb: 'FF51607A' } });
   const head = ws.getRow(HEADER_ROW);
   XL_KEYS.forEach((k, i) => {
     const cell = head.getCell(i + 1);
     const col = PF_COLUMNS.find((c) => c.key === k);
     cell.value = k === 'no' ? 'No' : col.label;
     cell.font = font({ bold: true, color: { argb: 'FFFFFFFF' }, size: 10 });
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col?.db ? 'FF274B75' : NAVY } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col?.db ? 'FF3B6B9E' : NAVY } };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = thin(NAVY);
   });
@@ -333,7 +326,7 @@ function writeLearned(wb, report) {
     const c = ws.getCell(3, i + 1);
     c.value = PF_COLUMNS.find((x) => x.key === k).label;
     c.font = font({ bold: true, color: { argb: 'FFFFFFFF' } });
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF274B75' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B6B9E' } };
     c.border = thin();
   });
   learned.forEach((row, j) => PF_DB_FIELDS.forEach((k, i) => {
@@ -545,7 +538,7 @@ export async function exportPfPdf(report, view = null, opts = {}) {
     didParseCell: (data) => {
       if (data.section === 'head') {
         const key = XL_KEYS[data.column.index];
-        if (PF_COLUMNS.find((c) => c.key === key)?.db) data.cell.styles.fillColor = [39, 75, 117];
+        if (PF_COLUMNS.find((c) => c.key === key)?.db) data.cell.styles.fillColor = [59, 107, 158];
         return;
       }
       if (data.section !== 'body') return;
