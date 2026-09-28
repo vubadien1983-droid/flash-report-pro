@@ -98,7 +98,8 @@ export default function PreservationWorkspace({
   onExport,                // ('xlsx' | 'pdf', view) => void
   onTabLink,               // (tab) => void
   notify,
-  headerExtra = null,      // share link: the password box
+  headerBadge = null,      // share link: Live / Saving… beside the title
+  headerExtra = null,      // share link: password box + view / Sync / Save — ONE header row (v3.31.3)
   initialTab = '',
   fullScreen = false,
 }) {
@@ -327,11 +328,14 @@ export default function PreservationWorkspace({
       {/* Header */}
       <div className="w-full bg-white rounded-xl shadow-xs border border-slate-200/80 px-3 py-1.5 mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
         <ShieldCheck className="w-4 h-4 text-brand-600 flex-shrink-0" />
-        <div className="flex-1 min-w-[220px]">{headerField('title', report?.title, { placeholder: 'Report title', cls: 'text-[15px] font-extrabold text-slate-900' })}</div>
+        <div className="flex-1 min-w-[220px] flex items-center gap-2">
+          <div className="min-w-0 flex-1">{headerField('title', report?.title, { placeholder: 'Report title', cls: 'text-[15px] font-extrabold text-slate-900' })}</div>
+          {headerBadge}
+        </div>
         <div className="min-w-[160px]">{headerField('location', report?.location, { placeholder: 'Area', icon: MapPin })}</div>
-        <div className="min-w-[150px]">{headerField('system_tag', report?.system_tag, { placeholder: 'Updated by', icon: User })}</div>
-        <div className="min-w-[130px]">{headerField('inspection_date', report?.inspection_date, { placeholder: 'Updated date', icon: Calendar, date: true })}</div>
-        {headerExtra}
+        <div className="min-w-[110px]">{headerField('system_tag', report?.system_tag, { placeholder: 'Updated by', icon: User })}</div>
+        <div className="min-w-[110px]">{headerField('inspection_date', report?.inspection_date, { placeholder: 'Updated date', icon: Calendar, date: true })}</div>
+        {headerExtra && <div className="ml-auto flex flex-wrap items-center gap-1.5">{headerExtra}</div>}
       </div>
 
       {/* Tabs */}
