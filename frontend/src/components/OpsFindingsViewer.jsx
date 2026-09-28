@@ -8,7 +8,7 @@ import FilePreviewModal from './FilePreviewModal';
 import PasswordModal from './PasswordModal';
 import Toast from './Toast';
 import { subscribeSharedOps, pushSharedOpsEdit, OPS_MERGE_OPTS } from '../services/opsFindingsLive';
-import { hydrateWithLocalPhotos, deletePhotoBytes, refOf } from '../services/miniPlanLive';
+import { hydrateWithLocalPhotos, deletePhotoBytes, refOf, loadMissingSharedPhotos } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
 import { isFirebaseConfigured, fileKey } from '../services/firebase';
 import { putAttachment, getAttachmentBlob, formatBytes } from '../services/fileAttachments';
@@ -342,10 +342,15 @@ export default function OpsFindingsViewer({ shareId }) {
     if (!report) return;
     try {
       const mod = await import('../services/opsFindingsExport');
-      const rep = { ...report, items: normalizeOpsItems(report.items) };
+      // Pictures still being read by the live listener are fetched NOW, so
+      // the file never goes out without them (BUG-060).
+      const pending = (report.items || []).reduce((n, it) => n + (it?.photos || []).filter((p) => p && !p.url && p.photo_ref).length, 0);
+      if (pending) showToast(`Loading ${pending} picture(s) for the ${kind === 'xlsx' ? 'Excel' : 'PDF'}…`, 'info');
+      const { items: withPhotos, failed } = await loadMissingSharedPhotos(shareId, report.items || []);
+      const rep = { ...report, items: normalizeOpsItems(withPhotos) };
       if (kind === 'xlsx') await mod.exportOpsExcel(rep, view);
       else await mod.exportOpsPdf(rep, view);
-      showToast(`${kind === 'xlsx' ? 'Excel' : 'PDF'} downloaded`, 'success');
+      showToast(`${kind === 'xlsx' ? 'Excel' : 'PDF'} downloaded` + (failed ? ` — ${failed} picture(s) could not be loaded` : ''), failed ? 'error' : 'success');
     } catch (e) {
       console.error(e);
       showToast(`Export failed: ${e.message}`, 'error');

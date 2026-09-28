@@ -259,6 +259,44 @@ function applyCache(items, cache, shareId = '', missing = null) {
 }
 
 /**
+ * Make sure every picture of `items` carries its bytes (v3.31.1).
+ *
+ * The live listener shows the rows first and reads the photo documents one by
+ * one afterwards; with a few dozen full-quality pictures that takes a while,
+ * and an export started in the meantime saw `url`-less pointers and wrote a
+ * workbook without a single picture (BUG-060). An export calls this first:
+ * the pointers still without bytes are read now (6 at a time), and the rows
+ * come back with every `url` it could find. Rows are never changed otherwise.
+ *
+ * @returns {Promise<{items:Array, loaded:number, failed:number}>}
+ */
+export async function loadMissingSharedPhotos(shareId, items, { onProgress } = {}) {
+  const want = [...collectRefs(items)].filter((k) => !localPhoto(shareId, k));
+  const got = new Map();
+  let failed = 0;
+  let done = 0;
+  const queue = [...want];
+  const worker = async () => {
+    while (queue.length) {
+      const key = queue.shift();
+      try {
+        const psnap = await withTimeout(getDoc(sharedPhotoDoc(shareId, key)), READ_TIMEOUT_MS, 'Loading shared photo');
+        const url = psnap.exists() ? (psnap.data()?.url || '') : '';
+        if (url) { got.set(key, url); remoteBytes.set(`${shareId}|${key}`, url.length); }
+        else failed += 1;
+      } catch (e) {
+        failed += 1;
+        console.warn(`Shared photo ${key} not read for export:`, e.message);
+      }
+      done += 1;
+      onProgress?.(done, want.length);
+    }
+  };
+  if (shareId && want.length) await Promise.all(Array.from({ length: Math.min(6, want.length) }, worker));
+  return { items: applyCache(items, got, shareId), loaded: got.size, failed };
+}
+
+/**
  * Watch a shared Mini Plan.
  *
  * @param {string} shareId
