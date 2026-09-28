@@ -23,6 +23,7 @@ import {
 import { MINI_PLAN_TYPE } from './miniPlan';
 import { mergeMiniPlanItems } from './miniPlanMerge';
 import { OPS_FINDINGS_TYPE, OPS_MERGE_FIELDS } from './opsFindings';
+import { PRESERVATION_TYPE, PF_MERGE_FIELDS } from './preservationFindings';
 import {
   compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser, HARD_MAX_BYTES,
 } from './imageCompression';
@@ -233,13 +234,15 @@ export async function saveReport(id, reportData) {
     // OPS Findings: same merge-not-overwrite rule (phone and laptop edit the
     // same list), with its own fields, no equipment regrouping, and a
     // THREE-WAY photo merge so a deleted photo stays deleted.
-    if (row.report_type === OPS_FINDINGS_TYPE && Array.isArray(row.items)) {
+    // Preservation Findings (v3.31.0): the same rule with its own fields.
+    const isPfRow = row.report_type === PRESERVATION_TYPE;
+    if ((row.report_type === OPS_FINDINGS_TYPE || isPfRow) && Array.isArray(row.items)) {
       try {
         const snap = await withTimeout(getDoc(reportDoc(id)), READ_TIMEOUT_MS, 'Reading the report');
         const theirs = snap.exists() ? (snap.data()?.items || []) : [];
         if (theirs.length && lastRemote.has(id)) {
           const merged = mergeMiniPlanItems(lastRemote.get(id), row.items, theirs, {
-            fields: OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true, preferMineOrder: true,
+            fields: isPfRow ? PF_MERGE_FIELDS : OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true, preferMineOrder: true,
           });
           row.items = merged.items;
         }

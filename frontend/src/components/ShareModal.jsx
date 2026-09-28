@@ -5,6 +5,7 @@ import {
 import { exportStandaloneHtml } from '../services/htmlExporter';
 import { isMiniPlan, MINI_PLAN_LABEL } from '../services/miniPlan';
 import { isOpsFindings } from '../services/opsFindings';
+import { isPreservation } from '../services/preservationFindings';
 
 export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
   const [copied, setCopied] = useState(false);
@@ -49,6 +50,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
   // whoever receives them.
   const plan = isMiniPlan(report);
   const ops = isOpsFindings(report);
+  const pf = isPreservation(report);
   const reportTitle = report?.title || (plan ? MINI_PLAN_LABEL : 'Flash Inspection Report');
 
   const handleCopy = async () => {
@@ -112,7 +114,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
         {/* Report Title Badge */}
         <div className="mb-4 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center gap-2">
           <span className="px-2 py-0.5 bg-brand-100 text-brand-700 text-[10px] font-bold rounded-md uppercase">
-            {plan ? 'Mini Plan' : ops ? 'OPS Findings' : 'Report'}
+            {plan ? 'Mini Plan' : ops ? 'OPS Findings' : pf ? 'Preservation' : 'Report'}
           </span>
           <span className="text-xs font-semibold text-slate-800 truncate">
             {reportTitle}
@@ -128,6 +130,15 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
             they are right now, and the page keeps updating — no need to resend it. The Summary tab is open to
             everyone; <strong className="font-bold">editing a section tab needs that section's password</strong>.
             A link ending in <code>?tab=B</code> opens on that tab.
+          </div>
+        )}
+
+        {pf && (
+          <div className="mb-4 p-3 bg-emerald-50/70 border border-emerald-200/70 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
+            <strong className="font-bold">This link is live.</strong> Whoever opens it sees the findings as
+            they are right now — Summary and Findings, search, filters, Excel / PDF — with no password.{' '}
+            <strong className="font-bold">Editing, adding findings and uploading pictures or files need the team password.</strong>{' '}
+            A link ending in <code>?tab=findings</code> opens on the Findings tab.
           </div>
         )}
 

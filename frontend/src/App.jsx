@@ -17,6 +17,7 @@ import FileViewer from './components/FileViewer';
 import SharedViewRouter from './components/SharedViewRouter';
 import MiniPlanWorkspace from './components/MiniPlanWorkspace';
 import OpsFindingsWorkspace from './components/OpsFindingsWorkspace';
+import PreservationWorkspace from './components/PreservationWorkspace';
 import PasswordModal from './components/PasswordModal';
 import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
@@ -57,6 +58,9 @@ import {
   OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL, OPS_DEFAULT_SUBTITLE, OPS_DEFAULT_SECTION,
   isOpsFindings, normalizeOpsItems, makeOpsFinding, todayKeyLocal,
 } from './services/opsFindings';
+import {
+  PRESERVATION_TYPE, PRESERVATION_LABEL, PRESERVATION_DEFAULT_SUBTITLE, isPreservation, normalizePfItems,
+} from './services/preservationFindings';
 import {
   isOpsSectionUnlocked, unlockOpsSection, lockOpsSection, onOpsLockChange, sectionLetter,
 } from './services/opsAuth';
@@ -158,6 +162,10 @@ export default function App() {
   // follows the screen. A ref: it changes on every keystroke in the search box
   // and nothing needs to re-render for it.
   const opsViewRef = useRef(null);
+  // Preservation Findings and Tracking — like OPS: the app is the owner's and
+  // has no lock; the share link needs the team password to edit.
+  const isPfReport = isPreservation(currentReport);
+  const pfViewRef = useRef(null);
   // Per-section edit locks of the OPS report (services/opsAuth.js). The tick
   // re-renders the workspace when a tab is unlocked or locked anywhere.
   const [, setOpsLockTick] = useState(0);
@@ -1207,8 +1215,20 @@ export default function App() {
       const newId = `rep_${Date.now()}`;
       const isPlan = reportType === MINI_PLAN_TYPE;
       const isOps = reportType === OPS_FINDINGS_TYPE;
+      const isPf = reportType === PRESERVATION_TYPE;
 
-      const defaultNew = isOps ? {
+      const defaultNew = isPf ? {
+        id: newId,
+        title: PRESERVATION_LABEL,
+        report_type: PRESERVATION_TYPE,
+        system_tag: '',                       // "Updated by"
+        location: PRESERVATION_DEFAULT_SUBTITLE,
+        inspection_date: todayKeyLocal(),     // "Updated date"
+        discipline: 'Mechanical',
+        items: [],                            // findings are added with the form
+        _version: 1,
+        _syncStatus: SyncStatus.PENDING,
+      } : isOps ? {
         id: newId,
         title: OPS_FINDINGS_LABEL,
         report_type: OPS_FINDINGS_TYPE,
@@ -1259,6 +1279,7 @@ export default function App() {
       showToast(
         isPlan ? `${MINI_PLAN_LABEL} created with ${MINI_PLAN_SEED.length} equipment items`
           : isOps ? `${OPS_FINDINGS_LABEL} created — use Import Excel to load the findings`
+          : isPf ? `${PRESERVATION_LABEL} created — press Add finding to start`
           : 'New report created',
         'success'
       );
@@ -1268,6 +1289,17 @@ export default function App() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  /**
+   * The Preservation Findings report is ONE long-lived document, like the OPS
+   * report: the sidebar button opens it when it exists and creates it only
+   * the first time.
+   */
+  const handleOpenPreservation = async () => {
+    const existing = (reports || []).find((r) => r.report_type === PRESERVATION_TYPE);
+    if (existing) { await loadSingleReport(existing.id); return; }
+    await handleNewReport(PRESERVATION_TYPE);
   };
 
   /**
@@ -1484,7 +1516,11 @@ export default function App() {
     if (!currentReport) return;
     setIsExporting(true);
     try {
-      if (isOpsReport) {
+      if (isPfReport) {
+        const { exportPfExcel } = await import('./services/preservationExport');
+        const rep = await reportForExport(currentReport);
+        await exportPfExcel({ ...rep, items: normalizePfItems(rep.items) }, pfViewRef.current);
+      } else if (isOpsReport) {
         const { exportOpsExcel } = await import('./services/opsFindingsExport');
         const rep = await reportForExport(currentReport);
         await exportOpsExcel({ ...rep, items: normalizeOpsItems(rep.items) }, opsViewRef.current);
@@ -1505,7 +1541,11 @@ export default function App() {
     if (!currentReport) return;
     setIsExporting(true);
     try {
-      if (isOpsReport) {
+      if (isPfReport) {
+        const { exportPfPdf } = await import('./services/preservationExport');
+        const rep = await reportForExport(currentReport);
+        await exportPfPdf({ ...rep, items: normalizePfItems(rep.items) }, pfViewRef.current);
+      } else if (isOpsReport) {
         const { exportOpsPdf } = await import('./services/opsFindingsExport');
         const rep = await reportForExport(currentReport);
         await exportOpsPdf({ ...rep, items: normalizeOpsItems(rep.items) }, opsViewRef.current);
@@ -1650,7 +1690,7 @@ export default function App() {
             title="Generate shareable web link with QR code"
           >
             {isPublishing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 text-brand-600" />}
-            <span className="hidden sm:inline">{isPlanReport || isOpsReport ? 'Live Link' : 'Share Link'}</span>
+            <span className="hidden sm:inline">{isPlanReport || isOpsReport || isPfReport ? 'Live Link' : 'Share Link'}</span>
             <span className="sm:hidden">Share</span>
           </button>
 
@@ -1735,6 +1775,7 @@ export default function App() {
                 activeReportId={activeReportId}
                 onSelectReport={loadSingleReport}
                 onNewReport={handleNewReport}
+                onOpenPreservation={handleOpenPreservation}
                 onDuplicateReport={askDuplicate}
                 onDeleteReport={openDeleteModal}
                 isSaving={isSaving}
@@ -1768,6 +1809,7 @@ export default function App() {
                 activeReportId={activeReportId}
                 onSelectReport={loadSingleReport}
                 onNewReport={handleNewReport}
+                onOpenPreservation={handleOpenPreservation}
                 onDuplicateReport={askDuplicate}
                 onDeleteReport={openDeleteModal}
                 isSaving={isSaving}
@@ -1826,7 +1868,25 @@ export default function App() {
               />
             )}
 
-            {currentReport && !isOpsReport && (
+            {currentReport && isPfReport && (
+              <PreservationWorkspace
+                report={currentReport}
+                items={normalizePfItems(currentReport.items)}
+                onItemsChange={handleItemsChange}
+                onHeaderChange={handleHeaderChange}
+                onPhotoClick={openOpsLightbox}
+                onPhotoRemoved={dropPlanPhotoBytes}
+                onAttachFile={handlePlanAttach}
+                onOpenAttachment={handleOpenAttachment}
+                onViewChange={(v) => { pfViewRef.current = v; }}
+                onExport={(kind, view) => { pfViewRef.current = view; if (kind === 'xlsx') handleExportExcel(); else handleExportPdf(); }}
+                onTabLink={(tab) => handleOpenShareModal(tab === 'findings' ? tab : '')}
+                isMobileMode={isPhoneView}
+                notify={showToast}
+              />
+            )}
+
+            {currentReport && !isOpsReport && !isPfReport && (
               <>
                 <HeaderForm
                   report={currentReport}

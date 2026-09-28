@@ -2,17 +2,19 @@ import React, { useState } from 'react';
 import {
   Plus, Search, FileSpreadsheet, Copy, Trash2, Calendar, Tag,
   Clock, CheckCircle2, ChevronRight, Layers, FileText, X, RefreshCw,
-  CalendarRange, ChevronDown, ClipboardList
+  CalendarRange, ChevronDown, ClipboardList, ShieldCheck
 } from 'lucide-react';
 import { ReportSyncDot } from './SyncStatusIndicator';
 import { MINI_PLAN_TYPE, MINI_PLAN_LABEL } from '../services/miniPlan';
 import { OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL } from '../services/opsFindings';
+import { PRESERVATION_TYPE, PRESERVATION_LABEL } from '../services/preservationFindings';
 
 export default function Sidebar({
   reports,
   activeReportId,
   onSelectReport,
   onNewReport,
+  onOpenPreservation,      // opens the Preservation Findings report (creates it the first time)
   onDuplicateReport,
   onDeleteReport,
   isSaving,
@@ -97,6 +99,20 @@ export default function Sidebar({
           <Plus className="w-4 h-4" />
           New Flash Report
         </button>
+
+        {/* Preservation Findings and Tracking: one long-lived report, opened
+            from here — created the first time only (v3.31.0). */}
+        {onOpenPreservation && (
+          <button
+            type="button"
+            onClick={() => { onOpenPreservation(); if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer(); }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-teal-100 bg-teal-700/40 hover:bg-teal-700/60 border border-teal-600/60 rounded-xl transition-all active:scale-[0.98]"
+            title={reports.some((r) => r.report_type === PRESERVATION_TYPE) ? `Open ${PRESERVATION_LABEL}` : `Create ${PRESERVATION_LABEL}`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-teal-300" />
+            {PRESERVATION_LABEL}
+          </button>
+        )}
 
         {onSyncCloud && (
           <button
@@ -189,6 +205,12 @@ export default function Sidebar({
                     <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-1">
                       <ClipboardList className="w-2.5 h-2.5" />
                       OPS Findings
+                    </span>
+                  )}
+                  {report.report_type === PRESERVATION_TYPE && (
+                    <span className="px-1.5 py-0.2 bg-teal-500/20 text-teal-300 rounded text-[9px] font-bold inline-flex items-center gap-1">
+                      <ShieldCheck className="w-2.5 h-2.5" />
+                      Preservation
                     </span>
                   )}
                   {report.report_type === MINI_PLAN_TYPE && (

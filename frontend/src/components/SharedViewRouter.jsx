@@ -3,9 +3,11 @@ import { RefreshCw } from 'lucide-react';
 import ReportViewer from './ReportViewer';
 import MiniPlanViewer from './MiniPlanViewer';
 import OpsFindingsViewer from './OpsFindingsViewer';
+import PreservationViewer from './PreservationViewer';
 import { fetchSharedReportType } from '../services/shareService';
 import { MINI_PLAN_TYPE } from '../services/miniPlan';
 import { OPS_FINDINGS_TYPE } from '../services/opsFindings';
+import { PRESERVATION_TYPE } from '../services/preservationFindings';
 
 /**
  * Picks the right public viewer for a share link.
@@ -45,5 +47,6 @@ export default function SharedViewRouter({ shareId }) {
 
   if (type === MINI_PLAN_TYPE) return <MiniPlanViewer shareId={shareId} />;
   if (type === OPS_FINDINGS_TYPE) return <OpsFindingsViewer shareId={shareId} />;
+  if (type === PRESERVATION_TYPE) return <PreservationViewer shareId={shareId} />;
   return <ReportViewer reportId={shareId} />;
 }
