@@ -161,6 +161,38 @@ export function pfRowNumbers(items) {
   return out;
 }
 
+/**
+ * Where a NEW finding goes (v3.31.4), so the list stays grouped and sorted by
+ * TagNo without ever re-ordering rows already there:
+ *  - `afterId` given (the "+" of a row): right below that row;
+ *  - its TagNo already in the list: right below the LAST finding of that tag;
+ *  - a new TagNo: before the first finding whose TagNo sorts after it
+ *    (natural order, case/space-insensitive), else at the end;
+ *  - no TagNo: at the end.
+ * Database rows (`kind: 'db'`) are never used as anchors. Returns an index
+ * into `items` for `splice(at, 0, finding)`.
+ */
+export function pfInsertIndex(items, finding, { afterId = '' } = {}) {
+  const list = items || [];
+  if (afterId) {
+    const i = list.findIndex((it) => it?.id === afterId);
+    if (i >= 0) return i + 1;
+  }
+  const key = (v) => dbNorm(v).replace(/\s+/g, '');
+  const tag = key(finding?.tag_no);
+  // After the last finding (by position) — before any trailing database rows.
+  let lastFinding = -1;
+  list.forEach((it, i) => { if (isFindingRow(it)) lastFinding = i; });
+  const end = lastFinding + 1;
+  if (!tag) return end;
+  let lastSame = -1;
+  list.forEach((it, i) => { if (isFindingRow(it) && key(it.tag_no) === tag) lastSame = i; });
+  if (lastSame >= 0) return lastSame + 1;
+  const firstAfter = list.findIndex((it) => isFindingRow(it) && key(it.tag_no)
+    && key(it.tag_no).localeCompare(tag, undefined, { numeric: true }) > 0);
+  return firstAfter >= 0 ? firstAfter : end;
+}
+
 /** Indices of the findings (database rows skipped), in report order. */
 export function pfFindingIndices(items) {
   const out = [];

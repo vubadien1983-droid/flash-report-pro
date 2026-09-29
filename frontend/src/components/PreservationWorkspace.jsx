@@ -14,7 +14,7 @@ import {
   PF_STATUS, PF_STATUS_STYLE, EMPTY_PF_FILTER, PF_OVERDUE_OPTIONS, PF_DEFAULT_OVERDUE_DAYS, PF_BLANK, PF_NY_CLARIFY,
   pfSummary, pfBreakdown, pfRowNumbers, filterPfIndices, pfFilterActive, describePfFilter, pfDistinct,
   pfFindingIndices, pfFindings, pfEditPatch, todayKeyLocal, formatPfDate, pfLearnedRows,
-  seedToRows, buildLookup, learnedRowFor, withLearned,
+  seedToRows, buildLookup, learnedRowFor, withLearned, pfInsertIndex, PF_DB_FIELDS,
 } from '../services/preservationFindings';
 
 /**
@@ -120,7 +120,7 @@ export default function PreservationWorkspace({
   const [editing, setEditing] = useState(null);     // { id, field }
   const [selected, setSelected] = useState(null);   // item id
   const [confirm, setConfirm] = useState(null);
-  const [form, setForm] = useState(null);           // { initial } | null
+  const [form, setForm] = useState(null);           // { initial, afterId?, prefill?, afterNo? } | null
   const [headerEdit, setHeaderEdit] = useState(null);
   useEffect(() => { setEditing(null); }, [tab]);
 
@@ -199,6 +199,20 @@ export default function PreservationWorkspace({
       if (lockedRef.current) { askUnlock(() => setForm({ initial: itemsRef.current[index] })); return; }
       setForm({ initial: itemsRef.current[index] });
     },
+    // The row's "+" (v3.31.4): the Add finding form, the equipment of that row
+    // filled in, and the new finding goes RIGHT BELOW it.
+    addBelow: (index) => {
+      const row = itemsRef.current[index];
+      if (!row) return;
+      const open = () => setForm({
+        initial: null,
+        afterId: row.id,
+        afterNo: pfRowNumbers(itemsRef.current)[itemsRef.current.findIndex((x) => x.id === row.id)],
+        prefill: Object.fromEntries(PF_DB_FIELDS.map((f) => [f, row[f] || ''])),
+      });
+      if (lockedRef.current) { askUnlock(open); return; }
+      open();
+    },
     askDelete: (index) => {
       if (lockedRef.current) return;
       const it = itemsRef.current[index];
@@ -241,7 +255,15 @@ export default function PreservationWorkspace({
     const i = cur.findIndex((x) => x.id === finding.id);
     let next;
     if (i >= 0) { next = cur.slice(); next[i] = { ...cur[i], ...finding }; }
-    else next = [...cur, finding];
+    else {
+      // A new finding: below the row whose "+" was pressed, else below the
+      // last finding of the same TagNo, else in TagNo order (pfInsertIndex).
+      const at = pfInsertIndex(cur, finding, { afterId: form?.afterId });
+      next = cur.slice();
+      next.splice(at, 0, finding);
+      // "Save & add another" from a row's "+": the next one goes below this one.
+      if (keepOpen && form?.afterId) setForm((f) => (f ? { ...f, afterId: finding.id, afterNo: (f.afterNo || 0) + 1 } : f));
+    }
     next = withLearned(next, learned);
     write(next);
     if (i < 0 && active) {
@@ -532,6 +554,8 @@ export default function PreservationWorkspace({
       <PreservationForm
         isOpen={Boolean(form)}
         initial={form?.initial || null}
+        prefill={form?.prefill || null}
+        belowNo={form?.afterId ? form.afterNo : null}
         items={items}
         isMobileMode={isMobileMode}
         onClose={() => setForm(null)}

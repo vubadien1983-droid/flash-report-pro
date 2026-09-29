@@ -118,6 +118,8 @@ function DbCombo({ field, value, lookup, values, onType, onPick, onClear, autoFo
 export default function PreservationForm({
   isOpen,
   initial = null,            // the finding being edited, or null for a new one
+  prefill = null,            // a new finding's equipment fields (the row "+" button)
+  belowNo = null,            // a new finding from a row's "+": the number it goes below
   items = [],                // the report's items (learned database rows are read from them)
   onSave,                    // (finding, { keepOpen }) => void
   onClose,
@@ -144,13 +146,13 @@ export default function PreservationForm({
     if (!isOpen) return;
     const today = todayKeyLocal();
     setV(initial ? { ...initial, photos: [...(initial.photos || [])] } : {
-      id: makePfId(), ...EMPTY_DB, issue: '', action_by: '', action: '', remark: '',
+      id: makePfId(), ...EMPTY_DB, ...(prefill || {}), issue: '', action_by: '', action: '', remark: '',
       status: PF_STATUS.OPEN, closeout_date: '', open_date: today, updated_date: today, photos: [],
     });
     setTouched(false);
     setAskClose(false);
     setDateEdit(null);
-  }, [isOpen, initial]);
+  }, [isOpen, initial, prefill]);
 
   const actionByOptions = useMemo(() => pfDistinct(items, 'action_by'), [items]);
 
@@ -252,7 +254,10 @@ export default function PreservationForm({
         onKeyDown={(e) => { if (e.key === 'Escape') close(); }}>
         <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-slate-200">
           <Database className="w-5 h-5 text-brand-600" />
-          <h3 className="flex-1 text-[15px] font-bold text-slate-900">{initial ? 'Edit finding' : 'Add finding'}</h3>
+          <h3 className="flex-1 text-[15px] font-bold text-slate-900">{initial ? 'Edit finding' : 'Add finding'}
+            {!initial && belowNo ? <span className="ml-2 text-[12px] font-semibold text-brand-700">— goes right below #{belowNo}</span> : null}
+            {!initial && !belowNo ? <span className="ml-2 text-[12px] font-semibold text-slate-500">— placed with the same TagNo (list kept in TagNo order)</span> : null}
+          </h3>
           <button type="button" onClick={close} className="p-1 text-slate-500 hover:text-slate-900"><X className="w-5 h-5" /></button>
         </div>
 
@@ -292,7 +297,7 @@ export default function PreservationForm({
               {PF_DB_DISPLAY.map((f, i) => (
                 <div key={f} className={f === 'subsystem_desc' || f === 'equipment_name' ? 'lg:col-span-2' : ''}>
                   <DbCombo field={f} value={v[f] || ''} lookup={lookup} values={dbValues}
-                    onType={onType} onPick={onPick} onClear={onClear} autoFocus={!initial && f === 'tag_no' && !isMobileMode && i === 0} />
+                    onType={onType} onPick={onPick} onClear={onClear} autoFocus={!initial && !prefill && f === 'tag_no' && !isMobileMode && i === 0} />
                 </div>
               ))}
             </div>
@@ -304,7 +309,7 @@ export default function PreservationForm({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-3 gap-y-2.5">
               <div>
                 <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('issue')}</span>Issue Description</label>
-                <textarea data-pf-issue rows={3} value={v.issue || ''} onChange={(e) => set({ issue: e.target.value })} className={INPUT} placeholder="What was found" />
+                <textarea data-pf-issue autoFocus={Boolean(!initial && prefill && !isMobileMode)} rows={3} value={v.issue || ''} onChange={(e) => set({ issue: e.target.value })} className={INPUT} placeholder="What was found" />
               </div>
               <div>
                 <label className="block text-[10.5px] font-bold uppercase tracking-wide text-slate-500 mb-0.5"><span className="px-1 rounded bg-slate-200 text-slate-700 mr-1">{pfColLetter('action')}</span>Corrective / Alternative Action</label>

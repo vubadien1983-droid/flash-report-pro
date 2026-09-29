@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2, Pencil, AlertTriangle } from 'lucide-react';
+import { Trash2, Pencil, AlertTriangle, Plus } from 'lucide-react';
 import { TextCell, DateCell } from './PlanCell';
 import PhotoGalleryCell from './PhotoGalleryCell';
 import { OpsStatusCell } from './OpsFindingsTable';
@@ -157,6 +157,10 @@ const Row = React.memo(function Row({ item, index, no, editingField, readOnly, i
       {!readOnly && (
         <td className="align-top px-1 py-1.5 border-b border-slate-200 bg-white/60">
           <div className="flex flex-col gap-1 items-center">
+            <button type="button" onClick={() => api.addBelow(index)} title="Add a finding right below this one (same equipment filled in)"
+              className="p-1 rounded-md text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200">
+              <Plus className="w-3.5 h-3.5" />
+            </button>
             <button type="button" onClick={() => api.openForm(index)} title="Edit this finding in the form"
               className="p-1 rounded-md text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200">
               <Pencil className="w-3.5 h-3.5" />
@@ -230,6 +234,10 @@ const Card = React.memo(function Card({ item, index, no, editingField, readOnly,
         </button>
         {!readOnly && (
           <div className="flex gap-2 pt-1 px-1">
+            <button type="button" onClick={() => api.addBelow(index)}
+              className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg text-[12px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+              <Plus className="w-3.5 h-3.5" /> Add below
+            </button>
             <button type="button" onClick={() => api.openForm(index)}
               className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg text-[12px] font-bold text-brand-700 bg-brand-50 border border-brand-200">
               <Pencil className="w-3.5 h-3.5" /> Edit
