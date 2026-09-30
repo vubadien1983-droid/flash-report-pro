@@ -109,6 +109,19 @@ export function sharedPhotoDoc(shareId, key) {
   return doc(db, SHARED_COLLECTION, shareId, PHOTOS_SUBCOLLECTION, key);
 }
 
+// ─── OPS weekly Minutes of Meeting (v3.32.0) ─────────────────────
+// One document per ISO week under the shared report, NEVER inside its
+// `items`: a MoM is a meeting record, not part of the live rows.
+const MOMS_SUBCOLLECTION = 'moms';
+
+export function sharedMomsCollection(shareId) {
+  return collection(db, SHARED_COLLECTION, shareId, MOMS_SUBCOLLECTION);
+}
+
+export function sharedMomDoc(shareId, momId) {
+  return doc(db, SHARED_COLLECTION, shareId, MOMS_SUBCOLLECTION, momId);
+}
+
 // ─── File attachments ────────────────────────────────────────────
 //
 // A non-image attachment (PDF, drawing, spreadsheet, …) is stored the same

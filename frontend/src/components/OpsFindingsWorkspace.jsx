@@ -119,6 +119,10 @@ export default function OpsFindingsWorkspace({
   summaryExtra = null,     // share link: the master-password box on the Summary tab
   initialTab = '',
   fullScreen = false,
+  // Share link, master password only (v3.32.0): one extra tab next to Summary.
+  // { key, label, icon, content } — shown only while it is passed.
+  extraTab = null,
+  tabRequest = null,       // { key, n } — switch to that tab whenever `n` changes
 }) {
   const storeKey = `fr_ops_${report?.id || 'shared'}`;
   const sections = useMemo(() => opsSections(items), [items]);
@@ -136,8 +140,10 @@ export default function OpsFindingsWorkspace({
   // A tab is addressed by its section LETTER when it has one (stable across a
   // rename), otherwise by its title.
   const keyOf = (section) => sectionLetter(section) || section;
-  const activeSection = tab === 'summary' ? '' : (sections.find((s) => keyOf(s) === tab) || '');
-  useEffect(() => { if (tab !== 'summary' && !activeSection && sections.length) setTab('summary'); }, [tab, activeSection, sections.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const extraOn = Boolean(extraTab) && tab === extraTab.key;
+  const activeSection = tab === 'summary' || extraOn ? '' : (sections.find((s) => keyOf(s) === tab) || '');
+  useEffect(() => { if (tab !== 'summary' && !extraOn && !activeSection && sections.length) setTab('summary'); }, [tab, extraOn, activeSection, sections.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tabRequest?.key) setTab(tabRequest.key); }, [tabRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const letter = sectionLetter(activeSection);
   const tabLocked = readOnly || (activeSection ? !isUnlocked(letter) : true);
 
@@ -469,6 +475,13 @@ export default function OpsFindingsWorkspace({
             tab === 'summary' ? 'bg-white text-brand-700 border-slate-300 -mb-px' : 'bg-slate-50 text-slate-600 border-transparent hover:bg-white'}`}>
           <LayoutDashboard className="w-3.5 h-3.5" /> Summary
         </button>
+        {extraTab && (
+          <button type="button" onClick={() => setTab(extraTab.key)}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-bold rounded-t-lg border border-b-0 ${
+              extraOn ? 'bg-white text-amber-700 border-amber-300 -mb-px' : 'bg-amber-50 text-amber-800 border-transparent hover:bg-white'}`}>
+            {extraTab.icon}{extraTab.label}
+          </button>
+        )}
         {summary.map((s) => {
           const k = keyOf(s.section);
           const open = isUnlocked(s.letter) && !readOnly;
@@ -487,7 +500,9 @@ export default function OpsFindingsWorkspace({
         })}
       </div>
 
-      {tab === 'summary' ? (
+      {extraOn ? (
+        <div className={`${pin ? 'flex-1 min-h-0' : ''}`}>{extraTab.content}</div>
+      ) : tab === 'summary' ? (
         /* ── SUMMARY ─────────────────────────────────────────── */
         <div className={`space-y-2 ${pin ? 'flex-1 min-h-0 overflow-y-auto' : ''}`}>
           {(() => {

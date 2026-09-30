@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  FileText, RefreshCw, ArrowLeft, Radio, Laptop, Smartphone, Save, KeyRound, Lock, Unlock,
+  FileText, RefreshCw, ArrowLeft, Radio, Laptop, Smartphone, Save, KeyRound, Lock, Unlock, NotebookPen,
 } from 'lucide-react';
 import OpsFindingsWorkspace from './OpsFindingsWorkspace';
+import OpsMomPanel from './OpsMomPanel';
 import ImageModal from './ImageModal';
 import FilePreviewModal from './FilePreviewModal';
 import PasswordModal from './PasswordModal';
@@ -58,6 +59,9 @@ export default function OpsFindingsViewer({ shareId }) {
   const [viewMode, setViewMode] = useState('auto');
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [unsaved, setUnsaved] = useState(false);
+  // MoM tab (v3.32.0): master password only, and only after the MoM button.
+  const [momOpen, setMomOpen] = useState(false);
+  const [tabRequest, setTabRequest] = useState(null);
 
   const dirtyRef = useRef(false);
   const pushTimerRef = useRef(null);
@@ -74,7 +78,10 @@ export default function OpsFindingsViewer({ shareId }) {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  useEffect(() => onOpsLockChange(() => setLockTick((n) => n + 1)), []);
+  useEffect(() => onOpsLockChange(() => {
+    setLockTick((n) => n + 1);
+    if (!isOpsMasterUnlocked()) setMomOpen(false);
+  }), []);
   const isPhoneView = viewMode === 'phone' || (viewMode === 'auto' && windowWidth < 768);
 
   // ── Local draft: a refresh or a dead phone must not take an edit with it ──
@@ -453,7 +460,35 @@ export default function OpsFindingsViewer({ shareId }) {
           canImport
           importLocked={!isOpsMasterUnlocked()}
           onRequestImportUnlock={(then) => setAskPassword({ master: true, then })}
-          summaryExtra={<MasterBox onDone={(m, t) => showToast(m, t)} onLock={() => { flushNow(); lockAllOps(); showToast('All tabs locked', 'info'); }} />}
+          summaryExtra={(
+            <>
+              <MasterBox onDone={(m, t) => showToast(m, t)} onLock={() => { flushNow(); lockAllOps(); setMomOpen(false); showToast('All tabs locked', 'info'); }} />
+              {isOpsMasterUnlocked() && (
+                <button type="button" onClick={() => { setMomOpen(true); setTabRequest((r) => ({ key: 'mom', n: (r?.n || 0) + 1 })); }}
+                  title="Weekly Minutes of Meeting"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-bold text-white bg-amber-600 hover:bg-amber-700 border border-amber-700 rounded-lg">
+                  <NotebookPen className="w-3.5 h-3.5" /> MoM
+                </button>
+              )}
+            </>
+          )}
+          extraTab={momOpen && isOpsMasterUnlocked() ? {
+            key: 'mom',
+            label: 'MoM',
+            icon: <NotebookPen className="w-3.5 h-3.5" />,
+            content: (
+              <OpsMomPanel
+                shareId={shareId}
+                items={normalizeOpsItems(report.items)}
+                onApplyItems={handleItemsChange}
+                loadPhotos={async (rows) => (await loadMissingSharedPhotos(shareId, rows)).items}
+                onPhotoClick={openRowLightbox}
+                notify={showToast}
+                isMobileMode={isPhoneView}
+              />
+            ),
+          } : null}
+          tabRequest={tabRequest}
           onPhotoClick={openRowLightbox}
           onPhotoRemoved={dropPhotoBytes}
           onAttachFile={attachFromLink}

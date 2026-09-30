@@ -137,6 +137,7 @@ import {
   query,
   orderBy,
   limit,
+  where,
   serverTimestamp,
   onSnapshot
 } from "firebase/firestore";
