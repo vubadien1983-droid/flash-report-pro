@@ -356,7 +356,7 @@ export default function InspectionTable({
                         onPhotoChange={(photoData) => handlePhotoChange(idx, slotIdx, photoData)}
                         onPhotoDelete={() => handlePhotoDelete(idx, slotIdx)}
                         onPhotoClick={onPhotoClick}
-                        onFileSelected={(file) => onAttachFile && onAttachFile(idx, slotIdx, file)}
+                        onFileSelected={(file, extra) => onAttachFile && onAttachFile(idx, slotIdx, file, extra)}
                         onOpenAttachment={onOpenAttachment}
                         isMobileView={true}
                       />
@@ -460,7 +460,7 @@ export default function InspectionTable({
                           onPhotoChange={(photoData) => handlePhotoChange(idx, slotIdx, photoData)}
                           onPhotoDelete={() => handlePhotoDelete(idx, slotIdx)}
                           onPhotoClick={onPhotoClick}
-                          onFileSelected={(file) => onAttachFile && onAttachFile(idx, slotIdx, file)}
+                          onFileSelected={(file, extra) => onAttachFile && onAttachFile(idx, slotIdx, file, extra)}
                           onOpenAttachment={onOpenAttachment}
                           isMobileView={false}
                         />

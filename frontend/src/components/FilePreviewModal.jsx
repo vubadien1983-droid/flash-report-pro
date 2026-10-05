@@ -63,6 +63,36 @@ function CannotShow({ filename, type, url, reason }) {
   );
 }
 
+/** Video player with a readable failure instead of a black box. */
+function MediaPlayer({ url, filename, type }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [url]);
+  if (failed) {
+    return (
+      <CannotShow
+        filename={filename}
+        type={type}
+        url={url}
+        reason="This browser cannot play this video format (an iPhone .mov often needs Safari, or the Download button). The file itself is fine."
+      />
+    );
+  }
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-black rounded-lg">
+      <video
+        key={url}
+        src={url}
+        controls
+        autoPlay
+        playsInline
+        preload="metadata"
+        onError={() => setFailed(true)}
+        className="max-w-full max-h-full"
+      />
+    </div>
+  );
+}
+
 /**
  * The viewer itself, without the window around it. Used by the modal and by
  * the full-page `FileViewer` (#/file/<shareId>/<key>).
@@ -88,7 +118,19 @@ export function FilePreviewBody({ blob, url, filename, type, onOpenNested, dark 
         <img src={url} alt={filename} className="max-h-full max-w-full object-contain" />
       </div>
     );
-  } else if (kind === PREVIEW.PDF || kind === PREVIEW.TEXT || kind === PREVIEW.MEDIA) {
+  } else if (kind === PREVIEW.MEDIA) {
+    // v3.33.0: the app's own player, not an iframe. `playsInline` keeps an
+    // iPhone from jumping to full screen; a .mov that this browser cannot
+    // decode lands in the boundary's fallback with a Download button.
+    const isAudio = String(type).startsWith('audio/');
+    view = isAudio ? (
+      <div className="w-full h-full flex items-center justify-center">
+        <audio src={url} controls autoPlay className="w-full max-w-xl" />
+      </div>
+    ) : (
+      <MediaPlayer url={url} filename={filename} type={type} />
+    );
+  } else if (kind === PREVIEW.PDF || kind === PREVIEW.TEXT) {
     view = <iframe src={url} title={filename} className="w-full h-full rounded-lg bg-white border-0" />;
   } else if (kind === PREVIEW.EML || kind === PREVIEW.MSG) {
     view = <EmailView blob={blob} kind={kind} onOpenAttachment={onOpenNested} />;

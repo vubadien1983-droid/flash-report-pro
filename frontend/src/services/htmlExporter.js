@@ -4,6 +4,7 @@
  */
 
 import { computeRowNumbers, countContentRows } from './reportNumbering';
+import { isVideoEntry } from './videoMedia';
 import { isMiniPlan } from './miniPlan';
 import { exportMiniPlanHtml } from './miniPlanHtml';
 
@@ -51,7 +52,7 @@ export function exportStandaloneHtml(report) {
         return `
           <td style="padding: 6px; width: 175px; text-align: center; vertical-align: middle; border: 1px solid #d1d5db; background: #ffffff;">
             <div style="width: 165px; height: 125px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; padding: 6px;">
-              <div style="width:30px;height:30px;border-radius:8px;background:#0284c7;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">FILE</div>
+              <div style="min-width:30px;height:30px;padding:0 5px;border-radius:8px;background:${isVideoEntry(p) ? '#e11d48' : '#0284c7'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">${isVideoEntry(p) ? '&#9654; VIDEO' : 'FILE'}</div>
               ${inner}
             </div>
           </td>

@@ -40,6 +40,7 @@ import {
 } from './firebase';
 import { withTimeout, yieldToBrowser } from './imageCompression';
 import { isBlockedUpload, fileExtension } from './previewKind';
+import { isVideoFile, MAX_VIDEO_BYTES } from './videoMedia';
 
 /** Base64 characters per chunk document. Well under the 1 MiB ceiling. */
 const CHUNK_CHARS = 700_000;
@@ -70,6 +71,7 @@ export function formatBytes(n) {
 export function fileKindLabel(filenameOrMime = '') {
   const s = String(filenameOrMime).toLowerCase();
   if (s.includes('pdf')) return 'PDF';
+  if (/^video\/|\.(mp4|m4v|mov|webm|mkv|avi|3gp|ogv)$/.test(s)) return 'VID';
   if (/\.(xlsx|xls|csv)$|sheet|excel/.test(s)) return 'XLS';
   if (/\.(docx|doc)$|word/.test(s)) return 'DOC';
   if (/\.(pptx|ppt)$|presentation/.test(s)) return 'PPT';
@@ -111,9 +113,12 @@ export async function putAttachment(scope, id, key, file) {
       `"${file.name}" is a program file (.${fileExtension(file.name)}) and cannot be attached. Zip it or attach a PDF instead.`
     );
   }
-  if (file.size > MAX_FILE_BYTES) {
+  // A video has its own, larger ceiling — it has already been compressed to
+  // fit it at ingest (services/videoMedia.js prepareVideoForUpload).
+  const limit = isVideoFile(file) ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
+  if (file.size > limit) {
     throw new Error(
-      `"${file.name}" is ${formatBytes(file.size)}. The limit is ${formatBytes(MAX_FILE_BYTES)}.`
+      `"${file.name}" is ${formatBytes(file.size)}. The limit is ${formatBytes(limit)}.`
     );
   }
 
@@ -123,6 +128,7 @@ export async function putAttachment(scope, id, key, file) {
   emitProgress({ reportId: id, done: 0, total, phase: 'file' });
 
   // Chunks first, metadata last — see the note at the top of this file.
+  try {
   for (let i = 0; i < total; i++) {
     const slice = b64.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS);
     await withTimeout(
@@ -132,6 +138,11 @@ export async function putAttachment(scope, id, key, file) {
     );
     emitProgress({ reportId: id, done: i + 1, total, phase: 'file' });
     await yieldToBrowser();
+  }
+  } catch (err) {
+    // Clear the progress banner, then let the caller report the failure.
+    emitProgress({ reportId: id, done: total, total, phase: 'done' });
+    throw err;
   }
 
   const meta = {
@@ -149,12 +160,48 @@ export async function putAttachment(scope, id, key, file) {
 
   emitProgress({ reportId: id, done: total, total, phase: 'done' });
 
+  // The uploader can play / open it straight away with no download.
+  rememberBlob(scope, id, key, file, meta);
+
   return { ...meta, kind: 'file', file_ref: key };
+}
+
+/**
+ * Blobs this page has already read or written, by scope/id/key, newest last.
+ * A 20 MB video is ~30 document reads; watching it twice must not cost 60.
+ * Bounded by total bytes so a long session cannot hoard memory.
+ */
+const BLOB_CACHE_BYTES = 120 * 1024 * 1024;
+const blobCache = new Map();
+function cacheKey(scope, id, key) { return `${scope}|${id}|${key}`; }
+function rememberBlob(scope, id, key, blob, meta) {
+  if (!blob) return;
+  const k = cacheKey(scope, id, key);
+  blobCache.delete(k);
+  blobCache.set(k, { blob, meta });
+  let total = 0;
+  for (const v of blobCache.values()) total += v.blob.size || 0;
+  for (const [ck, v] of blobCache) {
+    if (total <= BLOB_CACHE_BYTES || blobCache.size <= 1) break;
+    total -= v.blob.size || 0;
+    blobCache.delete(ck);
+  }
+}
+function forgetBlob(scope, id, key) { blobCache.delete(cacheKey(scope, id, key)); }
+
+/** base64 → bytes, one chunk at a time (each chunk is a whole number of quads). */
+function decodeBase64(b64) {
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
 }
 
 /** Read a stored file back as a Blob, or null when it is not fully there. */
 export async function getAttachmentBlob(scope, id, key) {
   if (!isFirebaseConfigured) return null;
+  const hit = blobCache.get(cacheKey(scope, id, key));
+  if (hit) return { blob: hit.blob.type === (hit.meta.mime || hit.blob.type) ? hit.blob : new Blob([hit.blob], { type: hit.meta.mime }), meta: hit.meta };
 
   const metaSnap = await withTimeout(
     getDoc(docRef(scope, id, key)), READ_TIMEOUT_MS, 'Loading file'
@@ -163,7 +210,13 @@ export async function getAttachmentBlob(scope, id, key) {
   const meta = metaSnap.data();
   const total = meta.chunks || 1;
 
-  let b64 = '';
+  // Decoded chunk by chunk: one 30 MB base64 string (a video) is a needless
+  // memory spike and a long main-thread stall. CHUNK_CHARS is a multiple of
+  // 4, so every chunk but the last decodes on its own. Any older file whose
+  // chunks were cut differently falls back to decoding the joined string.
+  const pieces = [];
+  let carry = '';
+  try {
   for (let i = 0; i < total; i++) {
     const snap = await withTimeout(
       getDoc(docRef(scope, id, `${key}__c${i}`)),
@@ -173,18 +226,26 @@ export async function getAttachmentBlob(scope, id, key) {
     // A missing chunk means the file is incomplete. Returning a truncated
     // blob would hand the user a corrupt document that looks fine.
     if (!snap.exists()) return null;
-    b64 += snap.data().d || '';
+    const d = carry + (snap.data().d || '');
+    const whole = i === total - 1 ? d.length : d.length - (d.length % 4);
+    if (whole) pieces.push(decodeBase64(d.slice(0, whole)));
+    carry = d.slice(whole);
+    if (total > 3) emitProgress({ reportId: id, done: i + 1, total, phase: 'file-read' });
     await yieldToBrowser();
   }
+  } finally {
+    // Always clear the banner, also when a part was missing or timed out.
+    if (total > 3) emitProgress({ reportId: id, done: total, total, phase: 'done' });
+  }
 
-  const raw = atob(b64);
-  const arr = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  return { blob: new Blob([arr], { type: meta.mime || 'application/octet-stream' }), meta };
+  const blob = new Blob(pieces, { type: meta.mime || 'application/octet-stream' });
+  rememberBlob(scope, id, key, blob, meta);
+  return { blob, meta };
 }
 
 export async function deleteAttachment(scope, id, key, chunks = 1) {
   if (!isFirebaseConfigured) return;
+  forgetBlob(scope, id, key);
   try {
     await deleteDoc(docRef(scope, id, key));
     for (let i = 0; i < chunks; i++) {

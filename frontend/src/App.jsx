@@ -11,6 +11,7 @@ import InspectionTable from './components/InspectionTable';
 import DeleteModal from './components/DeleteModal';
 import ImageModal from './components/ImageModal';
 import FilePreviewModal from './components/FilePreviewModal';
+import { rememberPoster } from './services/videoMedia';
 import ConfirmModal from './components/ConfirmModal';
 import ShareModal from './components/ShareModal';
 import FileViewer from './components/FileViewer';
@@ -913,7 +914,7 @@ export default function App() {
   };
 
   /** Attach a file to a photo slot. The bytes go to Firestore, not the report. */
-  const handleAttachFile = async (itemIndex, slotIndex, file) => {
+  const handleAttachFile = async (itemIndex, slotIndex, file, extra = {}) => {
     if (!currentReport || !file) return;
     const item = (currentReport.items || [])[itemIndex];
     if (!item) return;
@@ -930,7 +931,11 @@ export default function App() {
         ...descriptor,
         id: `file_${Date.now()}_${slotIndex}`,
         slot_index: slotIndex,
+        // A video's length travels with the slot (a number, not bytes);
+        // its poster stays on this device only (BUG-005).
+        ...(extra?.duration ? { duration: Math.round(extra.duration) } : {}),
       };
+      if (extra?.poster) rememberPoster(key, extra.poster);
       newItems[itemIndex] = { ...newItems[itemIndex], photos };
       handleItemsChange(newItems);
 
@@ -2091,6 +2096,10 @@ export default function App() {
                 ? 'Publishing photo'
                 : uploadProgress.phase === 'compact'
                 ? 'Optimising photo'
+                : uploadProgress.phase === 'file'
+                ? 'Uploading file part'
+                : uploadProgress.phase === 'file-read'
+                ? 'Loading file part'
                 : 'Uploading photo'}{' '}
               {uploadProgress.done + 1} / {uploadProgress.total}
             </span>

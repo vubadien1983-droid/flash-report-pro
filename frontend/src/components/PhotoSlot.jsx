@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen, Paperclip, FileText, ExternalLink } from 'lucide-react';
+import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X, Check, FolderOpen, Paperclip, FileText, ExternalLink, Video, Play, Film } from 'lucide-react';
 import { compressForStorage, compressDataUrl } from '../services/imageCompression';
+import { isVideoFile, isVideoEntry, prepareVideoForUpload, posterFor, formatDuration, MAX_VIDEO_BYTES } from '../services/videoMedia';
+import VideoRecorderModal from './VideoRecorderModal';
 
 export default function PhotoSlot({
   photo,
@@ -10,7 +12,7 @@ export default function PhotoSlot({
   onPhotoChange,
   onPhotoDelete,
   onPhotoClick,
-  onFileSelected,      // (File) => void — parent uploads and stores the descriptor
+  onFileSelected,      // (File, extra?) => Promise|void — parent uploads and stores the descriptor
   onOpenAttachment,    // (photo)  => void — parent fetches and opens the file
   isMobileView = false
 }) {
@@ -22,6 +24,64 @@ export default function PhotoSlot({
   const [isDragOver, setIsDragOver] = useState(false);
   const [slotUploading, setSlotUploading] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [progressText, setProgressText] = useState('');
+  const [videoError, setVideoError] = useState('');
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const videoInputRef = useRef(null);
+  const abortRef = useRef(null);
+  const isVideo = isFile && isVideoEntry(photo);
+  const canVideo = Boolean(onFileSelected);
+
+  /**
+   * A video: compressed to the storage budget first (v3.33.0, BUG-013's
+   * ingest rule), then handed to the parent as an attachment. `extra`
+   * carries the length and a poster for this device's thumbnail.
+   */
+  const handleVideo = async (file, preparedInfo = null) => {
+    if (!file || !onFileSelected) return;
+    setShowOptionsModal(false);
+    setVideoError('');
+    setSlotUploading(true);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      let toStore = file;
+      let extra = preparedInfo || {};
+      // A recorded clip is already small — unless the encoder overshot.
+      if (!preparedInfo || file.size > MAX_VIDEO_BYTES) {
+        setProgressText('Compressing video 0%');
+        const prepared = await prepareVideoForUpload(file, {
+          signal: ctrl.signal,
+          onProgress: (f) => setProgressText(`Compressing video ${Math.round(f * 100)}%`),
+        });
+        toStore = prepared.file;
+        extra = { duration: prepared.duration, poster: prepared.poster };
+      }
+      setProgressText('Uploading video…');
+      await onFileSelected(toStore, extra);
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        console.error('Video not added:', err);
+        setVideoError(err?.message || 'The video could not be added.');
+        setTimeout(() => setVideoError(''), 9000);
+      }
+    } finally {
+      abortRef.current = null;
+      setSlotUploading(false);
+      setProgressText('');
+      if (videoInputRef.current) videoInputRef.current.value = '';
+    }
+  };
+
+  /** Route anything dropped or picked: image → photo, video → video, other → attachment. */
+  const handleAny = (file) => {
+    if (!file) return;
+    const isImg = file.type?.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(file.name || '');
+    if (isImg) return handleFile(file);
+    if (isVideoFile(file) && canVideo) return handleVideo(file);
+    if (onFileSelected) return onFileSelected(file);
+    return handleFile(file);
+  };
 
   const slotLabels = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4'];
 
@@ -204,7 +264,7 @@ export default function PhotoSlot({
         onDrop={(e) => {
           e.preventDefault();
           setIsDragOver(false);
-          if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
+          if (e.dataTransfer.files?.[0]) handleAny(e.dataTransfer.files[0]);
         }}
         className={`relative group w-full ${isMobileView ? 'h-32 sm:h-36' : 'h-32 lg:h-36 xl:h-40'} rounded-xl border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden outline-none select-none ${hasContent ? 'cursor-zoom-in' : 'cursor-pointer'} ${
           isDragOver
@@ -244,10 +304,23 @@ export default function PhotoSlot({
           onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = '';
-            if (f && onFileSelected) onFileSelected(f);
+            if (!f || !onFileSelected) return;
+            if (isVideoFile(f)) handleVideo(f);
+            else onFileSelected(f);
           }}
           className="hidden"
         />
+
+        {/* Hidden VIDEO input — opens the gallery's videos (or the camera app on phone) */}
+        {canVideo && (
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            onChange={(e) => handleVideo(e.target.files?.[0])}
+            className="hidden"
+          />
+        )}
 
         {/* Phone: a filled slot opens on tap, so Replace / Remove cannot hide
             behind :hover — there is no hover on a touch screen. These stay
@@ -274,10 +347,65 @@ export default function PhotoSlot({
         )}
 
         {slotUploading ? (
-          <div className="flex flex-col items-center justify-center text-brand-600 gap-1">
+          <div className="flex flex-col items-center justify-center text-brand-600 gap-1 px-2 text-center">
             <RefreshCw className="w-5 h-5 animate-spin" />
-            <span className="text-[10px] font-medium">Processing...</span>
+            <span className="text-[10px] font-medium">{progressText || 'Processing...'}</span>
+            {progressText.startsWith('Compressing') && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); abortRef.current?.abort(); }}
+                className="mt-0.5 px-2 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold"
+              >
+                Cancel
+              </button>
+            )}
           </div>
+        ) : isVideo ? (
+          /* ── Video ────────────────────────────────────────────────────
+             A poster (when this device has one) or a dark tile with a play
+             button. The whole cell plays it, in the app's own player. */
+          <>
+            <div
+              className="absolute inset-0 bg-slate-900 flex items-center justify-center cursor-pointer"
+              onClick={(e) => { e.stopPropagation(); if (onOpenAttachment) onOpenAttachment(photo); }}
+              title={`Play ${photo.filename || 'video'}`}
+            >
+              {posterFor(photo) && (
+                <img src={posterFor(photo)} alt="" className="absolute inset-0 w-full h-full object-contain" />
+              )}
+              <span className="relative w-11 h-11 rounded-full bg-black/55 ring-2 ring-white/80 flex items-center justify-center shadow-lg">
+                <Play className="w-5 h-5 fill-white text-white ml-0.5" />
+              </span>
+              <span className="absolute top-1 left-1 px-1.5 rounded bg-rose-600 text-white text-[9px] font-extrabold tracking-wide leading-4">
+                VIDEO
+              </span>
+              <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 bg-black/60 text-white text-[9.5px] font-semibold flex items-center gap-1">
+                <Film className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{photo.filename || 'video'}</span>
+                {formatDuration(photo.duration) && <span className="ml-auto font-mono">{formatDuration(photo.duration)}</span>}
+              </span>
+            </div>
+            {!isMobileView && (
+              <div className="absolute top-1 right-1 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setRecorderOpen(true); }}
+                  title="Record a new video instead"
+                  className="p-1.5 bg-white/95 hover:bg-white text-slate-800 rounded-md shadow"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onPhotoDelete(); }}
+                  title="Remove video"
+                  className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-md shadow"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </>
         ) : isFile ? (
           /* ── Attached file ─────────────────────────────────────────────
              The cell shows the file name, not a picture. Clicking it opens
@@ -395,7 +523,7 @@ export default function PhotoSlot({
                 <span className="text-[11px] font-semibold text-slate-600 leading-tight">
                   {slotLabels[slotIndex]}
                 </span>
-                <span className="text-[10px] text-slate-400">Camera / Photo / File</span>
+                <span className="text-[10px] text-slate-400">Camera / Photo / Video / File</span>
               </div>
             ) : (
               /* Laptop View: Click slot = Select to Paste; Click '+' = Browse Folder */
@@ -435,12 +563,36 @@ export default function PhotoSlot({
                     <Paperclip className="w-3 h-3" />
                     <span>File</span>
                   </button>
+                  {canVideo && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setRecorderOpen(true); }}
+                      title="Record a video with the webcam — or drop / pick a video file with File"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 rounded-md transition-all shadow-2xs"
+                    >
+                      <Video className="w-3 h-3" />
+                      <span>Video</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {videoError && (
+        <div className="mt-1 text-[10.5px] font-semibold text-rose-600 leading-tight">{videoError}</div>
+      )}
+
+      {canVideo && recorderOpen && (
+        <VideoRecorderModal
+          isOpen={recorderOpen}
+          onClose={() => setRecorderOpen(false)}
+          onDone={(file, info) => handleVideo(file, info)}
+          onFallbackFile={(file) => handleVideo(file)}
+        />
+      )}
 
       {/* Phone Mode Only: Photo Picker Bottom Sheet / Modal */}
       {isMobileView && showOptionsModal && (
@@ -493,6 +645,38 @@ export default function PhotoSlot({
                   <div className="text-[11px] text-slate-500 font-normal">Select existing photo from phone</div>
                 </div>
               </button>
+
+              {canVideo && (
+                <button
+                  type="button"
+                  onClick={() => { setShowOptionsModal(false); setRecorderOpen(true); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-xl font-semibold text-xs transition-colors text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center flex-shrink-0">
+                    <Video className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-slate-900 font-bold text-xs">Record Video (Camera)</div>
+                    <div className="text-[11px] text-slate-500 font-normal">Film the site live — saved small, plays in the app</div>
+                  </div>
+                </button>
+              )}
+
+              {canVideo && (
+                <button
+                  type="button"
+                  onClick={() => { setShowOptionsModal(false); videoInputRef.current?.click(); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-100 text-slate-800 rounded-xl font-semibold text-xs transition-colors text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-rose-400 text-white flex items-center justify-center flex-shrink-0">
+                    <Film className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-slate-900 font-bold text-xs">Choose a Video</div>
+                    <div className="text-[11px] text-slate-500 font-normal">From the phone's gallery — compressed before upload</div>
+                  </div>
+                </button>
+              )}
 
               <button
                 type="button"

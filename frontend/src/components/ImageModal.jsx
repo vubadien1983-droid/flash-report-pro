@@ -209,7 +209,7 @@ export default function ImageModal({
               onClick={() => onOpenAttachment?.(current)}
               className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-sm font-bold"
             >
-              Open file
+              {/^video\//.test(current.mime || '') || /\.(mp4|m4v|mov|webm)$/i.test(current.filename || '') ? 'Play video' : 'Open file'}
             </button>
             <p className="text-white/40 text-[11px] max-w-xs">
               Opens in a new tab, or downloads when the browser cannot display it.

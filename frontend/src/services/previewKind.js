@@ -31,6 +31,7 @@ const BY_EXT = {
   webp: PREVIEW.IMAGE, bmp: PREVIEW.IMAGE, svg: PREVIEW.IMAGE,
   pdf: PREVIEW.PDF,
   mp4: PREVIEW.MEDIA, webm: PREVIEW.MEDIA, mov: PREVIEW.MEDIA, mp3: PREVIEW.MEDIA,
+  m4v: PREVIEW.MEDIA, ogv: PREVIEW.MEDIA, '3gp': PREVIEW.MEDIA, mkv: PREVIEW.MEDIA,
   wav: PREVIEW.MEDIA, m4a: PREVIEW.MEDIA, ogg: PREVIEW.MEDIA,
   txt: PREVIEW.TEXT, log: PREVIEW.TEXT, json: PREVIEW.TEXT, xml: PREVIEW.TEXT, md: PREVIEW.TEXT,
   eml: PREVIEW.EML,
@@ -94,6 +95,11 @@ const MIME_BY_EXT = {
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   doc: 'application/msword', xls: 'application/vnd.ms-excel', ppt: 'application/vnd.ms-powerpoint',
   zip: 'application/zip',
+  // Video / audio (v3.33.0): a blob must carry the right type or the
+  // player refuses it — phones often hand a video over with no type at all.
+  mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+  ogv: 'video/ogg', '3gp': 'video/3gpp', mkv: 'video/x-matroska',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg',
 };
 
 export function guessMime(filename = '', declared = '') {

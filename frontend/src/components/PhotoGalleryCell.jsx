@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { Camera, ImagePlus, Trash2, ZoomIn, RefreshCw, Plus, ImageOff, Paperclip } from 'lucide-react';
+import { Camera, ImagePlus, Trash2, ZoomIn, RefreshCw, Plus, ImageOff, Paperclip, Video, Play } from 'lucide-react';
 import { compressForStorage, compressDataUrl, yieldToBrowser } from '../services/imageCompression';
 import { nextPhotoSlot } from '../services/miniPlan';
+import { isVideoFile, isVideoEntry, prepareVideoForUpload, rememberPoster, posterFor, formatDuration, MAX_VIDEO_BYTES } from '../services/videoMedia';
+import VideoRecorderModal from './VideoRecorderModal';
 
 /**
  * The Mini Plan's Photo column: MANY images inside ONE cell.
@@ -47,8 +49,20 @@ export default function PhotoGalleryCell({
 }) {
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const [busy, setBusy] = useState(null); // { done, total } | null
+  const videoInputRef = useRef(null);
+  const [busy, setBusy] = useState(null); // { done, total, label?, pct? } | null
   const [isDragOver, setIsDragOver] = useState(false);
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const [notice, setNotice] = useState('');       // last ingest error, shown in the cell
+  const abortRef = useRef(null);
+  // Videos are stored as attachments, so a cell that cannot attach files
+  // cannot take a video either.
+  const canVideo = Boolean(onAttachFile);
+
+  const flash = (msg) => {
+    setNotice(msg);
+    setTimeout(() => setNotice((m) => (m === msg ? '' : m)), 9000);
+  };
 
   const list = Array.isArray(photos) ? photos.filter(Boolean) : [];
 
@@ -80,16 +94,57 @@ export default function PhotoGalleryCell({
     const isImage = (f) => f.type?.startsWith('image/')
       || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(f.name || '');
     const images = all.filter(isImage);
+    // A video is compressed to the size budget FIRST and then attached like
+    // any document (v3.33.0) — BUG-013's "compress at ingest" rule for video.
+    const videos = canVideo ? all.filter((f) => !isImage(f) && isVideoFile(f)) : [];
+    if (!canVideo && all.some((f) => !isImage(f) && isVideoFile(f))) {
+      flash('Videos cannot be added to this cell.');
+    }
     // Anything that is not a picture — a PDF, a Word file, a certificate scan
     // — is ATTACHED instead: stored whole, opened by name, and synced with
     // the plan so the share link and the exported report can open it too.
-    const documents = onAttachFile ? all.filter((f) => !isImage(f)) : [];
-    if (images.length === 0 && documents.length === 0) return;
+    const documents = onAttachFile ? all.filter((f) => !isImage(f) && !isVideoFile(f)) : [];
+    if (images.length === 0 && documents.length === 0 && videos.length === 0) return;
 
-    setBusy({ done: 0, total: images.length + documents.length });
+    setBusy({ done: 0, total: images.length + documents.length + videos.length });
     const added = [];
 
     try {
+      for (const [i, file] of videos.entries()) {
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+        try {
+          setBusy((b) => ({ ...(b || {}), label: 'Compressing video', pct: 0 }));
+          const prepared = await prepareVideoForUpload(file, {
+            signal: ctrl.signal,
+            onProgress: (f) => setBusy((b) => (b ? { ...b, pct: Math.round(f * 100) } : b)),
+          });
+          setBusy((b) => ({ ...(b || {}), label: 'Uploading video', pct: undefined }));
+          const slot = nextSlot([...list, ...added]);
+          const descriptor = await onAttachFile(prepared.file, slot);
+          if (descriptor) {
+            const id = descriptor.id || `file_${Date.now()}_v${i}`;
+            rememberPoster(descriptor.file_ref, prepared.poster);
+            rememberPoster(id, prepared.poster);
+            added.push({
+              ...descriptor,
+              id,
+              slot_index: slot,
+              ...(prepared.duration ? { duration: Math.round(prepared.duration) } : {}),
+            });
+          }
+        } catch (err) {
+          if (err?.name !== 'AbortError') {
+            console.error('Failed to add video:', err);
+            flash(err?.message || 'The video could not be added.');
+          }
+        } finally {
+          abortRef.current = null;
+        }
+        setBusy((b) => (b ? { ...b, done: b.done + 1, label: undefined, pct: undefined } : b));
+        await yieldToBrowser();
+      }
+
       for (const [i, file] of documents.entries()) {
         try {
           const slot = nextSlot([...list, ...added]);
@@ -122,7 +177,7 @@ export default function PhotoGalleryCell({
         } catch (err) {
           console.error('Failed to process image:', err);
         }
-        setBusy({ done: i + 1, total: images.length });
+        setBusy((b) => ({ ...(b || {}), done: (b?.done || 0) + 1, total: b?.total || images.length }));
         await yieldToBrowser();
       }
 
@@ -131,6 +186,36 @@ export default function PhotoGalleryCell({
       setBusy(null);
       if (galleryInputRef.current) galleryInputRef.current.value = '';
       if (cameraInputRef.current) cameraInputRef.current.value = '';
+      if (videoInputRef.current) videoInputRef.current.value = '';
+    }
+  };
+
+  /**
+   * A clip recorded in the app is ALREADY at the storage budget (it was
+   * recorded at that bitrate), so it is attached directly — no re-encode.
+   */
+  const addRecordedVideo = async (file, info = {}) => {
+    if (!onAttachFile || !file) return;
+    // An encoder that overshot its bitrate: compress like any other video.
+    if (file.size > MAX_VIDEO_BYTES) { await addFiles([file]); return; }
+    setBusy({ done: 0, total: 1, label: 'Uploading video' });
+    try {
+      const slot = nextSlot(list);
+      const descriptor = await onAttachFile(file, slot);
+      if (descriptor) {
+        const id = descriptor.id || `file_${Date.now()}_rec`;
+        rememberPoster(descriptor.file_ref, info.poster);
+        rememberPoster(id, info.poster);
+        onPhotosChange([
+          ...list,
+          { ...descriptor, id, slot_index: slot, ...(info.duration ? { duration: Math.round(info.duration) } : {}) },
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to add recorded video:', err);
+      flash(err?.message || 'The video could not be saved.');
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -269,6 +354,16 @@ export default function PhotoGalleryCell({
             onChange={(e) => addFiles(e.target.files)}
             className="hidden"
           />
+          {canVideo && (
+            <input
+              ref={videoInputRef}
+              type="file"
+              accept="video/*"
+              multiple
+              onChange={(e) => addFiles(e.target.files)}
+              className="hidden"
+            />
+          )}
           {isMobileView && (
             <input
               ref={cameraInputRef}
@@ -288,7 +383,31 @@ export default function PhotoGalleryCell({
             key={p.id || `${p.slot_index}_${i}`}
             className={`${thumbSize} relative group/thumb rounded-lg overflow-hidden border border-slate-200 bg-white shadow-2xs flex-shrink-0`}
           >
-            {isFileEntry(p) ? (
+            {isVideoEntry(p) ? (
+              /* A video: a poster (when this device has one) or a dark tile,
+                 with a play mark and its length. Opens in the player. */
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); openEntry(p); }}
+                title={`Play ${p.filename || 'video'}${p.size ? ` — ${(p.size / 1048576).toFixed(1)} MB` : ''}`}
+                className="w-full h-full relative flex items-center justify-center bg-slate-900 text-white"
+              >
+                {posterFor(p) && (
+                  <img src={posterFor(p)} alt="" className="absolute inset-0 w-full h-full object-cover opacity-90" />
+                )}
+                <span className="relative w-7 h-7 rounded-full bg-black/55 ring-1 ring-white/70 flex items-center justify-center">
+                  <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5" />
+                </span>
+                <span className="absolute top-0.5 left-0.5 px-1 rounded bg-rose-600 text-[8px] font-extrabold tracking-wide leading-[13px]">
+                  VIDEO
+                </span>
+                {formatDuration(p.duration) && (
+                  <span className="absolute bottom-0 right-0 px-1 text-[9px] font-bold bg-black/65 rounded-tl">
+                    {formatDuration(p.duration)}
+                  </span>
+                )}
+              </button>
+            ) : isFileEntry(p) ? (
               /* An attached document: its NAME is the thing to click, here
                  and on the share link and in the exported report. */
               <button
@@ -373,12 +492,14 @@ export default function PhotoGalleryCell({
             {!isMobileView && (
               <div
                 onClick={(e) => { e.stopPropagation(); openEntry(p); }}
-                title={isFileEntry(p) ? `Open ${p.filename || 'file'}` : 'View'}
+                title={isVideoEntry(p) ? `Play ${p.filename || 'video'}` : isFileEntry(p) ? `Open ${p.filename || 'file'}` : 'View'}
                 className={`absolute inset-0 bg-slate-950/45 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center ${
                   isFileEntry(p) ? 'cursor-pointer' : 'cursor-zoom-in'
                 }`}
               >
-                {isFileEntry(p)
+                {isVideoEntry(p)
+                  ? <Play className="w-5 h-5 fill-white text-white" />
+                  : isFileEntry(p)
                   ? <Paperclip className="w-4 h-4 text-white" />
                   : <ZoomIn className="w-4 h-4 text-white" />}
               </div>
@@ -388,12 +509,12 @@ export default function PhotoGalleryCell({
 
         {/* Add tile */}
         {canAdd && (
-          <div className={`${thumbSize} flex-shrink-0 flex flex-col gap-1`}>
+          <div className={`${thumbSize} ${canVideo || isMobileView ? '!h-auto' : ''} flex-shrink-0 flex flex-col gap-1`}>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); galleryInputRef.current?.click(); }}
-              title={onAttachFile ? "Add photos or files (PDF, Word, Excel…) — several at once" : "Add photos (you can pick several at once)"}
-              className="flex-1 w-full flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-500 hover:bg-brand-50 text-slate-500 hover:text-brand-700 transition-colors"
+              title={onAttachFile ? "Add photos, videos or files (PDF, Word, Excel…) — several at once" : "Add photos (you can pick several at once)"}
+              className="flex-1 min-h-[2.75rem] w-full flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-500 hover:bg-brand-50 text-slate-500 hover:text-brand-700 transition-colors"
             >
               <ImagePlus className="w-4 h-4" />
               <span className="text-[11px] font-bold leading-none">Add</span>
@@ -409,6 +530,28 @@ export default function PhotoGalleryCell({
                 Camera
               </button>
             )}
+            {canVideo && (
+              <div className="w-full flex gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setRecorderOpen(true); }}
+                  title="Record a video with the camera"
+                  className="flex-1 py-1 flex items-center justify-center gap-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold"
+                >
+                  <Video className="w-3 h-3" />
+                  {!(compact || isMobileView) && 'Rec'}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); videoInputRef.current?.click(); }}
+                  title="Upload a video file"
+                  className="flex-1 py-1 flex items-center justify-center rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-[10px] font-bold"
+                >
+                  <Plus className="w-2.5 h-2.5" />
+                  {!(compact || isMobileView) && <Video className="w-3 h-3" />}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -421,9 +564,25 @@ export default function PhotoGalleryCell({
           the old build feel frozen. */}
       {busy && (
         <div className="mt-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-brand-700">
-          <RefreshCw className="w-3 h-3 animate-spin" />
-          Processing {busy.done} / {busy.total}
+          <RefreshCw className="w-3 h-3 animate-spin flex-shrink-0" />
+          <span className="min-w-0">
+            {busy.label
+              ? `${busy.label}${typeof busy.pct === 'number' ? ` ${busy.pct}%` : '…'}`
+              : `Processing ${busy.done} / ${busy.total}`}
+          </span>
+          {busy.label === 'Compressing video' && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); abortRef.current?.abort(); }}
+              className="ml-auto px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-bold"
+            >
+              Cancel
+            </button>
+          )}
         </div>
+      )}
+      {notice && !busy && (
+        <div className="mt-1 px-0.5 text-[11.5px] font-semibold text-rose-600 leading-tight">{notice}</div>
       )}
 
       {!readOnly && !busy && (
@@ -431,9 +590,18 @@ export default function PhotoGalleryCell({
           {isSelected ? (
             <span className="font-bold text-brand-600">Ctrl + V to paste here</span>
           ) : (
-            <span>Click cell, then Ctrl+V - or drop / pick {onAttachFile ? 'images and files' : 'several images'}</span>
+            <span>Click cell, then Ctrl+V - or drop / pick {onAttachFile ? 'images, videos and files' : 'several images'}</span>
           )}
         </div>
+      )}
+
+      {canVideo && recorderOpen && (
+        <VideoRecorderModal
+          isOpen={recorderOpen}
+          onClose={() => setRecorderOpen(false)}
+          onDone={(file, info) => addRecordedVideo(file, info)}
+          onFallbackFile={(file) => addFiles([file])}
+        />
       )}
     </div>
   );

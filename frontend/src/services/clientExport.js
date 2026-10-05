@@ -5,6 +5,7 @@
  */
 
 import { computeRowNumbers } from './reportNumbering';
+import { isVideoEntry, formatDuration } from './videoMedia';
 import { isMiniPlan } from './miniPlan';
 import { exportMiniPlanExcel, exportMiniPlanPdf } from './miniPlanExport';
 
@@ -355,9 +356,11 @@ export async function exportExcelClient(report) {
       if (isFileSlot(photoObj)) {
         // The cell becomes a clickable link to the attached file.
         const href = attachmentLink(report, photoObj);
-        const name = photoObj.filename || 'Attachment';
+        const vid = isVideoEntry(photoObj);
+        const base = photoObj.filename || 'Attachment';
+        const name = vid ? `▶ VIDEO${formatDuration(photoObj.duration) ? ` ${formatDuration(photoObj.duration)}` : ''}\n${base}` : base;
         if (href) {
-          cell.value = { text: name, hyperlink: href, tooltip: 'Open the attached file' };
+          cell.value = { text: name, hyperlink: href, tooltip: vid ? 'Play the video' : 'Open the attached file' };
           cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0563C1' }, underline: true };
         } else {
           // Not published yet — say so rather than writing a dead link.
@@ -488,7 +491,10 @@ export async function exportPdfClient(report) {
       const pObj = item.photos?.[p];
       if (isFileSlot(pObj)) {
         rowPhotos.push(null);
-        rowFiles.push({ name: pObj.filename || 'Attachment', href: attachmentLink(report, pObj) });
+        rowFiles.push({
+          name: `${isVideoEntry(pObj) ? 'VIDEO: ' : ''}${pObj.filename || 'Attachment'}`,
+          href: attachmentLink(report, pObj),
+        });
       } else if (pObj && pObj.url) {
         const img = await getImageData(pObj.url);
         rowPhotos.push(img || null);

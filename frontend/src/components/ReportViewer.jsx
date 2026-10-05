@@ -10,6 +10,7 @@ import ImageModal from './ImageModal';
 import Toast from './Toast';
 import { getAttachmentBlob, formatBytes } from '../services/fileAttachments';
 import FilePreviewModal from './FilePreviewModal';
+import { isVideoEntry, formatDuration } from '../services/videoMedia';
 import { computeRowNumbers, countContentRows } from '../services/reportNumbering';
 
 export default function ReportViewer({ reportId }) {
@@ -169,15 +170,23 @@ export default function ReportViewer({ reportId }) {
       type="button"
       onClick={() => openAttachment(p)}
       className="w-full h-full flex flex-col items-center justify-center gap-1.5 p-2 text-center hover:bg-brand-50/60 transition-colors"
-      title={`Open ${p.filename || 'file'}`}
+      title={`${isVideoEntry(p) ? 'Play' : 'Open'} ${p.filename || 'file'}`}
     >
-      <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
-        <FileText className="w-4 h-4" />
-      </div>
+      {isVideoEntry(p) ? (
+        <div className="w-10 h-10 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+          <span className="text-[13px] leading-none ml-0.5">▶</span>
+        </div>
+      ) : (
+        <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shadow-sm flex-shrink-0">
+          <FileText className="w-4 h-4" />
+        </div>
+      )}
       <span className="text-[10px] font-bold text-brand-700 leading-tight break-all line-clamp-3 underline">
         {p.filename || 'attachment'}
       </span>
-      <span className="text-[9px] text-slate-400">{formatBytes(p.size)}</span>
+      <span className="text-[9px] text-slate-400">
+        {isVideoEntry(p) && formatDuration(p.duration) ? `${formatDuration(p.duration)} · ` : ''}{formatBytes(p.size)}
+      </span>
     </button>
   );
 
