@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useColumnWidths } from './ColumnResize';
 import {
   FileSpreadsheet, FileText, Download, Printer, Share2,
   Calendar, Tag, MapPin, Layers, Camera, Check, RefreshCw,
@@ -14,6 +15,7 @@ import { isVideoEntry, formatDuration } from '../services/videoMedia';
 import { computeRowNumbers, countContentRows } from '../services/reportNumbering';
 
 export default function ReportViewer({ reportId }) {
+  const cw = useColumnWidths('flash-share');
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -420,14 +422,14 @@ export default function ReportViewer({ reportId }) {
           ) : (
             /* 2. Desktop Laptop Spreadsheet Table View */
             <div className="overflow-x-auto w-full">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse" style={cw.tableStyle}>
                 <thead>
                   <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
-                    <th className="w-10 px-2 py-2.5 text-center font-bold">No</th>
-                    <th className="w-32 lg:w-36 px-2.5 py-2.5 text-center font-bold">Tag</th>
-                    <th className="w-48 lg:w-56 px-3 py-2.5 text-center font-bold">Inspection Description</th>
-                    <th className="w-36 lg:w-48 px-3 py-2.5 text-center font-bold">Note</th>
-                    <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>Illustration</th>
+                    <th data-col="no" style={cw.thStyle('no')} className="w-10 px-2 py-2.5 text-center font-bold relative">No{cw.handle('no')}</th>
+                    <th data-col="tag" style={cw.thStyle('tag')} className="w-32 lg:w-36 px-2.5 py-2.5 text-center font-bold relative">Tag{cw.handle('tag')}</th>
+                    <th data-col="desc" style={cw.thStyle('desc')} className="w-48 lg:w-56 px-3 py-2.5 text-center font-bold relative">Inspection Description{cw.handle('desc')}</th>
+                    <th data-col="note" style={cw.thStyle('note')} className="w-36 lg:w-48 px-3 py-2.5 text-center font-bold relative">Note{cw.handle('note')}</th>
+                    <th data-col="photos" style={cw.thStyle('photos')} className="px-3 py-2.5 text-center font-bold relative" colSpan={4}>Illustration{cw.handle('photos')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">

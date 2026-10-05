@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useColumnWidths } from './ColumnResize';
 import { Plus, Trash2, ChevronUp, ChevronDown, Camera, ListPlus, CornerDownRight } from 'lucide-react';
 import PhotoSlot from './PhotoSlot';
 import { compressForStorage } from '../services/imageCompression';
@@ -50,6 +51,7 @@ export default function InspectionTable({
   onOpenAttachment,    // (photo) => void
   isMobileMode = false
 }) {
+  const cw = useColumnWidths('flash');
   // Selected slot for keyboard paste: { itemIndex, slotIndex } | null
   const [selectedSlot, setSelectedSlot] = useState(null);
 
@@ -382,17 +384,18 @@ export default function InspectionTable({
       ) : (
         /* 2. Desktop Laptop Full-Width 8-Column Table View with Auto-Expanding Rows */
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse" style={cw.tableStyle}>
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
-                <th className="w-10 px-2 py-2.5 text-center font-bold">No</th>
-                <th className="w-32 lg:w-36 px-2.5 py-2.5 text-center font-bold">Tag</th>
-                <th className="w-52 lg:w-64 px-3 py-2.5 text-center font-bold">Inspection Description</th>
-                <th className="w-40 lg:w-52 px-3 py-2.5 text-center font-bold">Note</th>
-                <th className="px-3 py-2.5 text-center font-bold" colSpan={4}>
+                <th data-col="no" style={cw.thStyle('no')} className="w-10 px-2 py-2.5 text-center font-bold relative">No{cw.handle('no')}</th>
+                <th data-col="tag" style={cw.thStyle('tag')} className="w-32 lg:w-36 px-2.5 py-2.5 text-center font-bold relative">Tag{cw.handle('tag')}</th>
+                <th data-col="desc" style={cw.thStyle('desc')} className="w-52 lg:w-64 px-3 py-2.5 text-center font-bold relative">Inspection Description{cw.handle('desc')}</th>
+                <th data-col="note" style={cw.thStyle('note')} className="w-40 lg:w-52 px-3 py-2.5 text-center font-bold relative">Note{cw.handle('note')}</th>
+                <th data-col="photos" style={cw.thStyle('photos')} className="px-3 py-2.5 text-center font-bold relative" colSpan={4}>
                   Illustration
+                  {cw.handle('photos')}
                 </th>
-                <th className="w-16 px-2 py-2.5 text-center font-bold">Action</th>
+                <th data-col="_act" className="w-16 px-2 py-2.5 text-center font-bold">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">

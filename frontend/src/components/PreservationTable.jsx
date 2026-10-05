@@ -1,4 +1,5 @@
 import React from 'react';
+import { useColumnWidths } from './ColumnResize';
 import { Trash2, Pencil, AlertTriangle, Plus } from 'lucide-react';
 import { TextCell, DateCell } from './PlanCell';
 import PhotoGalleryCell from './PhotoGalleryCell';
@@ -264,6 +265,7 @@ export default function PreservationTable({
   emptyText = 'No findings match the filter.',
   fill = false,
 }) {
+  const cw = useColumnWidths('preservation');
   if (!rows.length) {
     return <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-[13px] text-slate-500">{emptyText}</div>;
   }
@@ -280,17 +282,19 @@ export default function PreservationTable({
   }
   return (
     <div className={`bg-white border border-slate-200 rounded-xl shadow-xs overflow-auto ${fill ? 'h-full min-h-[240px]' : 'max-h-[calc(100dvh-300px)] min-h-[320px]'}`}>
-      <table className="border-separate border-spacing-0 text-left table-fixed">
+      <table className="border-separate border-spacing-0 text-left table-fixed" style={cw.tableStyle}>
         <thead>
           <tr>
             {HEAD.map(([label, key, letter, db]) => (
-              <th key={key} className={`sticky top-0 ${PIN[key] ? `${PIN[key].replace('z-[2]', 'z-20')}` : 'z-10'} ${db ? 'bg-[#3B6B9E]' : 'bg-[#1F3A5F]'} text-white text-[11.5px] font-bold px-2 py-1.5 border-r border-slate-600 align-middle leading-tight ${W[key]} ${key === 'no' ? 'text-center' : ''}`}
+              <th key={key} data-col={key} style={cw.thStyle(key)} className={`sticky top-0 ${PIN[key] ? `${PIN[key].replace('z-[2]', 'z-20')}` : 'z-10'} ${db ? 'bg-[#3B6B9E]' : 'bg-[#1F3A5F]'} text-white text-[11.5px] font-bold px-2 py-1.5 border-r border-slate-600 align-middle leading-tight ${W[key]} ${key === 'no' ? 'text-center' : ''}`}
                 title={db ? 'From the Preservation database' : undefined}>
                 {letter && <span className="block text-[9.5px] font-semibold text-slate-300">{letter}</span>}
                 {label}
+                {/* No stays fixed: TagNo is pinned at its right edge. */}
+                {key !== 'no' && cw.handle(key)}
               </th>
             ))}
-            {!readOnly && <th className="sticky top-0 z-10 bg-[#1F3A5F] min-w-[44px] w-[44px]" />}
+            {!readOnly && <th data-col="_act" className="sticky top-0 z-10 bg-[#1F3A5F] min-w-[44px] w-[44px]" />}
           </tr>
         </thead>
         <tbody>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useColumnWidths } from './ColumnResize';
 import { Plus, Trash2, CornerDownRight, FolderPlus } from 'lucide-react';
 import { TextCell, DateCell } from './PlanCell';
 import PhotoGalleryCell from './PhotoGalleryCell';
@@ -314,6 +315,7 @@ export default function OpsFindingsTable({
   showSections = true,   // false on a section tab: the tab IS the section
   fill = false,          // true: fill the parent's height (share link, laptop)
 }) {
+  const cw = useColumnWidths('ops');
   const colSpan = HEAD.length + (readOnly ? 0 : 1);
 
   if (!groups.length) {
@@ -354,16 +356,17 @@ export default function OpsFindingsTable({
   return (
     <div className={`bg-white border border-slate-200 rounded-xl shadow-xs overflow-auto ${
       fill ? 'h-full min-h-[240px]' : 'max-h-[calc(100dvh-270px)] min-h-[320px]'}`}>
-      <table className="border-separate border-spacing-0 text-left table-fixed">
+      <table className="border-separate border-spacing-0 text-left table-fixed" style={cw.tableStyle}>
         <thead>
           <tr>
             {HEAD.map(([label, w]) => (
-              <th key={label}
+              <th key={label} data-col={label} style={cw.thStyle(label)}
                 className={`sticky top-0 z-10 bg-[#1F3A5F] text-white text-[11.5px] font-bold px-2 py-2 border-r border-slate-600 align-middle leading-tight ${w}`}>
                 {label}
+                {cw.handle(label)}
               </th>
             ))}
-            {!readOnly && <th className="sticky top-0 z-10 bg-[#1F3A5F] text-white text-[11px] font-bold px-1 py-2 min-w-[44px] w-[44px]" />}
+            {!readOnly && <th data-col="_act" className="sticky top-0 z-10 bg-[#1F3A5F] text-white text-[11px] font-bold px-1 py-2 min-w-[44px] w-[44px]" />}
           </tr>
         </thead>
         <tbody>

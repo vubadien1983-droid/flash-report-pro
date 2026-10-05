@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useColumnWidths } from './ColumnResize';
 import {
   X, CalendarRange, FileSpreadsheet, FileText, RefreshCw,
   Layers, SearchX, ArrowUpRight,
@@ -55,6 +56,7 @@ export default function MiniPlanDashboard({
   onOpenMonitoring,
   fullScreen = false,
 }) {
+  const cw = useColumnWidths('miniplan-dash');
   const [busy, setBusy] = useState('');
   // What the export buttons write: what the panel is showing, or the lot.
   // Both are legitimate — a weekly meeting wants THIS WEEK, a monthly report
@@ -261,13 +263,13 @@ export default function MiniPlanDashboard({
   // ── Right panel, bottom: the flat preview table ─────────────────
   const previewHead = (
     <tr className="bg-slate-100/95 text-black text-[12px] font-bold">
-      <th className="w-12 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">No</th>
-      <th className="w-64 px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Equipment</th>
-      <th className="px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Activities</th>
-      <th className="w-28 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Schedule</th>
-      <th className="w-28 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Status</th>
-      <th className="w-32 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Completed Date</th>
-      <th className="w-52 px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Note</th>
+      <th data-col="no" style={cw.thStyle('no')} className="w-12 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">No{cw.handle('no')}</th>
+      <th data-col="equipment" style={cw.thStyle('equipment')} className="w-64 px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Equipment{cw.handle('equipment')}</th>
+      <th data-col="activity" style={cw.thStyle('activity')} className="px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Activities{cw.handle('activity')}</th>
+      <th data-col="schedule" style={cw.thStyle('schedule')} className="w-28 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Schedule{cw.handle('schedule')}</th>
+      <th data-col="status" style={cw.thStyle('status')} className="w-28 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Status{cw.handle('status')}</th>
+      <th data-col="completed" style={cw.thStyle('completed')} className="w-32 px-2 py-2 text-center sticky top-0 bg-slate-100/95 border-b border-slate-300">Completed Date{cw.handle('completed')}</th>
+      <th data-col="note" style={cw.thStyle('note')} className="w-52 px-2 py-2 text-left sticky top-0 bg-slate-100/95 border-b border-slate-300">Note{cw.handle('note')}</th>
     </tr>
   );
 
@@ -301,7 +303,7 @@ export default function MiniPlanDashboard({
         <div className={`overflow-auto ${
           isMobileMode ? 'max-h-[60vh]' : (fullScreen ? 'max-h-[calc(100vh-500px)] min-h-[220px]' : 'max-h-[calc(100vh-565px)] min-h-[220px]')
         }`}>
-          <table className="w-full min-w-[1050px] text-left border-collapse">
+          <table className="w-full min-w-[1050px] text-left border-collapse" style={cw.tableStyle}>
             <thead>{previewHead}</thead>
             <tbody>
               {previewRows.map((row) => {

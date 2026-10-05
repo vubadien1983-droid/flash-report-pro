@@ -547,7 +547,7 @@ export default function PhotoSlot({
                 </div>
 
                 {/* Explicit Browse Button (ONLY this button opens file picker) */}
-                <div className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center justify-center gap-1">
                   <button
                     type="button"
                     onClick={handleBrowseButtonClick}

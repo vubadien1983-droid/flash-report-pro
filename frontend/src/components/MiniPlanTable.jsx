@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useColumnWidths } from './ColumnResize';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Lock, Unlock, CalendarClock,
   CornerDownRight, Layers, X, CalendarRange, SearchX, PencilLine,
@@ -88,6 +89,7 @@ export default function MiniPlanTable({
   onFilterChange,
   fullScreen = false,
 }) {
+  const cw = useColumnWidths('miniplan');
   const [selectedCell, setSelectedCell] = useState(null); // itemIndex | null
   const [editing, setEditing] = useState(null);           // {index, field} | null
   const [confirm, setConfirm] = useState(null);           // {title,message,...} | null
@@ -718,18 +720,18 @@ export default function MiniPlanTable({
       <div ref={scrollRef} className={`overflow-auto w-full ${
         fullScreen ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-215px)] min-h-[320px]'
       }`}>
-        <table className="w-full min-w-[1400px] text-left border-collapse table-fixed">
+        <table className="w-full min-w-[1400px] text-left border-collapse table-fixed" style={cw.tableStyle}>
           <thead>
             <tr>
-              <th className={`${headCls} w-12`}>Item</th>
-              <th className={`${headCls} w-44`}>Equipment</th>
-              <th className={`${headCls} w-28`}>Schedule</th>
-              <th className={`${headCls} w-[21rem]`}>Activities</th>
-              <th className={`${headCls} w-32`}>Status</th>
-              <th className={`${headCls} w-28`}>Completed</th>
-              <th className={`${headCls} w-48`}>Note</th>
-              <th className={`${headCls} w-[18rem]`}>Photo</th>
-              <th className={`${headCls} w-12`}>Act.</th>
+              <th data-col="item" style={cw.thStyle('item')} className={`${headCls} w-12`}>Item{cw.handle('item')}</th>
+              <th data-col="equipment" style={cw.thStyle('equipment')} className={`${headCls} w-44`}>Equipment{cw.handle('equipment')}</th>
+              <th data-col="schedule" style={cw.thStyle('schedule')} className={`${headCls} w-28`}>Schedule{cw.handle('schedule')}</th>
+              <th data-col="activity" style={cw.thStyle('activity')} className={`${headCls} w-[21rem]`}>Activities{cw.handle('activity')}</th>
+              <th data-col="status" style={cw.thStyle('status')} className={`${headCls} w-32`}>Status{cw.handle('status')}</th>
+              <th data-col="completed" style={cw.thStyle('completed')} className={`${headCls} w-28`}>Completed{cw.handle('completed')}</th>
+              <th data-col="note" style={cw.thStyle('note')} className={`${headCls} w-48`}>Note{cw.handle('note')}</th>
+              <th data-col="photo" style={cw.thStyle('photo')} className={`${headCls} w-[18rem]`}>Photo{cw.handle('photo')}</th>
+              <th data-col="_act" className={`${headCls} w-12`}>Act.</th>
             </tr>
           </thead>
 

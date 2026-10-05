@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useColumnWidths } from './ColumnResize';
 import {
   FileSpreadsheet, FileText, Plus, RefreshCw, UploadCloud, Trash2, CheckCircle2, AlertTriangle,
   CalendarDays, MapPin, Clock, NotebookPen, ChevronDown,
@@ -48,6 +49,7 @@ export default function OpsMomPanel({
   notify,
   isMobileMode = false,
 }) {
+  const cw = useColumnWidths('ops-mom');
   const [moms, setMoms] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [selId, setSelId] = useState('');
@@ -399,12 +401,12 @@ export default function OpsMomPanel({
               </div>
 
               {/* Findings */}
-              <table className="w-full text-left border-separate border-spacing-0 text-[12.5px] text-slate-900 min-w-[1850px]">
+              <table className="w-full text-left border-separate border-spacing-0 text-[12.5px] text-slate-900 min-w-[1850px]" style={cw.tableStyle}>
                 <thead className="sticky top-0 z-10">
                   <tr>
                     {MOM_COLUMNS.map((c) => (
-                      <th key={c.key} className={`${W[c.key]} px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-center border-r border-white/20 ${
-                        c.key === 'updated_action' ? 'bg-amber-300 text-slate-900' : 'bg-[#1F3A5F] text-white'}`}>{c.label}</th>
+                      <th key={c.key} data-col={c.key} style={cw.thStyle(c.key)} className={`${W[c.key]} relative px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-center border-r border-white/20 ${
+                        c.key === 'updated_action' ? 'bg-amber-300 text-slate-900' : 'bg-[#1F3A5F] text-white'}`}>{c.label}{cw.handle(c.key)}</th>
                     ))}
                   </tr>
                 </thead>
