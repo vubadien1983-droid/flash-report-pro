@@ -11,7 +11,7 @@ import { subscribeSharedPf, pushSharedPfEdit, PF_MERGE_OPTS } from '../services/
 import { hydrateWithLocalPhotos, deletePhotoBytes, refOf, loadMissingSharedPhotos } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
 import { isFirebaseConfigured, fileKey } from '../services/firebase';
-import { putAttachment, getAttachmentBlob, formatBytes } from '../services/fileAttachments';
+import { putAttachment, getAttachmentBlob, prefetchReportVideos, formatBytes } from '../services/fileAttachments';
 import { isPfUnlocked, unlockPf, lockPf, onPfLockChange } from '../services/preservationAuth';
 import { normalizePfItems, PRESERVATION_LABEL, PRESERVATION_TYPE } from '../services/preservationFindings';
 import { namedLinkForType, ALIAS_TITLES } from '../services/shareAliases';
@@ -60,6 +60,12 @@ export default function PreservationViewer({ shareId }) {
   const pushTimerRef = useRef(null);
   const baseRef = useRef([]);
   const itemsRef = useRef([]);
+
+  // Videos on screen are fetched in the background so a click plays at once
+  // (v3.33.1); also registers every attachment for hover warm-up.
+  useEffect(() => {
+    prefetchReportVideos([['shared', shareId], ['report', report?.source_report_id]], report?.items);
+  }, [report, shareId]);
   const retryRef = useRef({ timer: null, tries: 0 });
   const reportRef = useRef(null);
   reportRef.current = report;
@@ -283,11 +289,10 @@ export default function PreservationViewer({ shareId }) {
   const openAttachment = async (photo, item, itemIndex) => {
     const ref = photo?.file_ref || (item ? fileKey(item.id || `item_${itemIndex}`, photo?.slot_index ?? 0) : '');
     if (!ref) { showToast('That attachment has no file reference.', 'error'); return; }
-    showToast(`Opening ${photo?.filename || 'file'}…`, 'success');
     try {
-      let got = await getAttachmentBlob('shared', shareId, ref);
+      let got = await getAttachmentBlob('shared', shareId, ref, { expect: photo });
       const src = reportRef.current?.source_report_id;
-      if (!got && src) got = await getAttachmentBlob('report', src, ref);
+      if (!got && src) got = await getAttachmentBlob('report', src, ref, { expect: photo });
       if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
       setFilePreview({
         isOpen: true, blob: got.blob,

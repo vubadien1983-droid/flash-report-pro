@@ -3,6 +3,7 @@ import { Camera, Image as ImageIcon, Plus, Trash2, ZoomIn, Upload, RefreshCw, X,
 import { compressForStorage, compressDataUrl } from '../services/imageCompression';
 import { isVideoFile, isVideoEntry, prepareVideoForUpload, posterFor, formatDuration, MAX_VIDEO_BYTES } from '../services/videoMedia';
 import VideoRecorderModal from './VideoRecorderModal';
+import { warmAttachment } from '../services/fileAttachments';
 
 export default function PhotoSlot({
   photo,
@@ -368,6 +369,8 @@ export default function PhotoSlot({
             <div
               className="absolute inset-0 bg-slate-900 flex items-center justify-center cursor-pointer"
               onClick={(e) => { e.stopPropagation(); if (onOpenAttachment) onOpenAttachment(photo); }}
+              onPointerEnter={() => warmAttachment(photo)}
+              onPointerDown={() => warmAttachment(photo)}
               title={`Play ${photo.filename || 'video'}`}
             >
               {posterFor(photo) && (

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import AppGate from './components/AppGate';
 import './index.css';
+import AttachmentLoadingOverlay from './components/AttachmentLoadingOverlay';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -11,6 +12,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <AppGate>
       <App />
     </AppGate>
+    {/* One "Opening…" window for every attachment download, on every route. */}
+    <AttachmentLoadingOverlay />
   </React.StrictMode>,
 );
 

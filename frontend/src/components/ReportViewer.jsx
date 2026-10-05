@@ -8,7 +8,7 @@ import { fetchSharedReport } from '../services/shareService';
 import { exportExcelClient, exportPdfClient } from '../services/clientExport';
 import ImageModal from './ImageModal';
 import Toast from './Toast';
-import { getAttachmentBlob, formatBytes } from '../services/fileAttachments';
+import { getAttachmentBlob, formatBytes, prefetchReportVideos } from '../services/fileAttachments';
 import FilePreviewModal from './FilePreviewModal';
 import { isVideoEntry, formatDuration } from '../services/videoMedia';
 import { computeRowNumbers, countContentRows } from '../services/reportNumbering';
@@ -59,6 +59,11 @@ export default function ReportViewer({ reportId }) {
       loadReport();
     }
   }, [reportId]);
+
+  // Videos are fetched in the background so a click plays at once (v3.33.1).
+  useEffect(() => {
+    prefetchReportVideos([['shared', reportId]], report?.items);
+  }, [report, reportId]);
 
   const handleExportExcel = async () => {
     if (!report) return;
@@ -148,9 +153,8 @@ export default function ReportViewer({ reportId }) {
 
   const openAttachment = async (p) => {
     if (!p?.file_ref) return;
-    showToast(`Opening ${p.filename || 'file'}…`, 'success');
     try {
-      const got = await getAttachmentBlob('shared', reportId, p.file_ref);
+      const got = await getAttachmentBlob('shared', reportId, p.file_ref, { expect: p });
       if (!got) { showToast('That file is not available in this shared report.', 'error'); return; }
       // Shown in the shared viewer, not handed to the browser (BUG-045, v3.21.0).
       setFilePreview({

@@ -26,7 +26,7 @@ import { fileKey } from './services/firebase';
 import {
   putAttachment, getAttachmentBlob, deleteAttachment, openBlob, formatBytes,
   copyAttachmentToShare,
-  collectAttachments,
+  collectAttachments, prefetchReportVideos,
 } from './services/fileAttachments';
 import SyncStatusIndicator from './components/SyncStatusIndicator';
 import {
@@ -260,6 +260,16 @@ export default function App() {
 
     return () => { cancelled = true; };
   }, [currentReport?.id, isViewRoute]);
+
+  // Videos of the open report are fetched in the background so a click plays
+  // at once (v3.33.1). Looks in the report's own copy first, then the share.
+  useEffect(() => {
+    if (isViewRoute || !currentReport?.id) return;
+    prefetchReportVideos(
+      [['report', currentReport.id], ['shared', currentReport.share_id || currentReport.cloud_code || '']],
+      currentReport.items,
+    );
+  }, [currentReport?.id, currentReport?.items, currentReport?.share_id, isViewRoute]);
 
   // Photo upload progress, emitted by api.js and shareService.js.
   useEffect(() => {
@@ -955,13 +965,12 @@ export default function App() {
     const ref = photo?.file_ref
       || (item ? fileKey(item.id || `item_${itemIndex}`, photo?.slot_index ?? 0) : '');
     if (!ref) { showToast('That attachment has no file reference.', 'error'); return; }
-    showToast(`Opening ${photo?.filename || 'file'}…`, 'info');
     try {
       // Look in BOTH copies: a file attached through the share link lands in
       // the shared one first, and a file attached here is copied there.
-      let got = await getAttachmentBlob('report', currentReport.id, ref);
+      let got = await getAttachmentBlob('report', currentReport.id, ref, { expect: photo });
       const shareId = currentReport.share_id || currentReport.cloud_code || '';
-      if (!got && shareId) got = await getAttachmentBlob('shared', shareId, ref);
+      if (!got && shareId) got = await getAttachmentBlob('shared', shareId, ref, { expect: photo });
       if (!got) {
         showToast('That file is not fully uploaded yet — try again in a moment.', 'error');
         return;

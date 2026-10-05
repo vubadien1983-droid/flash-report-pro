@@ -40,7 +40,7 @@ import {
 } from './firebase';
 import { withTimeout, yieldToBrowser } from './imageCompression';
 import { isBlockedUpload, fileExtension } from './previewKind';
-import { isVideoFile, MAX_VIDEO_BYTES } from './videoMedia';
+import { isVideoFile, isVideoEntry, MAX_VIDEO_BYTES } from './videoMedia';
 
 /** Base64 characters per chunk document. Well under the 1 MiB ceiling. */
 const CHUNK_CHARS = 700_000;
@@ -174,7 +174,7 @@ export async function putAttachment(scope, id, key, file) {
 const BLOB_CACHE_BYTES = 120 * 1024 * 1024;
 const blobCache = new Map();
 function cacheKey(scope, id, key) { return `${scope}|${id}|${key}`; }
-function rememberBlob(scope, id, key, blob, meta) {
+function rememberBlob(scope, id, key, blob, meta, { persist = true } = {}) {
   if (!blob) return;
   const k = cacheKey(scope, id, key);
   blobCache.delete(k);
@@ -186,8 +186,84 @@ function rememberBlob(scope, id, key, blob, meta) {
     total -= v.blob.size || 0;
     blobCache.delete(ck);
   }
+  if (persist) diskPut(scope, id, key, blob, meta);
 }
-function forgetBlob(scope, id, key) { blobCache.delete(cacheKey(scope, id, key)); }
+function forgetBlob(scope, id, key) {
+  blobCache.delete(cacheKey(scope, id, key));
+  diskDelete(scope, id, key);
+}
+
+/* ── Disk cache (v3.33.1) ──────────────────────────────────────────────────
+ * The browser's Cache Storage keeps every attachment this device has opened
+ * or uploaded, across reloads, so a video is downloaded from Firestore ONCE
+ * per device and opens instantly ever after — like a photo. Bounded by
+ * DISK_CACHE_BYTES (oldest dropped first). Any failure (private mode, no
+ * Cache API, quota) silently falls back to the network: the cache is an
+ * accelerator, never a source of truth. */
+const DISK_CACHE = 'fr-attachments-v1';
+const DISK_CACHE_BYTES = 300 * 1024 * 1024;
+const hasDisk = () => typeof caches !== 'undefined' && typeof window !== 'undefined' && window.isSecureContext !== false;
+const diskUrl = (scope, id, key) => `https://attachments.local/${encodeURIComponent(scope)}/${encodeURIComponent(id)}/${encodeURIComponent(key)}`;
+
+async function diskGet(scope, id, key) {
+  if (!hasDisk()) return null;
+  try {
+    const c = await caches.open(DISK_CACHE);
+    const res = await c.match(diskUrl(scope, id, key));
+    if (!res) return null;
+    const meta = JSON.parse(decodeURIComponent(res.headers.get('x-fr-meta') || '%7B%7D'));
+    const blob = await res.blob();
+    if (!blob.size) return null;
+    return { blob: blob.type ? blob : new Blob([blob], { type: meta.mime || '' }), meta };
+  } catch { return null; }
+}
+async function diskPut(scope, id, key, blob, meta) {
+  if (!hasDisk() || !blob || blob.size > 60 * 1024 * 1024) return;
+  try {
+    const c = await caches.open(DISK_CACHE);
+    const headers = {
+      'content-type': meta?.mime || blob.type || 'application/octet-stream',
+      'x-fr-meta': encodeURIComponent(JSON.stringify({
+        filename: meta?.filename, mime: meta?.mime, size: meta?.size ?? blob.size,
+        chunks: meta?.chunks, updated_at: meta?.updated_at,
+      })),
+      'x-fr-bytes': String(blob.size),
+    };
+    await c.put(diskUrl(scope, id, key), new Response(blob, { headers }));
+    // Trim, oldest first (Cache Storage keeps insertion order).
+    const reqs = await c.keys();
+    let total = 0;
+    const sizes = [];
+    for (const r of reqs) {
+      const m = await c.match(r);
+      const n = Number(m?.headers.get('x-fr-bytes')) || 0;
+      sizes.push([r, n]);
+      total += n;
+    }
+    for (const [r, n] of sizes) {
+      if (total <= DISK_CACHE_BYTES) break;
+      await c.delete(r);
+      total -= n;
+    }
+  } catch { /* quota / private mode: network only */ }
+}
+async function diskDelete(scope, id, key) {
+  if (!hasDisk()) return;
+  try { const c = await caches.open(DISK_CACHE); await c.delete(diskUrl(scope, id, key)); } catch { /* ignore */ }
+}
+
+/**
+ * A cached copy is only good if it is the SAME upload the row points at: a
+ * Flash Report slot that is replaced re-uses its key. The row's descriptor
+ * carries the stored meta (putAttachment returns it), so compare.
+ */
+function sameUpload(meta, expect) {
+  if (!expect) return true;
+  if (expect.updated_at && meta?.updated_at) return expect.updated_at === meta.updated_at;
+  if (expect.size && meta?.size) return Number(expect.size) === Number(meta.size)
+    && (!expect.filename || !meta.filename || expect.filename === meta.filename);
+  return true;
+}
 
 /** base64 → bytes, one chunk at a time (each chunk is a whole number of quads). */
 function decodeBase64(b64) {
@@ -197,50 +273,225 @@ function decodeBase64(b64) {
   return arr;
 }
 
-/** Read a stored file back as a Blob, or null when it is not fully there. */
-export async function getAttachmentBlob(scope, id, key) {
+/** How many parts are downloaded at once. Sequential reads were the delay. */
+const PARALLEL_PARTS = 6;
+
+/** Load progress for the "Opening…" overlay, on every surface. */
+function emitLoading(detail) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('flashreport:attachment-loading', { detail }));
+}
+
+/** One download per file at a time: a click during a prefetch joins it. */
+const inFlight = new Map();
+
+function typed(hit) {
+  const mime = hit.meta?.mime;
+  return { blob: !mime || hit.blob.type === mime ? hit.blob : new Blob([hit.blob], { type: mime }), meta: hit.meta };
+}
+
+/**
+ * Read a stored file back as a Blob, or null when it is not fully there.
+ *
+ *   opts.expect     the row's descriptor — a cached copy must match it
+ *   opts.background true for a prefetch: no "Opening…" overlay
+ *
+ * Order: memory → this device's disk cache → Firestore (all parts in
+ * parallel). v3.33.1: parts used to be read one after another, which made a
+ * 2-3 MB video take several seconds on a site connection with only an
+ * "Opening…" toast on screen — it looked failed.
+ */
+export async function getAttachmentBlob(scope, id, key, opts = {}) {
   if (!isFirebaseConfigured) return null;
-  const hit = blobCache.get(cacheKey(scope, id, key));
-  if (hit) return { blob: hit.blob.type === (hit.meta.mime || hit.blob.type) ? hit.blob : new Blob([hit.blob], { type: hit.meta.mime }), meta: hit.meta };
+  const { expect = null, background = false } = opts;
+  const ck = cacheKey(scope, id, key);
 
-  const metaSnap = await withTimeout(
-    getDoc(docRef(scope, id, key)), READ_TIMEOUT_MS, 'Loading file'
-  );
-  if (!metaSnap.exists()) return null;
-  const meta = metaSnap.data();
-  const total = meta.chunks || 1;
+  const hit = blobCache.get(ck);
+  if (hit && sameUpload(hit.meta, expect)) return typed(hit);
 
-  // Decoded chunk by chunk: one 30 MB base64 string (a video) is a needless
-  // memory spike and a long main-thread stall. CHUNK_CHARS is a multiple of
-  // 4, so every chunk but the last decodes on its own. Any older file whose
-  // chunks were cut differently falls back to decoding the joined string.
-  const pieces = [];
-  let carry = '';
-  try {
-  for (let i = 0; i < total; i++) {
-    const snap = await withTimeout(
-      getDoc(docRef(scope, id, `${key}__c${i}`)),
-      READ_TIMEOUT_MS,
-      `Loading file part ${i + 1} of ${total}`
+  const loadId = `${ck}|${Date.now()}`;
+  const label = expect?.filename || '';
+  let shown = false;
+  const show = (detail) => {
+    if (background) return;
+    shown = true;
+    emitLoading({ id: loadId, filename: label, ...detail });
+  };
+
+  // Joining a download already running (a prefetch, a double click).
+  if (inFlight.has(ck)) {
+    if (!background) show({ phase: 'start', done: 0, total: 0 });
+    try {
+      const got = await inFlight.get(ck);
+      if (got && sameUpload(got.meta, expect)) return typed(got);
+    } finally {
+      if (shown) emitLoading({ id: loadId, phase: 'end' });
+    }
+  }
+
+  const run = (async () => {
+    const disk = await diskGet(scope, id, key);
+    if (disk && expect && sameUpload(disk.meta, expect)) {
+      rememberBlob(scope, id, key, disk.blob, disk.meta, { persist: false });
+      return disk;
+    }
+
+    if (!background) show({ phase: 'start', done: 0, total: 0 });
+    const metaSnap = await withTimeout(
+      getDoc(docRef(scope, id, key)), READ_TIMEOUT_MS, 'Loading file'
     );
-    // A missing chunk means the file is incomplete. Returning a truncated
-    // blob would hand the user a corrupt document that looks fine.
-    if (!snap.exists()) return null;
-    const d = carry + (snap.data().d || '');
-    const whole = i === total - 1 ? d.length : d.length - (d.length % 4);
-    if (whole) pieces.push(decodeBase64(d.slice(0, whole)));
-    carry = d.slice(whole);
-    if (total > 3) emitProgress({ reportId: id, done: i + 1, total, phase: 'file-read' });
-    await yieldToBrowser();
-  }
-  } finally {
-    // Always clear the banner, also when a part was missing or timed out.
-    if (total > 3) emitProgress({ reportId: id, done: total, total, phase: 'done' });
-  }
+    if (!metaSnap.exists()) return null;
+    const meta = metaSnap.data();
 
-  const blob = new Blob(pieces, { type: meta.mime || 'application/octet-stream' });
-  rememberBlob(scope, id, key, blob, meta);
-  return { blob, meta };
+    // Without a descriptor to compare with, the disk copy is trusted only
+    // when it matches the stored meta — still saves every part read.
+    if (disk && sameUpload(disk.meta, meta)) {
+      rememberBlob(scope, id, key, disk.blob, disk.meta, { persist: false });
+      return disk;
+    }
+
+    const total = meta.chunks || 1;
+    if (!background) show({ phase: 'progress', done: 0, total, filename: meta.filename || label });
+
+    const parts = new Array(total);
+    let next = 0;
+    let done = 0;
+    let missing = false;
+    const worker = async () => {
+      while (next < total && !missing) {
+        const i = next++;
+        const snap = await withTimeout(
+          getDoc(docRef(scope, id, `${key}__c${i}`)),
+          READ_TIMEOUT_MS,
+          `Loading file part ${i + 1} of ${total}`
+        );
+        // A missing part means the file is incomplete. Returning a truncated
+        // blob would hand the user a corrupt document that looks fine.
+        if (!snap.exists()) { missing = true; return; }
+        parts[i] = snap.data().d || '';
+        done++;
+        if (!background) show({ phase: 'progress', done, total, filename: meta.filename || label });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, total) }, worker));
+    if (missing) return null;
+
+    // Decoded part by part: one 30 MB base64 string is a needless memory
+    // spike. Parts are whole quads except possibly the last; a carry covers
+    // any older file cut differently.
+    const pieces = [];
+    let carry = '';
+    for (let i = 0; i < total; i++) {
+      const d = carry + parts[i];
+      const whole = i === total - 1 ? d.length : d.length - (d.length % 4);
+      if (whole) pieces.push(decodeBase64(d.slice(0, whole)));
+      carry = d.slice(whole);
+      parts[i] = null;
+      if (total > 4 && i % 4 === 3) await yieldToBrowser();
+    }
+
+    const blob = new Blob(pieces, { type: meta.mime || 'application/octet-stream' });
+    rememberBlob(scope, id, key, blob, meta);
+    return { blob, meta };
+  })();
+
+  inFlight.set(ck, run);
+  try {
+    const got = await run;
+    return got ? typed(got) : null;
+  } finally {
+    inFlight.delete(ck);
+    if (shown) emitLoading({ id: loadId, phase: 'end' });
+  }
+}
+
+/** Is this file already on this device (memory)? Used to skip prefetches. */
+export function hasAttachmentInMemory(scope, id, key) {
+  return blobCache.has(cacheKey(scope, id, key));
+}
+
+/* ── Prefetch (v3.33.1) ────────────────────────────────────────────────────
+ * Videos are fetched in the background as soon as a report is on screen, one
+ * at a time, so that by the time somebody clicks one it is already on this
+ * device and plays at once — the way a photo does. Each device downloads a
+ * given video once (the disk cache keeps it), so the Firestore reads this
+ * costs are bounded. A phone on mobile data, Data Saver or a 2G link
+ * prefetches far less / nothing; hovering or touching a tile still warms
+ * that one video. */
+const refSources = new Map();     // file_ref → [[scope, id], …] in lookup order
+const prefetched = new Set();
+let prefetchQueue = [];
+let prefetchRunning = false;
+let prefetchedBytes = 0;
+
+function prefetchBudget() {
+  const c = typeof navigator !== 'undefined' ? navigator.connection : null;
+  if (c?.saveData) return 0;
+  if (c && /(^|-)2g$/.test(String(c.effectiveType || ''))) return 0;
+  if (c?.type === 'cellular') return 25 * 1024 * 1024;
+  return 150 * 1024 * 1024;
+}
+
+async function fetchFromSources(p, sources, background) {
+  for (const [scope, id] of sources) {
+    if (!scope || !id) continue;
+    try {
+      const got = await getAttachmentBlob(scope, id, p.file_ref, { expect: p, background });
+      if (got) return got;
+    } catch { /* try the next copy */ }
+  }
+  return null;
+}
+
+async function drainPrefetch() {
+  if (prefetchRunning) return;
+  prefetchRunning = true;
+  try {
+    // Let the report itself finish drawing first.
+    await new Promise((r) => setTimeout(r, 1500));
+    while (prefetchQueue.length) {
+      const { p, sources } = prefetchQueue.shift();
+      if (prefetchedBytes + (Number(p.size) || 0) > prefetchBudget()) continue;
+      prefetched.add(p.file_ref);
+      const got = await fetchFromSources(p, sources, true);
+      if (got) prefetchedBytes += got.blob.size || 0;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  } finally {
+    prefetchRunning = false;
+  }
+}
+
+/**
+ * Register the attachments of the report on screen and queue its videos.
+ *   sources  [[scope, id], …] — where this surface looks, in order
+ *   items    the report's rows (each with photos[])
+ */
+export function prefetchReportVideos(sources, items) {
+  if (!isFirebaseConfigured || typeof window === 'undefined') return;
+  const srcs = (sources || []).filter((s) => s && s[0] && s[1]);
+  if (!srcs.length) return;
+  const queue = [];
+  for (const item of items || []) {
+    for (const p of item?.photos || []) {
+      if (!p || !p.file_ref) continue;
+      refSources.set(p.file_ref, srcs);
+      if (isVideoEntry(p) && !prefetched.has(p.file_ref)) queue.push({ p, sources: srcs });
+    }
+  }
+  if (!queue.length) return;
+  const queued = new Set(prefetchQueue.map((q) => q.p.file_ref));
+  for (const q of queue) if (!queued.has(q.p.file_ref)) prefetchQueue.push(q);
+  drainPrefetch();
+}
+
+/** Hover / touch on one tile: fetch that file now, ahead of the click. */
+export function warmAttachment(p) {
+  if (!p?.file_ref || prefetched.has(p.file_ref)) return;
+  const sources = refSources.get(p.file_ref);
+  if (!sources) return;
+  prefetched.add(p.file_ref);
+  fetchFromSources(p, sources, true).catch(() => {});
 }
 
 export async function deleteAttachment(scope, id, key, chunks = 1) {
@@ -261,7 +512,7 @@ export async function deleteAttachment(scope, id, key, chunks = 1) {
  * link resolves without touching the private collection.
  */
 export async function copyAttachmentToShare(reportId, shareId, key) {
-  const got = await getAttachmentBlob('report', reportId, key);
+  const got = await getAttachmentBlob('report', reportId, key, { background: true });
   if (!got) return false;
 
   const b64 = await fileToBase64(new File([got.blob], got.meta.filename, { type: got.meta.mime }));

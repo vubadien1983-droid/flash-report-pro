@@ -16,7 +16,7 @@ import {
 } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
 import { isFirebaseConfigured, fileKey } from '../services/firebase';
-import { putAttachment, getAttachmentBlob, openBlob, formatBytes } from '../services/fileAttachments';
+import { putAttachment, getAttachmentBlob, prefetchReportVideos, openBlob, formatBytes } from '../services/fileAttachments';
 import {
   isMiniPlanUnlocked, unlockMiniPlan, lockMiniPlan, onMiniPlanLockChange,
 } from '../services/miniPlanAuth';
@@ -80,6 +80,12 @@ export default function MiniPlanViewer({ shareId }) {
   // once and would otherwise read a stale copy from the closure.
   const baseRef = useRef([]);
   const itemsRef = useRef([]);
+
+  // Videos on screen are fetched in the background so a click plays at once
+  // (v3.33.1); also registers every attachment for hover warm-up.
+  useEffect(() => {
+    prefetchReportVideos([['shared', shareId], ['report', report?.source_report_id]], report?.items);
+  }, [report, shareId]);
   const retryRef = useRef({ timer: null, tries: 0 });
   const [unsaved, setUnsaved] = useState(false);
 
@@ -393,12 +399,11 @@ export default function MiniPlanViewer({ shareId }) {
     const ref = photo?.file_ref
       || (item ? fileKey(item.id || `item_${itemIndex}`, photo?.slot_index ?? 0) : '');
     if (!ref) { showToast('That attachment has no file reference.', 'error'); return; }
-    showToast(`Opening ${photo?.filename || 'file'}…`, 'success');
     try {
-      let got = await getAttachmentBlob('shared', shareId, ref);
+      let got = await getAttachmentBlob('shared', shareId, ref, { expect: photo });
       // A file attached from the app may not have reached the shared copy yet.
       if (!got && report?.source_report_id) {
-        got = await getAttachmentBlob('report', report.source_report_id, ref);
+        got = await getAttachmentBlob('report', report.source_report_id, ref, { expect: photo });
       }
       if (!got) { showToast('That file is not in the cloud (yet)', 'error'); return; }
       setFilePreview({

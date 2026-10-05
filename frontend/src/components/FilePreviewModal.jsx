@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, FileText, ExternalLink, ArrowLeft, RefreshCw } from 'lucide-react';
 import { previewKind, guessMime, PREVIEW, PREVIEW_LABEL } from '../services/previewKind';
@@ -63,10 +63,29 @@ function CannotShow({ filename, type, url, reason }) {
   );
 }
 
-/** Video player with a readable failure instead of a black box. */
+/**
+ * Video player with a readable failure instead of a black box.
+ *
+ * v3.33.1: it STARTS PLAYING by itself. A browser refuses to autoplay with
+ * sound when the click that asked for it was a few seconds ago (the download
+ * in between), which left a paused black frame that looked like it was still
+ * loading. If play() is refused, it plays muted and offers a "Tap for sound"
+ * button instead.
+ */
 function MediaPlayer({ url, filename, type }) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => { setFailed(false); }, [url]);
+  const [mutedByBrowser, setMutedByBrowser] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => { setFailed(false); setMutedByBrowser(false); }, [url]);
+  const start = () => {
+    const v = ref.current;
+    if (!v || !v.paused) return;
+    v.play().catch(() => {
+      v.muted = true;
+      setMutedByBrowser(true);
+      v.play().catch(() => {});
+    });
+  };
   if (failed) {
     return (
       <CannotShow
@@ -78,17 +97,28 @@ function MediaPlayer({ url, filename, type }) {
     );
   }
   return (
-    <div className="w-full h-full flex items-center justify-center bg-black rounded-lg">
+    <div className="relative w-full h-full flex items-center justify-center bg-black rounded-lg">
       <video
+        ref={ref}
         key={url}
         src={url}
         controls
         autoPlay
         playsInline
-        preload="metadata"
+        preload="auto"
+        onLoadedData={start}
         onError={() => setFailed(true)}
         className="max-w-full max-h-full"
       />
+      {mutedByBrowser && (
+        <button
+          type="button"
+          onClick={() => { const v = ref.current; if (v) { v.muted = false; v.play().catch(() => {}); } setMutedByBrowser(false); }}
+          className="absolute top-3 left-3 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-900 text-[12.5px] font-bold shadow"
+        >
+          🔇 Tap for sound
+        </button>
+      )}
     </div>
   );
 }

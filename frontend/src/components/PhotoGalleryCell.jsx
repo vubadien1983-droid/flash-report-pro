@@ -4,6 +4,7 @@ import { compressForStorage, compressDataUrl, yieldToBrowser } from '../services
 import { nextPhotoSlot } from '../services/miniPlan';
 import { isVideoFile, isVideoEntry, prepareVideoForUpload, rememberPoster, posterFor, formatDuration, MAX_VIDEO_BYTES } from '../services/videoMedia';
 import VideoRecorderModal from './VideoRecorderModal';
+import { warmAttachment } from '../services/fileAttachments';
 
 /**
  * The Mini Plan's Photo column: MANY images inside ONE cell.
@@ -389,6 +390,8 @@ export default function PhotoGalleryCell({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); openEntry(p); }}
+                onPointerEnter={() => warmAttachment(p)}
+                onPointerDown={() => warmAttachment(p)}
                 title={`Play ${p.filename || 'video'}${p.size ? ` — ${(p.size / 1048576).toFixed(1)} MB` : ''}`}
                 className="w-full h-full relative flex items-center justify-center bg-slate-900 text-white"
               >
@@ -492,6 +495,7 @@ export default function PhotoGalleryCell({
             {!isMobileView && (
               <div
                 onClick={(e) => { e.stopPropagation(); openEntry(p); }}
+                onPointerEnter={() => { if (isVideoEntry(p)) warmAttachment(p); }}
                 title={isVideoEntry(p) ? `Play ${p.filename || 'video'}` : isFileEntry(p) ? `Open ${p.filename || 'file'}` : 'View'}
                 className={`absolute inset-0 bg-slate-950/45 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center ${
                   isFileEntry(p) ? 'cursor-pointer' : 'cursor-zoom-in'
