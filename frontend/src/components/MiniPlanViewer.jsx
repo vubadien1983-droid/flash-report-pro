@@ -665,6 +665,10 @@ export default function MiniPlanViewer({ shareId }) {
           isMobileMode={isPhoneView}
           readOnly={!unlocked}
           onRequestUnlock={() => setAskPassword(true)}
+          // v3.35.0: files and videos on the link too, and they open in place.
+          onAttachFile={attachFromLink}
+          onOpenAttachment={openAttachmentFromLink}
+          onPhotoRemoved={dropPhotoBytes}
           title={report.title}
           fullScreen
         />
@@ -673,7 +677,7 @@ export default function MiniPlanViewer({ shareId }) {
       <PasswordModal
         isOpen={askPassword}
         title="Unlock this plan"
-        message="Editing is restricted to the project team. Photos are added from the app."
+        message="Editing is restricted to the project team. Enter the team password to add photos, files and videos."
         onSubmit={(pw) => {
           const ok = unlockMiniPlan(pw);
           if (ok) {

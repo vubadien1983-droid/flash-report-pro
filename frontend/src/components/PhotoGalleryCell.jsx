@@ -47,6 +47,7 @@ export default function PhotoGalleryCell({
   nextSlot = nextPhotoSlot,
   emptyLabel = 'No photo',
   thumbClass = '',       // overrides the thumbnail size (OPS column G: bigger, v3.22.0)
+  onRequestUnlock,       // locked cell: the Add tile asks for the password instead of vanishing
 }) {
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -559,7 +560,19 @@ export default function PhotoGalleryCell({
           </div>
         )}
 
-        {list.length === 0 && readOnly && (
+        {readOnly && onRequestUnlock && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRequestUnlock(); }}
+            title="Locked — enter the password to add photos, files or videos"
+            className={`${thumbSize} flex-shrink-0 flex flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:text-brand-700 hover:border-brand-400`}
+          >
+            <ImagePlus className="w-4 h-4" />
+            <span className="text-[10px] font-bold leading-none">🔒 Add</span>
+          </button>
+        )}
+
+        {list.length === 0 && readOnly && !onRequestUnlock && (
           <span className="text-[12px] text-slate-500 px-1 py-2">{emptyLabel}</span>
         )}
       </div>

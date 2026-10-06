@@ -422,7 +422,7 @@ export default function ReportViewer({ reportId }) {
           ) : (
             /* 2. Desktop Laptop Spreadsheet Table View */
             <div className="overflow-x-auto w-full">
-              <table className="w-full text-left border-collapse" style={cw.tableStyle}>
+              <table className="w-full min-w-[1180px] table-fixed text-left border-collapse" style={cw.tableStyle}>
                 <thead>
                   <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-800 text-xs font-bold">
                     <th data-col="no" style={cw.thStyle('no')} className="w-10 px-2 py-2.5 text-center font-bold relative">No{cw.handle('no')}</th>

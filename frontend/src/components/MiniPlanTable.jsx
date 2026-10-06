@@ -660,6 +660,7 @@ export default function MiniPlanTable({
                           isSelected={selectedCell === index}
                           onSelectSlot={() => setSelectedCell(index)}
                           readOnly={readOnly}
+                          onRequestUnlock={onRequestUnlock}
                           isMobileView
                         />
                       </div>
@@ -906,6 +907,7 @@ export default function MiniPlanTable({
                         isSelected={selectedCell === index}
                         onSelectSlot={() => setSelectedCell(index)}
                         readOnly={readOnly}
+                        onRequestUnlock={onRequestUnlock}
                         isMobileView={false}
                       />
                     </td>

@@ -100,19 +100,8 @@ export default function Sidebar({
           New Flash Report
         </button>
 
-        {/* Preservation Findings and Tracking: one long-lived report, opened
-            from here — created the first time only (v3.31.0). */}
-        {onOpenPreservation && (
-          <button
-            type="button"
-            onClick={() => { onOpenPreservation(); if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer(); }}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-teal-100 bg-teal-700/40 hover:bg-teal-700/60 border border-teal-600/60 rounded-xl transition-all active:scale-[0.98]"
-            title={reports.some((r) => r.report_type === PRESERVATION_TYPE) ? `Open ${PRESERVATION_LABEL}` : `Create ${PRESERVATION_LABEL}`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-teal-300" />
-            {PRESERVATION_LABEL}
-          </button>
-        )}
+        {/* v3.35.0: no Preservation button — that report exists once and is
+            opened from the list below. */}
 
         {onSyncCloud && (
           <button
