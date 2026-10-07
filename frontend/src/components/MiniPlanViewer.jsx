@@ -464,7 +464,7 @@ export default function MiniPlanViewer({ shareId }) {
       showToast(`${label} downloaded`, 'success');
     } catch (e) {
       console.error(`${label} export failed:`, e);
-      showToast(`${label} export failed`, 'error');
+      showToast(`${label} export failed: ${e?.message || e}`, 'error');
     } finally {
       setIsExporting(false);
     }

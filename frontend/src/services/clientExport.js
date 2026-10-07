@@ -24,7 +24,11 @@ async function getImageData(url) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
+    // Never wait for ever on one picture (BUG-013 rule): 15 s, then skip it.
+    const timer = setTimeout(() => { img.onload = img.onerror = null; resolve(null); }, 15000);
     img.onload = () => {
+      clearTimeout(timer);
+      try {
       const nw = img.naturalWidth || img.width || 800;
       const nh = img.naturalHeight || img.height || 600;
       const maxDim = 800;
@@ -59,22 +63,15 @@ async function getImageData(url) {
         width: w,
         height: h
       });
+      } catch { resolve(null); }  // e.g. a tainted canvas
     };
     img.onerror = () => {
-      console.warn('Image load error during export:', url.substring(0, 40));
-      if (url.startsWith('data:image')) {
-        const parts = url.split(',');
-        resolve({
-          base64: parts[1],
-          extension: 'jpeg',
-          dataUrl: url,
-          aspectRatio: 1.33,
-          width: 800,
-          height: 600
-        });
-      } else {
-        resolve(null);
-      }
+      // The browser cannot decode it, so no exporter can either: skip the
+      // picture instead of embedding bytes that make jsPDF/ExcelJS throw and
+      // fail the whole export (BUG-044).
+      clearTimeout(timer);
+      console.warn('Image load error during export:', String(url).substring(0, 40));
+      resolve(null);
     };
     img.src = url;
   });

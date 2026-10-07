@@ -75,7 +75,7 @@ export default function ReportViewer({ reportId }) {
       showToast('Excel report (.xlsx) downloaded successfully!', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
-      showToast('Failed to export Excel report', 'error');
+      showToast(`Failed to export Excel report: ${err?.message || err}`, 'error');
     } finally {
       setIsExporting(false);
     }
@@ -89,7 +89,7 @@ export default function ReportViewer({ reportId }) {
       showToast('PDF report (.pdf) downloaded successfully!', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
-      showToast('Failed to export PDF report', 'error');
+      showToast(`Failed to export PDF report: ${err?.message || err}`, 'error');
     } finally {
       setIsExporting(false);
     }

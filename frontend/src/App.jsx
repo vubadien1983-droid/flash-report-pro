@@ -1538,17 +1538,26 @@ export default function App() {
   const reportForExport = async (rep) => {
     if (!rep) return rep;
     if (collectAttachments(rep).length === 0) return rep;
-    if (rep.share_id || rep.cloud_code) {
-      // Already shared: refresh so the newest attachments are published too.
-      try { await publishReportForSharing(rep); } catch (e) { console.warn('Share refresh:', e.message); }
+    // v3.36.0: an already-shared report is NOT republished here. Every
+    // attachment is copied to the share when it is attached, and saves
+    // republish on their own; republishing on export re-uploaded every photo
+    // from a device that had never published it — minutes, and a failed
+    // export when any one write timed out (BUG-044).
+    if (rep.share_id || rep.cloud_code) return rep;
+    // First export of a report with attachments: publish once so the file
+    // links work. If that fails, export anyway — the cells then say "share
+    // the report to activate this link" instead of the export failing.
+    try {
+      showToast('Publishing attachments so the file links work…', 'info');
+      const { shareId } = await publishReportForSharing(rep);
+      const withShare = { ...rep, share_id: shareId, cloud_code: shareId };
+      setCurrentReport(withShare);
+      await saveLocalReport(withShare);
+      return withShare;
+    } catch (e) {
+      console.warn('Attachments not published, exporting without live links:', e?.message);
       return rep;
     }
-    showToast('Publishing attachments so the file links work…', 'info');
-    const { shareId } = await publishReportForSharing(rep);
-    const withShare = { ...rep, share_id: shareId, cloud_code: shareId };
-    setCurrentReport(withShare);
-    await saveLocalReport(withShare);
-    return withShare;
   };
 
   // Client-Side Excel Export
@@ -1570,7 +1579,7 @@ export default function App() {
       showToast('Excel export successful', 'success');
     } catch (err) {
       console.error('Export Excel failed:', err);
-      showToast('Excel export failed', 'error');
+      showToast(`Excel export failed: ${err?.message || err}`, 'error');
     } finally {
       setIsExporting(false);
     }
@@ -1595,7 +1604,7 @@ export default function App() {
       showToast('PDF export successful', 'success');
     } catch (err) {
       console.error('Export PDF failed:', err);
-      showToast('PDF export failed', 'error');
+      showToast(`PDF export failed: ${err?.message || err}`, 'error');
     } finally {
       setIsExporting(false);
     }
