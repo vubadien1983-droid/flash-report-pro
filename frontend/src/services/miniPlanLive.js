@@ -425,6 +425,9 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
     base = null, extra = {},
     // OPS Findings: its own row normaliser, merge options and compare fields.
     normalize = normalizeMiniPlanItems, mergeOpts = undefined, compareFields = undefined,
+    // Flash Report edit link: puts each row's photos back at their slot index
+    // after the (compacting) merge, before anything is written.
+    finalize = undefined,
     ...rest
   } = options;
   const meta = { ...rest, ...extra };
@@ -449,7 +452,7 @@ export async function pushSharedMiniPlanEdit(shareId, sourceReportId, items, opt
         theirs,
         mergeOpts,
       );
-      toWrite = withoutUndefined(merged.items);
+      toWrite = withoutUndefined(typeof finalize === 'function' ? finalize(merged.items) : merged.items);
       mergeStats = merged.stats;
     }
   } catch (e) {

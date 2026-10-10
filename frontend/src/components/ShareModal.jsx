@@ -1,13 +1,129 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Link as LinkIcon, Copy, Check, ExternalLink, QrCode, X, Share2, Sparkles, Smartphone, Download, Globe
+  Link as LinkIcon, Copy, Check, ExternalLink, QrCode, X, Share2, Sparkles, Smartphone, Download, Globe,
+  Eye, EyeOff, KeyRound, Pencil, Wand2
 } from 'lucide-react';
+import { generateEditPassword, isValidEditPassword, MIN_EDIT_PASSWORD } from '../services/flashEdit';
 import { exportStandaloneHtml } from '../services/htmlExporter';
 import { isMiniPlan, MINI_PLAN_LABEL } from '../services/miniPlan';
 import { isOpsFindings } from '../services/opsFindings';
 import { isPreservation } from '../services/preservationFindings';
 
-export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
+/**
+ * The EDITABLE link of a Flash Report (v3.37.0): create it with a password,
+ * show the password behind an eye button, change it or switch the link off.
+ * The password is hidden by default so it is not exposed on a shared screen.
+ */
+function EditLinkSection({ editUrl, editPassword, onEnable, onDisable }) {
+  const enabled = Boolean(editPassword);
+  const [formOpen, setFormOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [reveal, setReveal] = useState(false);
+  const [copied, setCopied] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const copy = async (what, text) => {
+    try { await navigator.clipboard.writeText(text); setCopied(what); setTimeout(() => setCopied(''), 2200); }
+    catch (e) { console.error('Copy failed:', e); }
+  };
+
+  const save = async () => {
+    if (!isValidEditPassword(draft)) { setError(`The password needs at least ${MIN_EDIT_PASSWORD} characters.`); return; }
+    setBusy(true); setError('');
+    try { await onEnable(draft.trim()); setFormOpen(false); setDraft(''); setReveal(false); }
+    catch (e) { setError(e?.message || 'Could not save the password.'); }
+    finally { setBusy(false); }
+  };
+
+  const turnOff = async () => {
+    if (!window.confirm('Turn off the editable link? Anyone holding it will no longer be able to edit.')) return;
+    setBusy(true);
+    try { await onDisable(); setReveal(false); } catch (e) { setError(e?.message || 'Could not turn it off.'); } finally { setBusy(false); }
+  };
+
+  const showForm = formOpen || !enabled;
+
+  return (
+    <div className="mb-4 p-3 bg-amber-50/70 border border-amber-200/70 rounded-xl">
+      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 mb-1">
+        <Pencil className="w-3.5 h-3.5 text-amber-600" /> Editable link (needs a password)
+      </div>
+      <p className="text-[11px] text-amber-900/80 leading-relaxed mb-2.5">
+        {enabled
+          ? 'Whoever opens this link and types the password can edit rows, photos and files. Their changes are saved into this report and shown on the view-only link. The view-only link above stays read-only.'
+          : 'Create a link that lets other people UPDATE this report once they type a password you choose. The view-only link above is unchanged.'}
+      </p>
+
+      {enabled && (
+        <>
+          <div className="flex items-center gap-2 mb-2">
+            <input type="text" readOnly value={editUrl} onClick={(e) => e.target.select()}
+              className="flex-1 min-w-0 text-xs font-mono text-slate-700 bg-white border border-amber-200 rounded-xl px-3 py-2 outline-none select-all" />
+            <button type="button" onClick={() => copy('link', editUrl)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white flex-shrink-0">
+              {copied === 'link' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}{copied === 'link' ? 'Copied' : 'Copy link'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <KeyRound className="w-3.5 h-3.5 text-amber-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input type={reveal ? 'text' : 'password'} readOnly value={editPassword} autoComplete="off"
+                aria-label="Edit password"
+                className="w-full text-xs font-mono text-slate-800 bg-white border border-amber-200 rounded-xl pl-8 pr-9 py-2 outline-none" />
+              <button type="button" onClick={() => setReveal((v) => !v)} title={reveal ? 'Hide the password' : 'Show the password'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100">
+                {reveal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button type="button" onClick={() => copy('pw', editPassword)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 flex-shrink-0">
+              {copied === 'pw' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}{copied === 'pw' ? 'Copied' : 'Copy password'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {showForm && (
+        <div className={enabled ? 'mt-3 pt-3 border-t border-amber-200/70' : ''}>
+          <label className="block text-[11px] font-semibold text-amber-900 mb-1">
+            {enabled ? 'New password' : 'Choose a password'}
+          </label>
+          <div className="flex items-center gap-2">
+            <input type="text" value={draft} onChange={(e) => { setDraft(e.target.value); setError(''); }}
+              placeholder={`At least ${MIN_EDIT_PASSWORD} characters`} autoComplete="off"
+              className="flex-1 min-w-0 text-xs font-mono bg-white border border-amber-200 rounded-xl px-3 py-2 outline-none focus:border-amber-500" />
+            <button type="button" onClick={() => { setDraft(generateEditPassword()); setError(''); }} title="Generate a random password"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 flex-shrink-0">
+              <Wand2 className="w-3.5 h-3.5" /> Generate
+            </button>
+          </div>
+          {error && <p className="text-[11px] text-rose-600 mt-1.5">{error}</p>}
+          <div className="flex items-center gap-2 mt-2.5">
+            <button type="button" onClick={save} disabled={busy}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white">
+              {busy ? 'Saving…' : (enabled ? 'Change password' : 'Create editable link')}
+            </button>
+            {enabled && (
+              <button type="button" onClick={() => { setFormOpen(false); setDraft(''); setError(''); }}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50">Cancel</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {enabled && !showForm && (
+        <div className="flex items-center gap-3 mt-3">
+          <button type="button" onClick={() => setFormOpen(true)} className="text-[11px] font-semibold text-amber-800 hover:underline">Change password</button>
+          <button type="button" onClick={turnOff} disabled={busy} className="text-[11px] font-semibold text-rose-600 hover:underline">Turn off editable link</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ShareModal({ isOpen, shareUrl, report, onClose, editUrl = '', onEnableEdit, onDisableEdit }) {
   const [copied, setCopied] = useState(false);
   const canvasRef = useRef(null);
 
@@ -85,7 +201,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-5 md:p-6 border border-slate-200">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-5 md:p-6 border border-slate-200 max-h-[94vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-4 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
@@ -154,7 +270,7 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
         {/* Share Link Input & Copy Button */}
         <div className="mb-4">
           <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-            <span>{plan ? 'Live Plan Link' : 'Shareable Online Link'}</span>
+            <span>{plan ? 'Live Plan Link' : (!ops && !pf && onEnableEdit ? 'View-only link' : 'Shareable Online Link')}</span>
             {copied && (
               <span className="text-emerald-600 text-xs font-medium flex items-center gap-1">
                 <Check className="w-3.5 h-3.5" /> Copied to clipboard!
@@ -212,6 +328,16 @@ export default function ShareModal({ isOpen, shareUrl, report, onClose }) {
             )}
           </div>
         </div>
+
+        {/* Flash Report only: the second kind of link, editable behind a password. */}
+        {!plan && !ops && !pf && onEnableEdit && (
+          <EditLinkSection
+            editUrl={editUrl}
+            editPassword={report?.edit_password || ''}
+            onEnable={onEnableEdit}
+            onDisable={onDisableEdit}
+          />
+        )}
 
         {/* Option 2: Download Standalone HTML Web Report (not for OPS Findings:
             its link and its Excel / PDF are the formats that report offers). */}

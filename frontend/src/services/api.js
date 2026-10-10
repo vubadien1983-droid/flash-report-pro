@@ -24,6 +24,7 @@ import { MINI_PLAN_TYPE } from './miniPlan';
 import { mergeMiniPlanItems } from './miniPlanMerge';
 import { OPS_FINDINGS_TYPE, OPS_MERGE_FIELDS } from './opsFindings';
 import { PRESERVATION_TYPE, PF_MERGE_FIELDS } from './preservationFindings';
+import { hasEditLink, FLASH_MERGE_OPTS, placeBySlot } from './flashEdit';
 import {
   compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser, HARD_MAX_BYTES,
 } from './imageCompression';
@@ -245,6 +246,20 @@ export async function saveReport(id, reportData) {
             fields: isPfRow ? PF_MERGE_FIELDS : OPS_MERGE_FIELDS, regroup: false, threeWayPhotos: true, preferMineOrder: true,
           });
           row.items = merged.items;
+        }
+      } catch (e) {
+        console.warn('Merge skipped before saving:', e.message);
+      }
+    }
+
+    // A Flash Report with an EDIT LINK is edited through that link while the
+    // app has it open: merge instead of overwrite (v3.37.0).
+    if (!row.report_type && hasEditLink(row) && Array.isArray(row.items)) {
+      try {
+        const snap = await withTimeout(getDoc(reportDoc(id)), READ_TIMEOUT_MS, 'Reading the report');
+        const theirs = snap.exists() ? (snap.data()?.items || []) : [];
+        if (theirs.length && lastRemote.has(id)) {
+          row.items = placeBySlot(mergeMiniPlanItems(lastRemote.get(id), row.items, theirs, FLASH_MERGE_OPTS).items);
         }
       } catch (e) {
         console.warn('Merge skipped before saving:', e.message);
@@ -484,6 +499,12 @@ function _toFirestoreDoc(report) {
     updated_at: report.updated_at || new Date().toISOString(),
     created_at: report.created_at || new Date().toISOString(),
   };
+
+  // The EDIT LINK password (Flash Report, v3.37.0). Written only when the
+  // report carries the field, so a save that does not know about it never
+  // wipes it; '' (set when the link is switched off) is written on purpose.
+  if (report.edit_password !== undefined) doc.edit_password = report.edit_password || '';
+  if (report.edit_salt !== undefined) doc.edit_salt = report.edit_salt || '';
 
   // Replace inline base64 with a REFERENCE to the photos subcollection.
   // The bytes are never discarded — _pushPhotos writes them alongside this

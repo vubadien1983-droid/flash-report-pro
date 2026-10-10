@@ -30,6 +30,13 @@ import {
   compressDataUrl, photoFingerprint, withTimeout, yieldToBrowser,
 } from './imageCompression';
 import { collectAttachments, copyAttachmentToShare } from './fileAttachments';
+import { mergeMiniPlanItems } from './miniPlanMerge';
+import {
+  hasEditLink, editFieldsForShare, FLASH_MERGE_OPTS, normalizeFlashItems, placeBySlot,
+} from './flashEdit';
+
+/** What this page last wrote to each shared copy: the base of the edit-link merge. */
+const lastPublished = new Map();
 
 /** Leaves headroom under the 1 MiB per-document limit. */
 const PHOTO_MAX_BYTES = 900_000;
@@ -204,14 +211,33 @@ export async function publishReportForSharing(report) {
   // to render from this field alone — it has no other copy of the document —
   // so a Mini Plan published without it opens as a four-photo Flash Report
   // with every column empty.
+  // A report with an EDIT LINK can be changed through that link at any time.
+  // Publishing the owner's copy blindly would erase those edits, so the rows
+  // are merged with what the shared copy holds right now (v3.37.0).
+  let publishItems = sharedItems;
+  if (hasEditLink(report) && !report.report_type) {
+    try {
+      const snap = await withTimeout(getDoc(sharedDoc(shareId)), READ_TIMEOUT_MS, 'Reading the shared copy');
+      const theirs = snap.exists() ? normalizeFlashItems(snap.data()?.items || []) : [];
+      if (theirs.length && sharedItems.length) {
+        const merged = mergeMiniPlanItems(lastPublished.get(shareId) || theirs, sharedItems, theirs, FLASH_MERGE_OPTS);
+        publishItems = placeBySlot(merged.items);
+      }
+    } catch (e) {
+      console.warn('Edit-link merge skipped, publishing this copy:', e.message);
+    }
+  }
+  lastPublished.set(shareId, publishItems);
+
   await withTimeout(setDoc(sharedDoc(shareId), {
+    ...editFieldsForShare(report),
     title: report.title || 'Untitled Flash Report',
     report_type: report.report_type || '',
     system_tag: report.system_tag || '',
     location: report.location || '',
     inspection_date: report.inspection_date || '',
     discipline: report.discipline || 'Mechanical',
-    items: sharedItems,
+    items: publishItems,
     source_report_id: report.id || '',
     updated_at: new Date().toISOString(),
     created_at: report.created_at || new Date().toISOString(),

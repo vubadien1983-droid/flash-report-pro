@@ -4,6 +4,8 @@ import ReportViewer from './ReportViewer';
 import MiniPlanViewer from './MiniPlanViewer';
 import OpsFindingsViewer from './OpsFindingsViewer';
 import PreservationViewer from './PreservationViewer';
+import FlashEditViewer from './FlashEditViewer';
+import { isEditRequested } from '../services/flashEdit';
 import { fetchSharedReportType, findSharedIdByType } from '../services/shareService';
 import { TYPE_PREFIX } from '../services/shareAliases';
 import { MINI_PLAN_TYPE } from '../services/miniPlan';
@@ -79,5 +81,8 @@ export default function SharedViewRouter({ shareId: requested }) {
   if (type === MINI_PLAN_TYPE) return <MiniPlanViewer shareId={shareId} />;
   if (type === OPS_FINDINGS_TYPE) return <OpsFindingsViewer shareId={shareId} />;
   if (type === PRESERVATION_TYPE) return <PreservationViewer shareId={shareId} />;
+  // Flash Report: the view-only page, or — with ?edit=1 — the editable page
+  // behind the report's edit password (v3.37.0).
+  if (isEditRequested()) return <FlashEditViewer shareId={shareId} />;
   return <ReportViewer reportId={shareId} />;
 }

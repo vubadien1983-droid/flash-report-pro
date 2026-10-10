@@ -55,6 +55,7 @@ import {
 } from './services/miniPlanAuth';
 import { lockApp } from './services/appLock';
 import { shareIdFromAlias, shareIdFromHost, publicShareUrl, namedLinkForType } from './services/shareAliases';
+import { newEditSalt, editUrlFor } from './services/flashEdit';
 import {
   OPS_FINDINGS_TYPE, OPS_FINDINGS_LABEL, OPS_DEFAULT_SUBTITLE, OPS_DEFAULT_SECTION,
   isOpsFindings, normalizeOpsItems, makeOpsFinding, todayKeyLocal,
@@ -674,8 +675,14 @@ export default function App() {
    */
   const keepShareId = (incoming, local) => {
     const id = incoming?.share_id || incoming?.cloud_code || local?.share_id || local?.cloud_code || '';
-    if (!id) return incoming;
-    return { ...incoming, share_id: id, cloud_code: id };
+    // The edit-link password travels the same way (v3.37.0): a copy that does
+    // not carry the field predates it, it was not removed ('' means removed).
+    let out = incoming;
+    if (incoming && incoming.edit_password === undefined && local && local.edit_password !== undefined) {
+      out = { ...incoming, edit_password: local.edit_password, edit_salt: local.edit_salt };
+    }
+    if (!id) return out;
+    return { ...out, share_id: id, cloud_code: id };
   };
 
   /** True when this device holds at least one image the cloud copy is missing. */
@@ -1377,6 +1384,9 @@ export default function App() {
           title: `Copy of ${orig.title || 'Report'}`,
           updated_at: new Date().toISOString(),
           cloud_code: null,
+          // A copy never inherits the editable link's password.
+          edit_password: '',
+          edit_salt: '',
           _version: 1,
           _syncStatus: SyncStatus.PENDING,
         };
@@ -1527,6 +1537,22 @@ export default function App() {
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  // The EDITABLE link of a Flash Report (v3.37.0). Switching it on or off, or
+  // changing its password, saves the report and PUBLISHES at once, so the
+  // digest the link checks against is in the shared copy before the person
+  // who created it hands the link over.
+  const applyEditLink = async (password) => {
+    if (!currentReport) return;
+    const updated = password
+      ? { ...currentReport, edit_password: password, edit_salt: newEditSalt() }
+      : { ...currentReport, edit_password: '', edit_salt: '' };
+    setCurrentReport(updated);
+    await saveLocalReport(updated).catch(() => {});
+    await publishReportForSharing(updated);          // throws -> the dialog shows why
+    executeSave(updated, false);                      // cloud copy of the report, in the background
+    showToast(password ? 'Editable link is on' : 'Editable link turned off', 'success');
   };
 
   /**
@@ -2067,6 +2093,9 @@ export default function App() {
         isOpen={shareModalState.isOpen}
         shareUrl={shareModalState.shareUrl}
         report={currentReport}
+        editUrl={editUrlFor(shareModalState.shareUrl)}
+        onEnableEdit={(pw) => applyEditLink(pw)}
+        onDisableEdit={() => applyEditLink('')}
         onClose={() => setShareModalState({ isOpen: false, shareUrl: '', reportTitle: '' })}
       />
 
