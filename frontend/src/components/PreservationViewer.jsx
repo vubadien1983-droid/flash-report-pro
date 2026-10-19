@@ -11,7 +11,7 @@ import { subscribeSharedPf, pushSharedPfEdit, PF_MERGE_OPTS } from '../services/
 import { hydrateWithLocalPhotos, deletePhotoBytes, refOf, loadMissingSharedPhotos } from '../services/miniPlanLive';
 import { mergeMiniPlanItems } from '../services/miniPlanMerge';
 import { isFirebaseConfigured, fileKey } from '../services/firebase';
-import { putAttachment, getAttachmentBlob, prefetchReportVideos, formatBytes } from '../services/fileAttachments';
+import { putAttachment, getAttachmentBlob, prefetchReportVideos, formatBytes, deleteEntryFiles, isAttachmentEntry } from '../services/fileAttachments';
 import { isPfUnlocked, unlockPf, lockPf, onPfLockChange } from '../services/preservationAuth';
 import { normalizePfItems, PRESERVATION_LABEL, PRESERVATION_TYPE } from '../services/preservationFindings';
 import { namedLinkForType, ALIAS_TITLES } from '../services/shareAliases';
@@ -50,7 +50,7 @@ export default function PreservationViewer({ shareId }) {
   const [subKey, setSubKey] = useState(0);
   const [stalled, setStalled] = useState('');
   const [lightbox, setLightbox] = useState(null);           // { list, index }
-  const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0 });
+  const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0, target: null });
   const [toast, setToast] = useState({ message: '', type: 'success' });
   const [viewMode, setViewMode] = useState('auto');
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -264,6 +264,17 @@ export default function PreservationViewer({ shareId }) {
 
   // ── Photos and documents ──────────────────────────────────────
   const dropPhotoBytes = (item, photo) => {
+    // A document or a VIDEO keeps its bytes in the files collection: remove
+    // those from the share and from the source report.
+    if (isAttachmentEntry(photo)) {
+      deleteEntryFiles({
+        shareId,
+        reportId: reportRef.current?.source_report_id || '',
+        itemId: item?.id,
+        entry: photo,
+      }).catch((e) => console.warn('File bytes not removed:', e?.message));
+      return;
+    }
     const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
     deletePhotoBytes(shareId, reportRef.current?.source_report_id, ref)
       .catch((e) => console.warn('Photo bytes not removed:', e?.message));
@@ -298,6 +309,7 @@ export default function PreservationViewer({ shareId }) {
         isOpen: true, blob: got.blob,
         filename: got.meta?.filename || photo?.filename || 'file',
         mime: got.meta?.mime || got.blob.type || '', size: got.meta?.size || got.blob.size || 0,
+        target: { photo, itemIndex: itemIndex ?? photo?.itemIndex },
       });
     } catch (e) {
       showToast(`Could not open the file: ${e.message}`, 'error');
@@ -314,6 +326,29 @@ export default function PreservationViewer({ shareId }) {
     if (!list.length) return;
     const at = list.findIndex((p) => (entry?.id ? p.id === entry.id : p.url === entry?.url));
     setLightbox({ list, index: at < 0 ? 0 : at });
+  };
+
+  const closeFilePreview = () => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0, target: null });
+
+  /** Delete the video / file open in the player (needs the team password). */
+  const deleteOpenedFile = () => {
+    const t = filePreview.target;
+    if (!t?.photo || !isPfUnlocked()) return;
+    const same = (x) => x && (t.photo.id ? x.id === t.photo.id : x.file_ref === t.photo.file_ref);
+    const items = itemsRef.current || [];
+    let idx = Number.isInteger(t.itemIndex) ? t.itemIndex : -1;
+    if (idx < 0 || !(items[idx]?.photos || []).some(same)) {
+      idx = items.findIndex((it) => (it?.photos || []).some(same));
+    }
+    const item = items[idx];
+    if (!item) { closeFilePreview(); return; }
+    const gone = (item.photos || []).find(same);
+    const photos = (item.photos || []).filter((x) => !same(x));
+    handleItemsChange(items.map((it, i) => (i === idx ? { ...it, photos } : it)));
+    if (gone) dropPhotoBytes(item, gone);
+    const isVid = /^video\//i.test(gone?.mime || '') || gone?.duration;
+    closeFilePreview();
+    showToast(isVid ? 'Video deleted' : 'File deleted', 'success');
   };
 
   const deletePhoto = (photo) => {
@@ -487,7 +522,8 @@ export default function PreservationViewer({ shareId }) {
         filename={filePreview.filename}
         mime={filePreview.mime}
         size={filePreview.size}
-        onClose={() => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0 })}
+        onClose={closeFilePreview}
+        onDelete={unlocked && filePreview.target ? deleteOpenedFile : undefined}
       />
 
       <Toast message={toast.message} type={toast.type} duration={3000} onClose={() => setToast({ message: '', type: 'success' })} />

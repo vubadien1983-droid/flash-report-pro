@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, FileText, ExternalLink, ArrowLeft, RefreshCw } from 'lucide-react';
+import { X, Download, FileText, ExternalLink, ArrowLeft, RefreshCw, Trash2 } from 'lucide-react';
 import { previewKind, guessMime, PREVIEW, PREVIEW_LABEL } from '../services/previewKind';
 
 /**
@@ -197,7 +197,11 @@ export function useTypedObjectUrl(blob, filename, mime) {
   return { url, type };
 }
 
-export default function FilePreviewModal({ isOpen, blob, filename = 'file', mime = '', size = 0, onClose }) {
+export default function FilePreviewModal({ isOpen, blob, filename = 'file', mime = '', size = 0, onClose, onDelete }) {
+  // Delete is offered only when the host passes `onDelete` (an editable
+  // report). It asks once, in the header, before anything is removed.
+  const [askDelete, setAskDelete] = useState(false);
+  useEffect(() => { setAskDelete(false); }, [blob, isOpen]);
   // Files opened from INSIDE this one (an email's attachments) stack on top.
   const [nested, setNested] = useState([]);
   useEffect(() => { setNested([]); }, [blob, isOpen]);
@@ -209,12 +213,13 @@ export default function FilePreviewModal({ isOpen, blob, filename = 'file', mime
     if (!isOpen) return undefined;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      if (nested.length) setNested((s) => s.slice(0, -1));
+      if (askDelete) setAskDelete(false);
+      else if (nested.length) setNested((s) => s.slice(0, -1));
       else onClose?.();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, nested.length]);
+  }, [isOpen, onClose, nested.length, askDelete]);
 
   const openNested = useMemo(() => (att) => {
     if (!att?.content) return;
@@ -227,6 +232,8 @@ export default function FilePreviewModal({ isOpen, blob, filename = 'file', mime
   const kind = previewKind(top.filename, type);
   const nativeViewable = kind === PREVIEW.PDF || kind === PREVIEW.IMAGE || kind === PREVIEW.TEXT || kind === PREVIEW.MEDIA;
   const kb = top.size || top.blob.size || 0;
+  const what = kind === PREVIEW.MEDIA ? (String(type).startsWith('audio') ? 'audio' : 'video') : 'file';
+  const canDelete = Boolean(onDelete) && nested.length === 0;
 
   return createPortal(
     <div className="fixed inset-0 z-[100] bg-slate-950/92 flex flex-col" onClick={onClose}>
@@ -254,6 +261,35 @@ export default function FilePreviewModal({ isOpen, blob, filename = 'file', mime
           {kb > 0 && <span className="text-[11px] text-white/50 flex-shrink-0">{Math.round(kb / 1024)} KB</span>}
         </div>
         <div className="flex items-center gap-1">
+          {canDelete && !askDelete && (
+            <button
+              type="button"
+              onClick={() => setAskDelete(true)}
+              title={`Delete this ${what}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[12.5px] font-bold"
+            >
+              <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">Delete</span>
+            </button>
+          )}
+          {canDelete && askDelete && (
+            <span className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-rose-950/80 ring-1 ring-rose-400/60">
+              <span className="text-[12px] font-bold text-rose-100">Delete this {what}?</span>
+              <button
+                type="button"
+                onClick={() => { setAskDelete(false); onDelete(); }}
+                className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[12px] font-bold"
+              >
+                Yes, delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setAskDelete(false)}
+                className="px-2.5 py-1 rounded-md bg-white/90 hover:bg-white text-slate-800 text-[12px] font-bold"
+              >
+                Cancel
+              </button>
+            </span>
+          )}
           {nativeViewable && (
             <a
               href={url}

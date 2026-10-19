@@ -461,8 +461,8 @@ export default function PhotoGalleryCell({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setConfirmIdx(i); }}
-                title="Delete this photo"
-                className="absolute top-0.5 right-0.5 w-5 h-5 flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white rounded-md shadow"
+                title={isVideoEntry(p) ? 'Delete this video' : isFileEntry(p) ? 'Delete this file' : 'Delete this photo'}
+                className="absolute top-0.5 right-0.5 z-20 w-5 h-5 flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white rounded-md shadow"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -471,7 +471,7 @@ export default function PhotoGalleryCell({
             {!readOnly && confirmIdx === i && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="absolute inset-0 z-10 bg-slate-950/80 flex flex-col items-center justify-center gap-1 px-1"
+                className="absolute inset-0 z-30 bg-slate-950/80 flex flex-col items-center justify-center gap-1 px-1"
               >
                 <span className="text-[10px] font-bold text-white leading-none">Delete?</span>
                 <div className="flex gap-1">

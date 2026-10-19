@@ -35,7 +35,7 @@
 
 import {
   isFirebaseConfigured,
-  reportFileDoc, sharedFileDoc,
+  reportFileDoc, sharedFileDoc, fileKey,
   getDoc, setDoc, deleteDoc,
 } from './firebase';
 import { withTimeout, yieldToBrowser } from './imageCompression';
@@ -498,13 +498,42 @@ export async function deleteAttachment(scope, id, key, chunks = 1) {
   if (!isFirebaseConfigured) return;
   forgetBlob(scope, id, key);
   try {
-    await deleteDoc(docRef(scope, id, key));
+    // Every delete is QUEUED at once - the details document first, then each
+    // part - instead of awaiting them one by one: a 20 MB video is ~30 parts,
+    // and the SDK sends writes in the order they were issued, so a file
+    // re-attached to the same slot right afterwards is still written AFTER
+    // these deletes and cannot be wiped by them.
+    const jobs = [deleteDoc(docRef(scope, id, key))];
     for (let i = 0; i < chunks; i++) {
-      await deleteDoc(docRef(scope, id, `${key}__c${i}`)).catch(() => {});
+      jobs.push(deleteDoc(docRef(scope, id, `${key}__c${i}`)));
     }
+    await Promise.allSettled(jobs);
   } catch (e) {
     console.warn('Attachment cleanup:', e.message);
   }
+}
+
+/** A slot that holds a document or a video (not a picture). */
+export function isAttachmentEntry(p) {
+  return Boolean(p && (p.kind === 'file' || (!p.url && p.file_ref)));
+}
+
+/**
+ * Delete the BYTES behind a file / video slot that has just been removed from
+ * a row - in the report AND in the published share. Removing only the pointer
+ * would leave up to ~30 documents of a video in Firestore for ever (the Spark
+ * plan holds 1 GB) and let another device put the pointer back. A pointer and
+ * its bytes are created and destroyed together (BUG-035).
+ */
+export async function deleteEntryFiles({ shareId = '', reportId = '', itemId = '', entry }) {
+  if (!isAttachmentEntry(entry)) return;
+  const key = entry.file_ref || (itemId ? fileKey(itemId, entry.slot_index ?? 0) : '');
+  if (!key) return;
+  const chunks = Math.max(1, Number(entry.chunks) || 1);
+  const jobs = [];
+  if (reportId) jobs.push(deleteAttachment('report', reportId, key, chunks));
+  if (shareId) jobs.push(deleteAttachment('shared', shareId, key, chunks));
+  await Promise.allSettled(jobs);
 }
 
 /**

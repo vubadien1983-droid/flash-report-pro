@@ -24,7 +24,7 @@ import Toast from './components/Toast';
 import { compactReportPhotos } from './services/imageCompression';
 import { fileKey } from './services/firebase';
 import {
-  putAttachment, getAttachmentBlob, deleteAttachment, openBlob, formatBytes,
+  putAttachment, getAttachmentBlob, deleteAttachment, deleteEntryFiles, isAttachmentEntry, openBlob, formatBytes,
   copyAttachmentToShare,
   collectAttachments, prefetchReportVideos,
 } from './services/fileAttachments';
@@ -837,6 +837,17 @@ export default function App() {
    */
   /** Delete the stored bytes of a photo that has just been removed. */
   const dropPlanPhotoBytes = (item, photo) => {
+    // A document or a VIDEO keeps its bytes in the files collection (chunks),
+    // not in the photos one - delete those, in the report and in the share.
+    if (isAttachmentEntry(photo)) {
+      deleteEntryFiles({
+        shareId: currentReport?.share_id || currentReport?.cloud_code || '',
+        reportId: currentReport?.id || '',
+        itemId: item?.id,
+        entry: photo,
+      }).catch((e) => console.warn('File bytes not removed:', e?.message));
+      return;
+    }
     const ref = photo?.photo_ref || refOf(item, photo, photo?.slot_index ?? 0);
     deletePhotoBytes(currentReport?.share_id || '', currentReport?.id || '', ref)
       .catch((e) => console.warn('Photo bytes not removed:', e?.message));
@@ -963,7 +974,7 @@ export default function App() {
     }
   };
 
-  const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0 });
+  const [filePreview, setFilePreview] = useState({ isOpen: false, blob: null, filename: '', mime: '', size: 0, target: null });
 
   const handleOpenAttachment = async (photo, item, itemIndex) => {
     if (!currentReport) return;
@@ -990,10 +1001,39 @@ export default function App() {
         filename: got.meta?.filename || photo?.filename || 'file',
         mime: got.meta?.mime || got.blob.type || '',
         size: got.meta?.size || got.blob.size || 0,
+        // Which slot is on screen, so the player's Delete can remove it.
+        target: { photo, itemIndex: itemIndex ?? photo?.itemIndex },
       });
     } catch (err) {
       showToast(`Could not open the file: ${err.message}`, 'error');
     }
+  };
+
+  const closeFilePreview = () => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0, target: null });
+
+  /**
+   * Delete the video / file that is open in the player (Preservation).
+   * The slot is found by its id (or file_ref) inside its row - never by
+   * position alone, because the row may have moved since it was opened.
+   */
+  const handleDeleteOpenedFile = () => {
+    const t = filePreview.target;
+    if (!currentReport || !t?.photo) return;
+    const same = (x) => x && (t.photo.id ? x.id === t.photo.id : x.file_ref === t.photo.file_ref);
+    const items = currentReport.items || [];
+    let idx = Number.isInteger(t.itemIndex) ? t.itemIndex : -1;
+    if (idx < 0 || !(items[idx]?.photos || []).some(same)) {
+      idx = items.findIndex((it) => (it?.photos || []).some(same));
+    }
+    const item = items[idx];
+    if (!item) { closeFilePreview(); return; }
+    const gone = (item.photos || []).find(same);
+    const photos = (item.photos || []).filter((x) => !same(x));
+    handleItemsChange(items.map((it, i) => (i === idx ? { ...it, photos } : it)));
+    if (gone) dropPlanPhotoBytes(item, gone);
+    const isVid = /^video\//i.test(gone?.mime || '') || gone?.duration;
+    closeFilePreview();
+    showToast(isVid ? 'Video deleted' : 'File deleted', 'success');
   };
 
   // ─── UPDATED: Full Two-Way Sync via SyncEngine ──────────────────
@@ -2082,7 +2122,8 @@ export default function App() {
         filename={filePreview.filename}
         mime={filePreview.mime}
         size={filePreview.size}
-        onClose={() => setFilePreview({ isOpen: false, blob: null, filename: '', mime: '', size: 0 })}
+        onClose={closeFilePreview}
+        onDelete={isPfReport && filePreview.target ? handleDeleteOpenedFile : undefined}
       />
 
       {/* Share Modal.
