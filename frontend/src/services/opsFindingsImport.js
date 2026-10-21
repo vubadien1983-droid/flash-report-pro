@@ -199,13 +199,12 @@ function fieldForHeader(text) {
  * @param {{ onProgress?: (msg: string, done?: number, total?: number) => void }} opts
  * @returns {Promise<{ meta, rows, warnings: string[], imageCount: number, sheetName: string }>}
  */
-export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal() } = {}) {
+/** Open the ZIP once: sheet list (name + part path) and shared strings. */
+async function openWorkbook(file, onProgress) {
   const buffer = file instanceof ArrayBuffer ? file : await file.arrayBuffer();
   const zip = readZip(buffer);
-  const warnings = [];
   onProgress?.('Reading the workbook…');
 
-  // Workbook → first sheet (or the one named like the findings master).
   const wbPath = 'xl/workbook.xml';
   const wb = await readXml(zip, wbPath);
   if (!wb) throw new Error('This file is not an Excel workbook (xl/workbook.xml missing).');
@@ -215,7 +214,6 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     path: wbRels.get(s.getAttributeNS(REL_NS, 'id') || s.getAttribute('r:id')),
   })).filter((s) => s.path);
   if (!sheets.length) throw new Error('The workbook has no sheets.');
-  const sheet = sheets.find((s) => /finding/i.test(s.name)) || sheets[0];
 
   // Shared strings — including rich-text runs, excluding phonetic hints.
   const sstDoc = await readXml(zip, 'xl/sharedStrings.xml');
@@ -225,7 +223,69 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
       return true;
     })
     .map((t) => t.textContent).join(''));
+  return { zip, sheets, sst };
+}
 
+/**
+ * Read the workbook. v3.39.0: EVERY sheet that carries a findings table (a
+ * "No" column and a "Finding Description" column) is read — the app's own
+ * export is a Summary sheet followed by one sheet per section, and the old
+ * "first sheet only" rule stopped on Summary ("Could not find the header
+ * row"). Sheets without such a table (Summary) are skipped. A single-sheet
+ * workbook behaves exactly as before.
+ */
+export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal(), allSheets = true } = {}) {
+  const wbk = await openWorkbook(file, onProgress);
+  const { sheets } = wbk;
+
+  if (!allSheets) {
+    const sheet = sheets.find((s) => /finding/i.test(s.name)) || sheets[0];
+    return parseSheet(wbk, sheet, { onProgress, today });
+  }
+
+  const results = [];
+  const skipped = [];
+  let headerError = null;
+  for (const sheet of sheets) {
+    try {
+      const r = await parseSheet(wbk, sheet, {
+        onProgress: onProgress && ((msg, d, t) => onProgress(sheets.length > 1 ? `${sheet.name}: ${msg}` : msg, d, t)),
+        today,
+        // A sheet with no section row is named after its team ("M&R Team").
+        fallbackSection: sheets.length > 1 ? sheet.name : '',
+      });
+      results.push(r);
+    } catch (e) {
+      if (e && e.code === 'NO_HEADER') { skipped.push(sheet.name); headerError = headerError || e; continue; }
+      throw e;
+    }
+  }
+  if (!results.length) throw headerError || new Error('No findings table found in this workbook.');
+
+  const warnings = results.flatMap((r) => r.warnings.map((w) => (results.length > 1 ? `[${r.sheetName}] ${w}` : w)));
+  const cols = new Set();
+  results.forEach((r) => r.columns.forEach((c) => cols.add(c)));
+  return {
+    meta: results[0].meta,
+    rows: results.flatMap((r) => r.rows),
+    warnings,
+    imageCount: results.reduce((n, r) => n + r.imageCount, 0),
+    sheetName: results.map((r) => r.sheetName).join(', '),
+    sheetsRead: results.map((r) => ({
+      name: r.sheetName,
+      rows: r.rows.length,
+      pictures: r.imageCount,
+      section: r.rows[0]?.section || '',
+      noPicture: r.rows.filter((x) => !(x.photos || []).length).length,
+    })),
+    sheetsSkipped: skipped,
+    columns: [...cols],
+  };
+}
+
+/** Parse ONE sheet. Throws an Error with code 'NO_HEADER' when it has no findings table. */
+async function parseSheet({ zip, sst }, sheet, { onProgress, today, fallbackSection = '' } = {}) {
+  const warnings = [];
   const ws = await readXml(zip, sheet.path);
   if (!ws) throw new Error(`Sheet "${sheet.name}" could not be read.`);
 
@@ -282,7 +342,9 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     }
   }
   if (!headerRow) {
-    throw new Error('Could not find the header row (a "No" column and a "Finding Description" column). Is this the Findings & Action Tracking workbook?');
+    const err = new Error('Could not find the header row (a "No" column and a "Finding Description" column). Is this the Findings & Action Tracking workbook?');
+    err.code = 'NO_HEADER';
+    throw err;
   }
 
   // A finding written over SEVERAL sheet rows (A54:A55, B54:B55, … N54:N55) is
@@ -333,7 +395,7 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
   const textField = (r, f) => (colOf[f] === undefined ? '' : cleanText(get(r, colOf[f])));
   const records = [];            // { excelRow, row }
   const byExcelRow = new Map();
-  let section = OPS_DEFAULT_SECTION;
+  let section = fallbackSection || OPS_DEFAULT_SECTION;
   let sawSection = false;
 
   for (let r = headerRow + 1; r <= maxRow; r += 1) {
@@ -372,7 +434,7 @@ export async function parseOpsWorkbook(file, { onProgress, today = todayKeyLocal
     records.push({ excelRow: r, row });
     byExcelRow.set(r, row);
   }
-  if (!sawSection) warnings.push('No section row found — all findings go under "A. Findings from M&R Team".');
+  if (!sawSection && !fallbackSection) warnings.push('No section row found — all findings go under "A. Findings from M&R Team".');
 
   // ── Pictures ──────────────────────────────────────────────────
   const pending = [];   // { excelRow, col: 'G'|'O', top, left, media }

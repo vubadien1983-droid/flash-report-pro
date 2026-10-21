@@ -809,27 +809,29 @@ export function opsActionByBreakdown(items, status = '') {
 }
 
 
-// ─── Import: REPLACE columns A–I, keep every row in place (v3.30.0) ──
+// ─── Import: REPLACE columns A–J, keep every row in place (v3.30.0, v3.39.0) ──
 //
-// The file is the master of columns A (No) … I (Remark): System, Subsystem
-// No., Finding Description, Reference, Raise By, the Photo Reference pictures,
-// Open Date and Remark. The app is the master of everything AFTER Remark
-// (PIC, Action By, Corrective Action, Status, Close-out …, Close-out
-// references), so a row must never move: finding #n of a tab is replaced by
-// the file's finding #n of the same section, whatever its B + C says.
+// The file is the master of columns A (No) … J (PIC): System, Subsystem No.,
+// Finding Description, Reference, Raise By, the Photo Reference pictures, Open
+// Date, Remark and PIC (v3.39.0: PIC added — it is column 10). The app is the
+// master of everything AFTER PIC (Action By, Corrective Action, Status,
+// Close-out …, Close-out references), so a row must never move: finding #n of
+// a tab is replaced by the file's finding #n of the same section, whatever its
+// B + C says. The file comes from the app's own export: one sheet per section.
 //
 // - Rows the tab has are updated in place; nothing is inserted between them,
 //   reordered or removed (a tab longer than the file keeps its extra rows).
-// - File findings after the tab's last number are appended with A–I from the
+// - A BLANK cell in the file never erases what the app holds (v3.39.0).
+// - File findings after the tab's last number are appended with A–J from the
 //   file and Status = Open; the other columns start empty.
 // - A column the file does not have keeps the app's value.
 // - Pictures: the file's column-G pictures replace the row's G pictures. A
 //   file row without any G picture keeps the app's pictures (a picture hidden
 //   under another one in Excel is not read, so "no picture" is not proof).
 
-/** Fields of columns B…I, derived from OPS_COLUMNS (A is the position). */
+/** Fields of columns B…J, derived from OPS_COLUMNS (A is the position). */
 export const OPS_LEFT_FIELDS = (() => {
-  const end = OPS_COLUMNS.findIndex((c) => c.key === 'remark');
+  const end = OPS_COLUMNS.findIndex((c) => c.key === 'pic');
   return OPS_COLUMNS.slice(1, end + 1).map((c) => c.key).filter((k) => k !== 'photos_g');
 })();
 
@@ -841,7 +843,9 @@ export function replaceOpsColumnsImport(existing, imported, { makeId = makeOpsId
   const findSection = (name) => {
     const L = letterOf(name);
     return (L && appSections.find((s) => letterOf(s) === L))
-      || appSections.find((s) => normalizeSearch(s) === normalizeSearch(name)) || null;
+      || appSections.find((s) => normalizeSearch(s) === normalizeSearch(name))
+      // A sheet named after its team ("M&R Team") matches "A. Findings from M&R Team".
+      || (normalizeSearch(name).length >= 3 && appSections.find((s) => normalizeSearch(s).includes(normalizeSearch(name)))) || null;
   };
 
   // File rows per section, keyed by their finding number (column A).
@@ -874,7 +878,7 @@ export function replaceOpsColumnsImport(existing, imported, { makeId = makeOpsId
     list.sort((a, b) => a.no - b.no);
     const sec = { section: target, fileSection: name, isNew, have, fileLast: list.length ? list[list.length - 1].no : 0, updated: 0, added: 0, from: 0, to: 0, beyond: 0 };
 
-    // 1) Existing rows: replace B…I and the G pictures, in place.
+    // 1) Existing rows: replace B…J and the G pictures, in place.
     for (const { row, no } of list) {
       if (no > have) continue;
       const i = idx[no - 1];
@@ -882,8 +886,8 @@ export function replaceOpsColumnsImport(existing, imported, { makeId = makeOpsId
       const patch = {};
       const fields = [];
       for (const f of OPS_LEFT_FIELDS) {
-        if (row[f] === undefined) continue;                 // column not in the file
-        const v = row[f] === null ? '' : String(row[f]);
+        if (isBlank(row[f])) continue;                      // column not in the file, or a blank cell: keep the app's value
+        const v = String(row[f]);
         if (String(cur[f] ?? '') !== v) { patch[f] = v; fields.push(f); }
       }
       const fileG = (row.photos || []).filter((p) => slotColumn(p) === 'G');
@@ -910,7 +914,7 @@ export function replaceOpsColumnsImport(existing, imported, { makeId = makeOpsId
     sec.beyond = Math.max(0, have - (list.filter((x) => x.no <= have).length));
     stats.untouched += sec.beyond;
 
-    // 2) Findings after the tab's last number: append (A–I + Status Open).
+    // 2) Findings after the tab's last number: append (A–J + Status Open).
     let at = have ? idx[have - 1] : -1;
     if (!have) {
       const L = letterOf(target);

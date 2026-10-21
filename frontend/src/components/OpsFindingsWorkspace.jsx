@@ -323,7 +323,7 @@ export default function OpsFindingsWorkspace({
       const exact = replaceOpsFromImport(base, parsed.rows);
       const appended = appendOpsImport(base, parsed.rows);
       const columns = replaceOpsColumnsImport(base, parsed.rows);
-      // Default (v3.30.0): replace columns A–I in place, rows never move.
+      // Default (v3.30.0, A–J since v3.39.0): replace columns A–J in place, rows never move.
       setImportState({ phase: 'preview', parsed, merged, exact, appended, columns, mode: 'columns', fileName: file.name });
     } catch (e) {
       console.error('Import failed:', e);
@@ -339,13 +339,13 @@ export default function OpsFindingsWorkspace({
     const m = parsed.meta || {};
     if (mode === 'columns') {
       // One write; then the replaced G pictures' bytes are deleted.
+      // Updated by / Updated date / area are written by the app itself on every
+      // export — this import never touches the header (v3.39.0).
       const patch = { items: columns.items };
-      if (!report?.location && m.subtitle) patch.location = m.subtitle;
-      if (!report?.system_tag && m.updatedBy) patch.system_tag = m.updatedBy;
       if (onReportPatch) onReportPatch(patch); else write(columns.items);
       for (const d of columns.dropped) { try { onPhotoRemoved?.(d.item, d.photo); } catch { /* cleanup only */ } }
       const c = columns.stats;
-      notify?.(`Columns A–I updated: ${c.updatedRows} row(s) changed, ${c.photosReplaced} picture(s) replaced` + (c.added ? `, ${c.added} new finding(s) (Status Open)` : '') + '. Row order unchanged.', 'success');
+      notify?.(`Columns A–J updated: ${c.updatedRows} row(s) changed, ${c.photosReplaced} picture(s) replaced` + (c.added ? `, ${c.added} new finding(s) (Status Open)` : '') + '. Row order unchanged.', 'success');
       setImportState(null);
       return;
     }
@@ -774,13 +774,24 @@ export default function OpsFindingsWorkspace({
                 <>
                   <div className="px-5 py-4 overflow-y-auto">
                     <p className="text-[12.5px] text-slate-600 mb-3">
-                      <b>{fileName}</b> · sheet “{parsed.sheetName}” · {parsed.rows.length} findings and {parsed.imageCount} photos read
+                      <b>{fileName}</b> · {parsed.rows.length} findings and {parsed.imageCount} photos read from {parsed.sheetsRead?.length || 1} sheet(s)
                       (only pictures visible in Excel — pictures hidden underneath another one are skipped).
                     </p>
+                    {parsed.sheetsRead?.length > 0 && (
+                      <div className="mb-3 text-[11.5px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 space-y-0.5">
+                        {parsed.sheetsRead.map((sh) => (
+                          <div key={sh.name}>
+                            <b className="text-slate-800">“{sh.name}”</b> → {sh.section || 'tab'} · {sh.rows} finding(s), {sh.pictures} picture(s)
+                            {sh.noPicture > 0 && <span className="text-slate-500"> · {sh.noPicture} row(s) without a picture in the file (the app's pictures stay)</span>}
+                          </div>
+                        ))}
+                        {parsed.sheetsSkipped?.length > 0 && <div className="text-slate-500">Not a findings table, skipped: {parsed.sheetsSkipped.map((n) => `“${n}”`).join(', ')}</div>}
+                      </div>
+                    )}
                     <button type="button" onClick={() => setMode('columns')}
                       className={`w-full text-left rounded-xl border px-3 py-2 mb-2 ${mode === 'columns' ? 'border-violet-500 ring-2 ring-violet-500/25 bg-violet-50' : 'border-slate-200 bg-white'}`}>
-                      <div className="text-[12.5px] font-bold text-slate-900">Replace columns A–I (No … Remark) — rows stay in place (recommended)</div>
-                      <div className="text-[11.5px] text-slate-600 leading-snug">Finding #n of each tab takes the file's #n: System, Subsystem, Finding, Reference, Raise By, Photo Reference, Open Date, Remark. PIC, Action By, Corrective Action, Status, Close-out… are never touched and no row moves. New findings are added at the end with Status = Open.</div>
+                      <div className="text-[12.5px] font-bold text-slate-900">Replace columns A–J (No … PIC) — rows stay in place (recommended)</div>
+                      <div className="text-[11.5px] text-slate-600 leading-snug">Each sheet of the file goes to its tab. Finding #n of a tab takes the file's #n: System, Subsystem, Finding, Reference, Raise By, Photo Reference, Open Date, Remark, PIC. A blank cell in the file keeps what the app has. Action By, Corrective Action, Status, Close-out… are never touched and no row moves. New findings are added at the end of the tab with Status = Open.</div>
                     </button>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
                       <button type="button" onClick={() => setMode('append')}
@@ -824,7 +835,7 @@ export default function OpsFindingsWorkspace({
                                 <td className="px-2 py-1.5 text-right tabular-nums">{sec.have ? `#1–${sec.have}` : '—'}</td>
                                 <td className="px-2 py-1.5 text-right tabular-nums">{sec.fileLast ? `#1–${sec.fileLast}` : '—'}</td>
                                 <td className="px-2 py-1.5 font-semibold">
-                                  <span className={sec.updated ? 'text-violet-700' : 'text-slate-400'}>{sec.updated ? `${sec.updated} row(s) updated` : 'A–I already equal'}</span>
+                                  <span className={sec.updated ? 'text-violet-700' : 'text-slate-400'}>{sec.updated ? `${sec.updated} row(s) updated` : 'A–J already equal'}</span>
                                   {sec.added > 0 && <span className="block text-[10.5px] text-emerald-700">+{sec.added} new: #{sec.from}–{sec.to} (Status Open)</span>}
                                   {sec.beyond > 0 && <span className="block text-[10.5px] text-slate-500">{sec.beyond} row(s) not in the file — left as they are</span>}
                                 </td>
@@ -946,7 +957,7 @@ export default function OpsFindingsWorkspace({
                     <button type="button" onClick={applyImport} disabled={!can}
                       className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-40">
                       <CheckCircle2 className="w-4 h-4" />
-                      {can ? (mode === 'columns' ? `Update columns A–I${c.added ? ` + add ${c.added}` : ''}` : mode === 'exact' ? 'Replace with the file' : mode === 'append' ? (a.added ? `Add ${a.added} finding(s)` : 'Fill empty cells') : 'Import') : 'Nothing to import'}
+                      {can ? (mode === 'columns' ? `Update columns A–J${c.added ? ` + add ${c.added}` : ''}` : mode === 'exact' ? 'Replace with the file' : mode === 'append' ? (a.added ? `Add ${a.added} finding(s)` : 'Fill empty cells') : 'Import') : 'Nothing to import'}
                     </button>
                   </div>
                 </>
